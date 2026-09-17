@@ -1,0 +1,19 @@
+# MineModelingPro — NI 43-101 extraction + drillhole modelling
+requests
+curl_cffi
+pandas
+pyarrow
+numpy
+shapely
+pyproj
+tabulate
+openpyxl
+construct
+# PDF / OCR extraction
+pdfplumber
+camelot-py
+opencv-python-headless
+pymupdf
+pytesseract
+# SEDAR / ceo.ca public-feed collection
+playwright

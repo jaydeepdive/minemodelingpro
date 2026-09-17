@@ -1,0 +1,27 @@
+# --- MineModelingPro ignores ---
+# Government collar backbone: regenerated weekly from live gov sources by the
+# mmp-backbone workflow; exceeds GitHub's 100 MB file limit. Only the parquet
+# exports under data/keep/mmp/ are committed.
+data/keep/mmp.sqlite
+
+# Working / transient stores
+data/keep/mmp_reextract.sqlite
+data/keep/mmp_reextract.sqlite-journal
+*.sqlite-journal
+
+# Drill-news bank: synced in at build time by drill_sync (MineTerminalPro API,
+# or an interim local copy). Never committed here — it belongs to the news feed.
+data/keep/drillbank.sqlite
+
+# SEDAR PDFs + scraper profile: retained in the report-archive release, not git
+data/keep/sedar_pdfs/
+data/keep/sedar_profile/
+data/keep/sedar_batch.log
+data/keep/sedar_launchd.out
+data/keep/sedar_launchd.err
+data/keep/sedar_debug_last.html
+data/keep/sedar_cursor.json
+
+__pycache__/
+*.pyc
+.DS_Store

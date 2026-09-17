@@ -1,0 +1,58 @@
+name: closeology-ceo-sedar
+
+# Forward-only NI 43-101 collector from ceo.ca's PUBLIC #sedar feed. ceo.ca mirrors
+# every SEDAR filing and serves the raw PDF from an OPEN endpoint with no login,
+# captcha or per-IP throttle -- so this runs on a clean GitHub runner (no Mac, no
+# ceo.ca account). Reads the public feed, keeps Technical Report (NI 43-101)
+# filings, downloads them, archives each to the report-archive release, and commits
+# the manifest. The daily build (closeology-daily) ingests the manifest into the
+# 3D-model shard store. The feed is a rolling window, so we run every 2 hours.
+on:
+  schedule:
+    - cron: "15 * * * *"
+  workflow_dispatch:
+    inputs:
+      scrolls:
+        description: "history window (feed scroll-ups)"
+        default: "12"
+
+concurrency:
+  group: closeology-ceo-sedar
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: write
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_REPOSITORY: jaydeepdive/closeology
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Python deps
+        run: |
+          pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+      - name: Collect NI 43-101s from ceo.ca public feed
+        run: |
+          PYTHONPATH=src python -m minemodelingpro.ceo_sedar --scrolls "${{ github.event.inputs.scrolls || 12 }}"
+      - name: Commit manifest
+        run: |
+          git config user.name "closeology-bot"
+          git config user.email "actions@github.com"
+          for i in 1 2 3 4 5; do
+            git fetch -q origin main || true
+            git stash -q 2>/dev/null || true
+            git reset -q --hard origin/main
+            git stash pop -q 2>/dev/null || true
+            git add data/keep/ceo_sedar_manifest.json 2>/dev/null || true
+            git diff --cached --quiet && { echo "no new 43-101 filings"; break; }
+            git fetch -q origin main 2>/dev/null || true; git checkout -q origin/main -- site 2>/dev/null || true  # never carry site/ backward — the daily build owns it
+            git commit -q -m "ceo.ca 43-101 collect $(date -u +%Y-%m-%dT%H:%MZ) [skip ci]"
+            git push origin HEAD:main && break || { echo "retry $i"; sleep 5; }
+          done

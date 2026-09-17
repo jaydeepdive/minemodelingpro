@@ -1,0 +1,55 @@
+name: mmp-43101-reports
+
+# Chews through the NI 43-101 report queue (data/keep/mmp_report_queue.json),
+# extracting resource tables + modelling methodology into the sharded MMP store.
+# Report PDFs fetch fine from datacenter IPs, so this runs entirely in the cloud.
+# Resumable: each run skips already-ingested reports and continues the backlog.
+on:
+  schedule:
+    - cron: "0 6 * * 3"        # Wednesdays 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      max_seconds:
+        description: "per-run time budget for ingestion"
+        default: "2400"
+      refresh:
+        description: "re-ingest all queued reports (after an extractor upgrade)"
+        default: "false"
+
+concurrency:
+  group: mmp-reports
+  cancel-in-progress: false
+
+jobs:
+  reports:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: System deps (ghostscript for Camelot)
+        run: sudo apt-get update -q && sudo apt-get install -y -q ghostscript
+      - name: Python deps
+        run: pip install -r requirements.txt
+      - name: Rebuild working store from committed shards, then ingest queue
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # retain each PDF in the report-archive release
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          PYTHONPATH=src python -m minemodelingpro.shards rebuild
+          PYTHONPATH=src python -m minemodelingpro.pdf_reports queue \
+            --max-seconds ${{ github.event.inputs.max_seconds || 2400 }} \
+            ${{ (github.event.inputs.refresh == 'true') && '--refresh' || '' }}
+      - name: Commit the MMP shard store
+        run: |
+          git config user.name "closeology-bot"
+          git config user.email "actions@github.com"
+          git pull --no-edit -X ours origin main || true
+          git add -A data/keep/mmp data/keep/mmp_report_queue.json data/keep/mmp_reports_index.json data/keep/mmp_collars_sample.csv 2>/dev/null || true
+          git fetch -q origin main 2>/dev/null || true; git checkout -q origin/main -- site 2>/dev/null || true  # never carry site/ backward — the daily build owns it
+          git commit -m "MMP 43-101 report ingest $(date -u +%Y-%m-%d) [skip ci]" || echo "no changes"
+          git push || echo "nothing to push"

@@ -1,0 +1,565 @@
+{
+  "generated": "2026-09-17T17:58:55Z",
+  "max_bytes": 94371840,
+  "tables": {
+    "collars": [
+      {
+        "file": "mmp/collars/gov__nb.parquet",
+        "source": "gov:nb",
+        "rows": 16238,
+        "bytes": 652037
+      },
+      {
+        "file": "mmp/collars/gov__on.parquet",
+        "source": "gov:on",
+        "rows": 172504,
+        "bytes": 6862851
+      },
+      {
+        "file": "mmp/collars/gov__qc.parquet",
+        "source": "gov:qc",
+        "rows": 189598,
+        "bytes": 8833365
+      },
+      {
+        "file": "mmp/collars/gov__sk.parquet",
+        "source": "gov:sk",
+        "rows": 33433,
+        "bytes": 1512609
+      },
+      {
+        "file": "mmp/collars/gov__yk.parquet",
+        "source": "gov:yk",
+        "rows": 1916,
+        "bytes": 93792
+      },
+      {
+        "file": "mmp/collars/news__accesswire.parquet",
+        "source": "news:accesswire",
+        "rows": 484,
+        "bytes": 34486
+      },
+      {
+        "file": "mmp/collars/news__businesswire.parquet",
+        "source": "news:businesswire",
+        "rows": 600,
+        "bytes": 31027
+      },
+      {
+        "file": "mmp/collars/news__cision.parquet",
+        "source": "news:cision",
+        "rows": 361,
+        "bytes": 34099
+      },
+      {
+        "file": "mmp/collars/news__globenewswire.parquet",
+        "source": "news:globenewswire",
+        "rows": 722,
+        "bytes": 45433
+      },
+      {
+        "file": "mmp/collars/news__juniorminingnetwork.parquet",
+        "source": "news:juniorminingnetwork",
+        "rows": 312,
+        "bytes": 33388
+      },
+      {
+        "file": "mmp/collars/news__newsfilecorp.parquet",
+        "source": "news:newsfilecorp",
+        "rows": 46,
+        "bytes": 16066
+      },
+      {
+        "file": "mmp/collars/news__thenewswire.parquet",
+        "source": "news:thenewswire",
+        "rows": 87,
+        "bytes": 19689
+      },
+      {
+        "file": "mmp/collars/sedar__ADY-2026-09-11-technical-report-ni-43-101-english-8e43.pdf.parquet",
+        "source": "sedar:ADY-2026-09-11-technical-report-ni-43-101-english-8e43.pdf",
+        "rows": 18,
+        "bytes": 12939
+      },
+      {
+        "file": "mmp/collars/sedar__adyton-resources-corporation_20260911T0500.parquet",
+        "source": "sedar:adyton-resources-corporation_20260911T0500",
+        "rows": 18,
+        "bytes": 13819
+      },
+      {
+        "file": "mmp/collars/sedar__anteros-metals-inc_20260730T0800.parquet",
+        "source": "sedar:anteros-metals-inc_20260730T0800",
+        "rows": 10,
+        "bytes": 13267
+      },
+      {
+        "file": "mmp/collars/sedar__blade-resources-inc-000109640_20260909T1306.parquet",
+        "source": "sedar:blade-resources-inc-000109640_20260909T1306",
+        "rows": 8,
+        "bytes": 14247
+      },
+      {
+        "file": "mmp/collars/sedar__canada-nickel-company-inc_20260908T1907.parquet",
+        "source": "sedar:canada-nickel-company-inc_20260908T1907",
+        "rows": 3,
+        "bytes": 13186
+      },
+      {
+        "file": "mmp/collars/sedar__sanu-gold-corp_20260908T2015.parquet",
+        "source": "sedar:sanu-gold-corp_20260908T2015",
+        "rows": 100,
+        "bytes": 16134
+      },
+      {
+        "file": "mmp/collars/sedar__troilus-mining-corp_20260909T0701.parquet",
+        "source": "sedar:troilus-mining-corp_20260909T0701",
+        "rows": 48,
+        "bytes": 14108
+      }
+    ],
+    "assays": [
+      {
+        "file": "mmp/assays/news__accesswire.parquet",
+        "source": "news:accesswire",
+        "rows": 4711,
+        "bytes": 60811
+      },
+      {
+        "file": "mmp/assays/news__businesswire.parquet",
+        "source": "news:businesswire",
+        "rows": 825,
+        "bytes": 17392
+      },
+      {
+        "file": "mmp/assays/news__cision.parquet",
+        "source": "news:cision",
+        "rows": 2446,
+        "bytes": 37511
+      },
+      {
+        "file": "mmp/assays/news__globenewswire.parquet",
+        "source": "news:globenewswire",
+        "rows": 4846,
+        "bytes": 65610
+      },
+      {
+        "file": "mmp/assays/news__juniorminingnetwork.parquet",
+        "source": "news:juniorminingnetwork",
+        "rows": 2747,
+        "bytes": 43365
+      },
+      {
+        "file": "mmp/assays/news__newsfilecorp.parquet",
+        "source": "news:newsfilecorp",
+        "rows": 361,
+        "bytes": 12030
+      },
+      {
+        "file": "mmp/assays/news__thenewswire.parquet",
+        "source": "news:thenewswire",
+        "rows": 1089,
+        "bytes": 21603
+      },
+      {
+        "file": "mmp/assays/sedar__blade-resources-inc-000109640_20260909T1306.parquet",
+        "source": "sedar:blade-resources-inc-000109640_20260909T1306",
+        "rows": 8,
+        "bytes": 6624
+      },
+      {
+        "file": "mmp/assays/sedar__british-columbia_20260720T1950.parquet",
+        "source": "sedar:british-columbia_20260720T1950",
+        "rows": 20,
+        "bytes": 6665
+      },
+      {
+        "file": "mmp/assays/sedar__canada-nickel-company-inc_20260908T1907.parquet",
+        "source": "sedar:canada-nickel-company-inc_20260908T1907",
+        "rows": 255,
+        "bytes": 8806
+      },
+      {
+        "file": "mmp/assays/sedar__sanu-gold-corp_20260908T2015.parquet",
+        "source": "sedar:sanu-gold-corp_20260908T2015",
+        "rows": 33,
+        "bytes": 7076
+      },
+      {
+        "file": "mmp/assays/sedar__white-gold-corp-000008417_20260720T1744.parquet",
+        "source": "sedar:white-gold-corp-000008417_20260720T1744",
+        "rows": 28,
+        "bytes": 7085
+      },
+      {
+        "file": "mmp/assays/sedar__xau-resources-inc_20260717T2030.parquet",
+        "source": "sedar:xau-resources-inc_20260717T2030",
+        "rows": 39,
+        "bytes": 7584
+      }
+    ],
+    "lithology": [
+      {
+        "file": "mmp/lithology/gov__qc.parquet",
+        "source": "gov:qc",
+        "rows": 759931,
+        "bytes": 12418414
+      }
+    ],
+    "deposit_model": [
+      {
+        "file": "mmp/deposit_model/sedar__ADY-2026-09-11-technical-report-ni-43-101-english-8e43.pdf.parquet",
+        "source": "sedar:ADY-2026-09-11-technical-report-ni-43-101-english-8e43.pdf",
+        "rows": 19,
+        "bytes": 10866
+      },
+      {
+        "file": "mmp/deposit_model/sedar__ALK-2026-09-10-technical-report-ni-43-101-english-923b.pdf.parquet",
+        "source": "sedar:ALK-2026-09-10-technical-report-ni-43-101-english-923b.pdf",
+        "rows": 4,
+        "bytes": 10054
+      },
+      {
+        "file": "mmp/deposit_model/sedar__ALK-2026-09-10-technical-report-ni-43-101-english-fc68.pdf.parquet",
+        "source": "sedar:ALK-2026-09-10-technical-report-ni-43-101-english-fc68.pdf",
+        "rows": 36,
+        "bytes": 11633
+      },
+      {
+        "file": "mmp/deposit_model/sedar__adyton-resources-corporation_20260911T0500.parquet",
+        "source": "sedar:adyton-resources-corporation_20260911T0500",
+        "rows": 17,
+        "bytes": 11749
+      },
+      {
+        "file": "mmp/deposit_model/sedar__alkane-resources-limited-000109167_20260910T2204.parquet",
+        "source": "sedar:alkane-resources-limited-000109167_20260910T2204",
+        "rows": 38,
+        "bytes": 11985
+      },
+      {
+        "file": "mmp/deposit_model/sedar__alkane-resources-limited-000109167_20260910T2205.parquet",
+        "source": "sedar:alkane-resources-limited-000109167_20260910T2205",
+        "rows": 38,
+        "bytes": 12700
+      },
+      {
+        "file": "mmp/deposit_model/sedar__alkane-resources-limited-000109167_20260910T2206.parquet",
+        "source": "sedar:alkane-resources-limited-000109167_20260910T2206",
+        "rows": 4,
+        "bytes": 11073
+      },
+      {
+        "file": "mmp/deposit_model/sedar__amaroq-ltd_20260911T1008.parquet",
+        "source": "sedar:amaroq-ltd_20260911T1008",
+        "rows": 25,
+        "bytes": 11817
+      },
+      {
+        "file": "mmp/deposit_model/sedar__anteros-metals-inc_20260730T0800.parquet",
+        "source": "sedar:anteros-metals-inc_20260730T0800",
+        "rows": 3,
+        "bytes": 11043
+      },
+      {
+        "file": "mmp/deposit_model/sedar__blade-resources-inc-000109640_20260909T1306.parquet",
+        "source": "sedar:blade-resources-inc-000109640_20260909T1306",
+        "rows": 1,
+        "bytes": 10981
+      },
+      {
+        "file": "mmp/deposit_model/sedar__british-columbia_20260720T1950.parquet",
+        "source": "sedar:british-columbia_20260720T1950",
+        "rows": 5,
+        "bytes": 10980
+      },
+      {
+        "file": "mmp/deposit_model/sedar__canada-nickel-company-inc_20260908T1907.parquet",
+        "source": "sedar:canada-nickel-company-inc_20260908T1907",
+        "rows": 11,
+        "bytes": 11686
+      },
+      {
+        "file": "mmp/deposit_model/sedar__canada-nickel-company-inc_20260908T1914.parquet",
+        "source": "sedar:canada-nickel-company-inc_20260908T1914",
+        "rows": 8,
+        "bytes": 11392
+      },
+      {
+        "file": "mmp/deposit_model/sedar__faraday-copper-corp-000036463_20260730T1601.parquet",
+        "source": "sedar:faraday-copper-corp-000036463_20260730T1601",
+        "rows": 6,
+        "bytes": 11005
+      },
+      {
+        "file": "mmp/deposit_model/sedar__goldgroup-mining-inc_20260720T0805.parquet",
+        "source": "sedar:goldgroup-mining-inc_20260720T0805",
+        "rows": 22,
+        "bytes": 11313
+      },
+      {
+        "file": "mmp/deposit_model/sedar__integra-resources-corp-000013334_20260730T1618.parquet",
+        "source": "sedar:integra-resources-corp-000013334_20260730T1618",
+        "rows": 18,
+        "bytes": 11433
+      },
+      {
+        "file": "mmp/deposit_model/sedar__mustang-energy-corp-000042455_20260910T1556.parquet",
+        "source": "sedar:mustang-energy-corp-000042455_20260910T1556",
+        "rows": 1,
+        "bytes": 10962
+      },
+      {
+        "file": "mmp/deposit_model/sedar__troilus-mining-corp_20260909T0701.parquet",
+        "source": "sedar:troilus-mining-corp_20260909T0701",
+        "rows": 30,
+        "bytes": 12410
+      },
+      {
+        "file": "mmp/deposit_model/sedar__white-gold-corp-000008417_20260720T1744.parquet",
+        "source": "sedar:white-gold-corp-000008417_20260720T1744",
+        "rows": 1,
+        "bytes": 10846
+      },
+      {
+        "file": "mmp/deposit_model/sedar__xau-resources-inc_20260717T2030.parquet",
+        "source": "sedar:xau-resources-inc_20260717T2030",
+        "rows": 4,
+        "bytes": 11070
+      }
+    ],
+    "model_method": [
+      {
+        "file": "mmp/model_method/sedar__ADY-2026-09-11-technical-report-ni-43-101-english-8e43.pdf.parquet",
+        "source": "sedar:ADY-2026-09-11-technical-report-ni-43-101-english-8e43.pdf",
+        "rows": 1,
+        "bytes": 18919
+      },
+      {
+        "file": "mmp/model_method/sedar__ALK-2026-09-10-technical-report-ni-43-101-english-923b.pdf.parquet",
+        "source": "sedar:ALK-2026-09-10-technical-report-ni-43-101-english-923b.pdf",
+        "rows": 1,
+        "bytes": 21483
+      },
+      {
+        "file": "mmp/model_method/sedar__ALK-2026-09-10-technical-report-ni-43-101-english-fc68.pdf.parquet",
+        "source": "sedar:ALK-2026-09-10-technical-report-ni-43-101-english-fc68.pdf",
+        "rows": 1,
+        "bytes": 16172
+      },
+      {
+        "file": "mmp/model_method/sedar__adyton-resources-corporation_20260911T0500.parquet",
+        "source": "sedar:adyton-resources-corporation_20260911T0500",
+        "rows": 1,
+        "bytes": 19901
+      },
+      {
+        "file": "mmp/model_method/sedar__alkane-resources-limited-000109167_20260910T2204.parquet",
+        "source": "sedar:alkane-resources-limited-000109167_20260910T2204",
+        "rows": 1,
+        "bytes": 18950
+      },
+      {
+        "file": "mmp/model_method/sedar__alkane-resources-limited-000109167_20260910T2205.parquet",
+        "source": "sedar:alkane-resources-limited-000109167_20260910T2205",
+        "rows": 1,
+        "bytes": 17194
+      },
+      {
+        "file": "mmp/model_method/sedar__alkane-resources-limited-000109167_20260910T2206.parquet",
+        "source": "sedar:alkane-resources-limited-000109167_20260910T2206",
+        "rows": 1,
+        "bytes": 22503
+      },
+      {
+        "file": "mmp/model_method/sedar__amaroq-ltd_20260911T1008.parquet",
+        "source": "sedar:amaroq-ltd_20260911T1008",
+        "rows": 1,
+        "bytes": 18638
+      },
+      {
+        "file": "mmp/model_method/sedar__anteros-metals-inc_20260730T0800.parquet",
+        "source": "sedar:anteros-metals-inc_20260730T0800",
+        "rows": 1,
+        "bytes": 16233
+      },
+      {
+        "file": "mmp/model_method/sedar__canada-nickel-company-inc_20260908T1907.parquet",
+        "source": "sedar:canada-nickel-company-inc_20260908T1907",
+        "rows": 1,
+        "bytes": 18669
+      },
+      {
+        "file": "mmp/model_method/sedar__canada-nickel-company-inc_20260908T1914.parquet",
+        "source": "sedar:canada-nickel-company-inc_20260908T1914",
+        "rows": 1,
+        "bytes": 18546
+      },
+      {
+        "file": "mmp/model_method/sedar__faraday-copper-corp-000036463_20260730T1601.parquet",
+        "source": "sedar:faraday-copper-corp-000036463_20260730T1601",
+        "rows": 1,
+        "bytes": 20374
+      },
+      {
+        "file": "mmp/model_method/sedar__goldgroup-mining-inc_20260720T0805.parquet",
+        "source": "sedar:goldgroup-mining-inc_20260720T0805",
+        "rows": 1,
+        "bytes": 18000
+      },
+      {
+        "file": "mmp/model_method/sedar__integra-resources-corp-000013334_20260730T1618.parquet",
+        "source": "sedar:integra-resources-corp-000013334_20260730T1618",
+        "rows": 1,
+        "bytes": 17619
+      },
+      {
+        "file": "mmp/model_method/sedar__inversiones-trento-spa-000104170_20260911T2107.parquet",
+        "source": "sedar:inversiones-trento-spa-000104170_20260911T2107",
+        "rows": 1,
+        "bytes": 22330
+      },
+      {
+        "file": "mmp/model_method/sedar__sanu-gold-corp_20260908T2015.parquet",
+        "source": "sedar:sanu-gold-corp_20260908T2015",
+        "rows": 1,
+        "bytes": 17062
+      },
+      {
+        "file": "mmp/model_method/sedar__troilus-mining-corp_20260909T0701.parquet",
+        "source": "sedar:troilus-mining-corp_20260909T0701",
+        "rows": 1,
+        "bytes": 17356
+      },
+      {
+        "file": "mmp/model_method/sedar__xau-resources-inc_20260717T2030.parquet",
+        "source": "sedar:xau-resources-inc_20260717T2030",
+        "rows": 1,
+        "bytes": 19643
+      }
+    ],
+    "metallurgy": [
+      {
+        "file": "mmp/metallurgy/sedar__ADY-2026-09-11-technical-report-ni-43-101-english-8e43.pdf.parquet",
+        "source": "sedar:ADY-2026-09-11-technical-report-ni-43-101-english-8e43.pdf",
+        "rows": 1,
+        "bytes": 15524
+      },
+      {
+        "file": "mmp/metallurgy/sedar__ALK-2026-09-10-technical-report-ni-43-101-english-923b.pdf.parquet",
+        "source": "sedar:ALK-2026-09-10-technical-report-ni-43-101-english-923b.pdf",
+        "rows": 1,
+        "bytes": 12464
+      },
+      {
+        "file": "mmp/metallurgy/sedar__ALK-2026-09-10-technical-report-ni-43-101-english-fc68.pdf.parquet",
+        "source": "sedar:ALK-2026-09-10-technical-report-ni-43-101-english-fc68.pdf",
+        "rows": 1,
+        "bytes": 12722
+      },
+      {
+        "file": "mmp/metallurgy/sedar__adyton-resources-corporation_20260911T0500.parquet",
+        "source": "sedar:adyton-resources-corporation_20260911T0500",
+        "rows": 1,
+        "bytes": 16495
+      },
+      {
+        "file": "mmp/metallurgy/sedar__alkane-resources-limited-000109167_20260910T2204.parquet",
+        "source": "sedar:alkane-resources-limited-000109167_20260910T2204",
+        "rows": 1,
+        "bytes": 18971
+      },
+      {
+        "file": "mmp/metallurgy/sedar__alkane-resources-limited-000109167_20260910T2205.parquet",
+        "source": "sedar:alkane-resources-limited-000109167_20260910T2205",
+        "rows": 1,
+        "bytes": 13857
+      },
+      {
+        "file": "mmp/metallurgy/sedar__alkane-resources-limited-000109167_20260910T2206.parquet",
+        "source": "sedar:alkane-resources-limited-000109167_20260910T2206",
+        "rows": 1,
+        "bytes": 13605
+      },
+      {
+        "file": "mmp/metallurgy/sedar__amaroq-ltd_20260911T1008.parquet",
+        "source": "sedar:amaroq-ltd_20260911T1008",
+        "rows": 1,
+        "bytes": 19524
+      },
+      {
+        "file": "mmp/metallurgy/sedar__faraday-copper-corp-000036463_20260730T1601.parquet",
+        "source": "sedar:faraday-copper-corp-000036463_20260730T1601",
+        "rows": 1,
+        "bytes": 14152
+      },
+      {
+        "file": "mmp/metallurgy/sedar__goldgroup-mining-inc_20260720T0805.parquet",
+        "source": "sedar:goldgroup-mining-inc_20260720T0805",
+        "rows": 1,
+        "bytes": 16813
+      },
+      {
+        "file": "mmp/metallurgy/sedar__integra-resources-corp-000013334_20260730T1618.parquet",
+        "source": "sedar:integra-resources-corp-000013334_20260730T1618",
+        "rows": 1,
+        "bytes": 17028
+      },
+      {
+        "file": "mmp/metallurgy/sedar__inversiones-trento-spa-000104170_20260911T2107.parquet",
+        "source": "sedar:inversiones-trento-spa-000104170_20260911T2107",
+        "rows": 1,
+        "bytes": 15666
+      },
+      {
+        "file": "mmp/metallurgy/sedar__troilus-mining-corp_20260909T0701.parquet",
+        "source": "sedar:troilus-mining-corp_20260909T0701",
+        "rows": 1,
+        "bytes": 19484
+      },
+      {
+        "file": "mmp/metallurgy/sedar__white-gold-corp-000008417_20260720T1744.parquet",
+        "source": "sedar:white-gold-corp-000008417_20260720T1744",
+        "rows": 1,
+        "bytes": 16598
+      },
+      {
+        "file": "mmp/metallurgy/sedar__xau-resources-inc_20260717T2030.parquet",
+        "source": "sedar:xau-resources-inc_20260717T2030",
+        "rows": 1,
+        "bytes": 17752
+      }
+    ],
+    "economics": [
+      {
+        "file": "mmp/economics/sedar__alkane-resources-limited-000109167_20260910T2204.parquet",
+        "source": "sedar:alkane-resources-limited-000109167_20260910T2204",
+        "rows": 1,
+        "bytes": 19751
+      },
+      {
+        "file": "mmp/economics/sedar__integra-resources-corp-000013334_20260730T1618.parquet",
+        "source": "sedar:integra-resources-corp-000013334_20260730T1618",
+        "rows": 1,
+        "bytes": 24862
+      },
+      {
+        "file": "mmp/economics/sedar__troilus-mining-corp_20260909T0701.parquet",
+        "source": "sedar:troilus-mining-corp_20260909T0701",
+        "rows": 1,
+        "bytes": 24482
+      }
+    ]
+  },
+  "totals": {
+    "collars": 416506,
+    "survey": 0,
+    "assays": 17408,
+    "lithology": 759931,
+    "deposit_model": 291,
+    "model_method": 18,
+    "metallurgy": 15,
+    "economics": 3
+  },
+  "shard_count": 89
+}

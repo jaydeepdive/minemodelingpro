@@ -1,0 +1,354 @@
+<title>Trapper</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bitter:wght@500;700;800&family=Roboto:wght@400;500;700&display=swap">
+<style>
+  :root{
+    --red:#D71920; --ink:#111418; --mut:#636363; --line:#e6e8eb; --panel:#f5f7fa;
+    --bg:#eef1f6; --card:#ffffff; --chip:#fdecec;
+    --serif:'Bitter',Georgia,serif; --sans:'Roboto',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);overflow:hidden}
+  canvas{display:block;position:fixed;inset:0;top:49px}
+  #scene{position:fixed;inset:0;top:49px;z-index:0}
+  /* top brand strip — matches the Closeology site nav */
+  #bar{position:fixed;top:0;left:0;right:0;height:49px;z-index:20;background:#fff;
+    border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;
+    padding:0 18px;gap:16px}
+  #bar .brand{display:flex;flex-direction:column;line-height:1.1;text-decoration:none}
+  #bar .brand .b1{font-family:var(--serif);font-weight:800;font-size:15px;color:var(--ink)}
+  #bar .brand .b1 em{color:var(--red);font-style:normal}
+  #bar .brand .b2{font-family:var(--serif);font-weight:700;font-size:9.5px;letter-spacing:.18em;
+    text-transform:uppercase;color:var(--mut)}
+  #bar a.back{font-size:13px;font-weight:500;color:var(--red);text-decoration:none}
+  #bar a.back:hover{text-decoration:underline}
+  .panel{position:fixed;z-index:10;background:var(--card);border:1px solid var(--line);
+    border-radius:12px;box-shadow:0 6px 22px rgba(17,20,24,.10)}
+  #hud{top:65px;left:16px;width:300px;max-width:calc(100vw - 32px);padding:16px 16px 14px}
+  h1{font-family:var(--serif);font-size:20px;line-height:1.15;margin:0 0 3px;font-weight:700;text-wrap:balance}
+  .rule{height:3px;width:44px;background:var(--red);border-radius:2px;margin:0 0 10px}
+  .sub{font-size:12.5px;color:var(--mut);margin:0 0 14px}
+  .meta{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0 0 15px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 9px}
+  .stat b{display:block;font-family:var(--serif);font-size:17px;font-weight:700;color:var(--ink);
+    font-variant-numeric:tabular-nums;line-height:1.1}
+  .stat span{font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--mut)}
+  .group{border-top:1px solid var(--line);padding-top:12px;margin-top:2px}
+  .glabel{font-family:var(--serif);font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+    color:var(--mut);margin:0 0 9px}
+  .toggle{display:flex;align-items:center;gap:9px;padding:5px 0;cursor:pointer;user-select:none;font-size:13.5px}
+  .toggle input{appearance:none;-webkit-appearance:none;width:34px;height:18px;border-radius:10px;background:#cfd6e0;
+    position:relative;cursor:pointer;transition:background .15s;flex:none;outline:none}
+  .toggle input:checked{background:var(--red)}
+  .toggle input::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;
+    background:#fff;transition:transform .15s;box-shadow:0 1px 2px rgba(0,0,0,.25)}
+  .toggle input:checked::after{transform:translateX(16px)}
+  .toggle .sw{width:11px;height:11px;border-radius:3px;flex:none;border:1px solid rgba(0,0,0,.08)}
+  .slider{margin-top:12px}
+  .slider .row{display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;margin-bottom:6px}
+  .slider .val{font-weight:700;color:var(--red);font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;-webkit-appearance:none;appearance:none;height:5px;border-radius:3px;
+    background:linear-gradient(90deg,#23408f,#1f9e89,#4e9a3d,#e8a020,#e0620d,#c1121f);outline:none;cursor:pointer}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;
+    background:#fff;border:2px solid var(--red);cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.35)}
+  input[type=range]::-moz-range-thumb{width:15px;height:15px;border-radius:50%;background:#fff;
+    border:2px solid var(--red);cursor:pointer}
+  #legend{bottom:16px;left:16px;padding:12px 14px;width:228px}
+  .lgttl{font-family:var(--serif);font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+    color:var(--mut);margin:0 0 8px;display:flex;justify-content:space-between}
+  .ramp{height:12px;border-radius:6px;background:linear-gradient(90deg,#23408f,#1f9e89,#4e9a3d,#e8a020,#e0620d,#c1121f)}
+  .ticks{display:flex;justify-content:space-between;font-size:10.5px;color:var(--mut);margin-top:5px;
+    font-variant-numeric:tabular-nums}
+  #readout{bottom:16px;right:16px;padding:12px 14px;width:206px;font-size:12.5px}
+  #readout .glabel{margin-bottom:8px}
+  .kv{display:flex;justify-content:space-between;padding:3px 0;color:var(--mut)}
+  .kv b{color:var(--ink);font-weight:700;font-variant-numeric:tabular-nums}
+  #tip{position:fixed;z-index:30;pointer-events:none;background:#fff;border:1px solid var(--line);
+    border-radius:8px;padding:8px 10px;font-size:12px;color:var(--ink);display:none;
+    box-shadow:0 8px 24px rgba(17,20,24,.16);line-height:1.5;font-variant-numeric:tabular-nums}
+  #tip .g{color:var(--red);font-weight:700}
+  #hint{position:fixed;z-index:10;bottom:14px;left:50%;transform:translateX(-50%);font-size:11.5px;
+    color:var(--mut);background:rgba(255,255,255,.82);padding:5px 13px;border-radius:20px;
+    border:1px solid var(--line);transition:opacity .6s}
+  #scalebar{position:fixed;z-index:10;bottom:44px;left:50%;transform:translateX(-50%);display:flex;
+    align-items:center;gap:8px;font-size:11px;color:var(--ink);font-variant-numeric:tabular-nums;
+    background:rgba(255,255,255,.85);border:1px solid var(--line);border-radius:8px;padding:4px 10px;}
+  #scalebar .sbar{height:9px;border-left:2px solid var(--ink);border-right:2px solid var(--ink);
+    display:flex;align-items:center;width:100px;}
+  #scalebar .sbar span{display:block;height:2px;width:100%;background:var(--ink);}
+  #scalebar #sbar-label{font-weight:700;}
+  .btn{margin-top:12px;width:100%;padding:8px;border:1px solid var(--line);background:var(--panel);
+    color:var(--ink);font-size:12px;font-weight:500;letter-spacing:.02em;border-radius:8px;cursor:pointer;transition:.15s}
+  .btn:hover{background:var(--chip);border-color:var(--red);color:var(--red)}
+  .btn:focus-visible,.toggle input:focus-visible,input[type=range]:focus-visible{outline:2px solid var(--red);outline-offset:2px}
+  a.src{color:var(--mut);font-size:11px;text-decoration:none}
+  a.src:hover{color:var(--red);text-decoration:underline}
+  #srclist{max-height:132px;overflow-y:auto;display:flex;flex-direction:column;gap:7px}
+  #srclist a{display:block;font-size:12px;line-height:1.35;color:var(--ink);text-decoration:none;
+    padding-left:12px;position:relative}
+  #srclist a::before{content:"";position:absolute;left:0;top:6px;width:5px;height:5px;border-radius:50%;background:var(--red)}
+  #srclist a:hover{color:var(--red)}
+  #srclist a .sd{color:var(--mut);font-size:10.5px}
+  @media (max-width:640px){#readout{display:none}#hud{width:calc(100vw - 32px)}}
+</style>
+
+<div id="bar">
+  <a class="brand" href="../models.html">
+    <span class="b1">thedeepdive<em>.ca</em></span>
+    <span class="b2">Project Closeology · MineModelingPro</span>
+  </a>
+  <a class="back" href="../models.html">← All 3D models</a>
+</div>
+
+<div id="scene"></div>
+
+<div id="hud" class="panel">
+  <h1 id="title">Trapper</h1>
+  <div class="rule"></div>
+  <p class="sub" id="subtitle">Au grade shell · IDW block model</p>
+  <div class="meta">
+    <div class="stat"><b id="m-holes">–</b><span>Holes</span></div>
+    <div class="stat"><b id="m-samples">–</b><span>Assays</span></div>
+    <div class="stat"><b id="m-blocks">–</b><span>Blocks</span></div>
+  </div>
+  <div class="group">
+    <p class="glabel">Layers</p>
+    <label class="toggle"><input type="checkbox" id="t-blocks" checked><span class="sw" style="background:#e8a020"></span>Grade block model</label>
+    <label class="toggle"><input type="checkbox" id="t-samples" checked><span class="sw" style="background:#c1121f"></span>Assay samples</label>
+    <label class="toggle"><input type="checkbox" id="t-traces" checked><span class="sw" style="background:#6b7280"></span>Drill traces</label>
+    <label class="toggle" id="topo-row" hidden><input type="checkbox" id="t-topo"><span class="sw" style="background:#ccd3de"></span>Terrain (topography)</label>
+    <div class="slider">
+      <div class="row"><span>Grade cut-off</span><span class="val"><span id="cut">0.30</span> <span id="cutunit">g/t</span></span></div>
+      <input type="range" id="cutoff" min="0" max="100" value="6" step="1">
+    </div>
+    <button class="btn" id="reset">Reset view</button>
+  </div>
+  <div class="group" id="srcgroup">
+    <p class="glabel">Data sources <span id="src-n" style="color:var(--mut);font-weight:400"></span></p>
+    <div id="srclist"></div>
+  </div>
+</div>
+
+<div id="legend" class="panel">
+  <p class="lgttl"><span id="leg-el">Au</span> grade<span id="leg-unit">g/t</span></p>
+  <div class="ramp"></div>
+  <div class="ticks" id="ticks"></div>
+</div>
+
+<div id="readout" class="panel">
+  <p class="glabel">Above cut-off <span id="rc-cut" style="color:var(--red)"></span></p>
+  <div class="kv"><span>Tonnage</span><b id="rc-tonnes">–</b></div>
+  <div class="kv"><span>Avg grade</span><b id="rc-grade">–</b></div>
+  <div class="kv"><span>Blocks</span><b id="rc-blocks">–</b></div>
+  <p class="glabel" style="margin-top:11px">Sample grade &amp; method</p>
+  <div class="kv"><span>Mean</span><b id="r-mean">–</b></div>
+  <div class="kv"><span>Median</span><b id="r-p50">–</b></div>
+  <div class="kv"><span>90th pct</span><b id="r-p90">–</b></div>
+  <div class="kv"><span>Max</span><b id="r-max">–</b></div>
+  <div class="kv"><span>Top-cut</span><b id="r-cut">–</b></div>
+  <div class="kv" style="border-top:1px solid var(--line);margin-top:6px;padding-top:8px"><span>Estimator</span><b id="r-method">IDW²</b></div>
+  <div class="kv"><span>Block</span><b id="r-block">–</b></div>
+  <a class="src" id="src" href="#" target="_blank" rel="noopener">source report ↗</a>
+</div>
+
+<div id="tip"></div>
+<div id="scalebar"><div class="sbar"><span id="sbar-line"></span></div><span id="sbar-label"></span></div>
+<div id="hint">drag to orbit · scroll to zoom · right-drag to pan</div>
+
+<script id="model" type="application/json">{"source_id":"news:brixton-metalss58.5_s132.8","project":"Trapper","company":"Brixton Metals","jurisdiction":"British Columbia","report_url":"https://www.globenewswire.com/news-release/2025/10/01/3159390/0/en/brixton-metals-drills-15m-of-2-26-g-t-gold-at-the-trapper-gold-target.html","source":"news","region":"British Columbia","updated":"2025-10-01","sources":[{"kind":"news release","title":"Brixton Metals Drills 15m of 2.26 g/t Gold at the Trapper","url":"https://www.globenewswire.com/news-release/2025/10/01/3159390/0/en/brixton-metals-drills-15m-of-2-26-g-t-gold-at-the-trapper-gold-target.html","date":"2025-10-01"}],"density":2.7,"terrain":{"nx":44,"ny":44,"de":3.08,"dn":6.33,"z":[275.1,275.1,275.1,269.1,269.1,269.1,262.1,262.1,262.1,255.1,255.1,255.1,255.1,248.1,248.1,248.1,242.1,242.1,242.1,237.1,237.1,237.1,232.1,232.1,232.1,232.1,228.1,228.1,228.1,222.1,222.1,222.1,219.1,219.1,219.1,216.1,216.1,216.1,216.1,215.1,215.1,215.1,212.1,212.1,275.1,275.1,275.1,270.1,270.1,270.1,263.1,263.1,263.1,256.1,256.1,256.1,256.1,249.1,249.1,249.1,242.1,242.1,242.1,237.1,237.1,237.1,232.1,232.1,232.1,232.1,227.1,227.1,227.1,221.1,221.1,221.1,218.1,218.1,218.1,216.1,216.1,216.1,216.1,214.1,214.1,214.1,211.1,211.1,275.1,275.1,275.1,270.1,270.1,270.1,263.1,263.1,263.1,256.1,256.1,256.1,256.1,249.1,249.1,249.1,242.1,242.1,242.1,237.1,237.1,237.1,232.1,232.1,232.1,232.1,227.1,227.1,227.1,221.1,221.1,221.1,218.1,218.1,218.1,216.1,216.1,216.1,216.1,214.1,214.1,214.1,211.1,211.1,275.1,275.1,275.1,270.1,270.1,270.1,263.1,263.1,263.1,256.1,256.1,256.1,256.1,249.1,249.1,249.1,242.1,242.1,242.1,237.1,237.1,237.1,232.1,232.1,232.1,232.1,226.1,226.1,226.1,220.1,220.1,220.1,217.1,217.1,217.1,215.1,215.1,215.1,215.1,213.1,213.1,213.1,210.1,210.1,275.1,275.1,275.1,269.1,269.1,269.1,262.1,262.1,262.1,255.1,255.1,255.1,255.1,248.1,248.1,248.1,243.1,243.1,243.1,238.1,238.1,238.1,232.1,232.1,232.1,232.1,226.1,226.1,226.1,219.1,219.1,219.1,216.1,216.1,216.1,214.1,214.1,214.1,214.1,211.1,211.1,211.1,207.1,207.1,275.1,275.1,275.1,269.1,269.1,269.1,262.1,262.1,262.1,255.1,255.1,255.1,255.1,248.1,248.1,248.1,243.1,243.1,243.1,238.1,238.1,238.1,232.1,232.1,232.1,232.1,226.1,226.1,226.1,219.1,219.1,219.1,216.1,216.1,216.1,214.1,214.1,214.1,214.1,211.1,211.1,211.1,207.1,207.1,274.1,274.1,274.1,268.1,268.1,268.1,261.1,261.1,261.1,254.1,254.1,254.1,254.1,248.1,248.1,248.1,243.1,243.1,243.1,238.1,238.1,238.1,232.1,232.1,232.1,232.1,226.1,226.1,226.1,219.1,219.1,219.1,215.1,215.1,215.1,212.1,212.1,212.1,212.1,208.1,208.1,208.1,205.1,205.1,273.1,273.1,273.1,267.1,267.1,267.1,261.1,261.1,261.1,254.1,254.1,254.1,254.1,249.1,249.1,249.1,243.1,243.1,243.1,238.1,238.1,238.1,232.1,232.1,232.1,232.1,226.1,226.1,226.1,219.1,219.1,219.1,215.1,215.1,215.1,211.1,211.1,211.1,211.1,206.1,206.1,206.1,202.1,202.1,273.1,273.1,273.1,267.1,267.1,267.1,261.1,261.1,261.1,254.1,254.1,254.1,254.1,249.1,249.1,249.1,243.1,243.1,243.1,238.1,238.1,238.1,232.1,232.1,232.1,232.1,226.1,226.1,226.1,219.1,219.1,219.1,215.1,215.1,215.1,211.1,211.1,211.1,211.1,206.1,206.1,206.1,202.1,202.1,272.1,272.1,272.1,267.1,267.1,267.1,260.1,260.1,260.1,254.1,254.1,254.1,254.1,249.1,249.1,249.1,243.1,243.1,243.1,238.1,238.1,238.1,232.1,232.1,232.1,232.1,226.1,226.1,226.1,220.1,220.1,220.1,215.1,215.1,215.1,210.1,210.1,210.1,210.1,205.1,205.1,205.1,201.1,201.1,271.1,271.1,271.1,266.1,266.1,266.1,260.1,260.1,260.1,254.1,254.1,254.1,254.1,249.1,249.1,249.1,243.1,243.1,243.1,237.1,237.1,237.1,232.1,232.1,232.1,232.1,226.1,226.1,226.1,220.1,220.1,220.1,215.1,215.1,215.1,210.1,210.1,210.1,210.1,205.1,205.1,205.1,201.1,201.1,271.1,271.1,271.1,266.1,266.1,266.1,260.1,260.1,260.1,254.1,254.1,254.1,254.1,249.1,249.1,249.1,243.1,243.1,243.1,237.1,237.1,237.1,232.1,232.1,232.1,232.1,226.1,226.1,226.1,220.1,220.1,220.1,215.1,215.1,215.1,210.1,210.1,210.1,210.1,205.1,205.1,205.1,201.1,201.1,270.1,270.1,270.1,265.1,265.1,265.1,259.1,259.1,259.1,254.1,254.1,254.1,254.1,248.1,248.1,248.1,243.1,243.1,243.1,237.1,237.1,237.1,231.1,231.1,231.1,231.1,226.1,226.1,226.1,220.1,220.1,220.1,216.1,216.1,216.1,211.1,211.1,211.1,211.1,207.1,207.1,207.1,202.1,202.1,268.1,268.1,268.1,263.1,263.1,263.1,258.1,258.1,258.1,253.1,253.1,253.1,253.1,248.1,248.1,248.1,242.1,242.1,242.1,237.1,237.1,237.1,231.1,231.1,231.1,231.1,226.1,226.1,226.1,221.1,221.1,221.1,216.1,216.1,216.1,212.1,212.1,212.1,212.1,208.1,208.1,208.1,204.1,204.1,268.1,268.1,268.1,263.1,263.1,263.1,258.1,258.1,258.1,253.1,253.1,253.1,253.1,248.1,248.1,248.1,242.1,242.1,242.1,237.1,237.1,237.1,231.1,231.1,231.1,231.1,226.1,226.1,226.1,221.1,221.1,221.1,216.1,216.1,216.1,212.1,212.1,212.1,212.1,208.1,208.1,208.1,204.1,204.1,266.1,266.1,266.1,261.1,261.1,261.1,256.1,256.1,256.1,251.1,251.1,251.1,251.1,246.1,246.1,246.1,241.1,241.1,241.1,235.1,235.1,235.1,230.1,230.1,230.1,230.1,225.1,225.1,225.1,221.1,221.1,221.1,217.1,217.1,217.1,213.1,213.1,213.1,213.1,209.1,209.1,209.1,205.1,205.1,266.1,266.1,266.1,261.1,261.1,261.1,256.1,256.1,256.1,251.1,251.1,251.1,251.1,246.1,246.1,246.1,241.1,241.1,241.1,235.1,235.1,235.1,230.1,230.1,230.1,230.1,225.1,225.1,225.1,221.1,221.1,221.1,217.1,217.1,217.1,213.1,213.1,213.1,213.1,209.1,209.1,209.1,205.1,205.1,264.1,264.1,264.1,258.1,258.1,258.1,253.1,253.1,253.1,248.1,248.1,248.1,248.1,243.1,243.1,243.1,238.1,238.1,238.1,233.1,233.1,233.1,228.1,228.1,228.1,228.1,224.1,224.1,224.1,220.1,220.1,220.1,216.1,216.1,216.1,213.1,213.1,213.1,213.1,209.1,209.1,209.1,206.1,206.1,262.1,262.1,262.1,255.1,255.1,255.1,249.1,249.1,249.1,244.1,244.1,244.1,244.1,240.1,240.1,240.1,235.1,235.1,235.1,229.1,229.1,229.1,225.1,225.1,225.1,225.1,222.1,222.1,222.1,218.1,218.1,218.1,215.1,215.1,215.1,212.1,212.1,212.1,212.1,209.1,209.1,209.1,206.1,206.1,262.1,262.1,262.1,255.1,255.1,255.1,249.1,249.1,249.1,244.1,244.1,244.1,244.1,240.1,240.1,240.1,235.1,235.1,235.1,229.1,229.1,229.1,225.1,225.1,225.1,225.1,222.1,222.1,222.1,218.1,218.1,218.1,215.1,215.1,215.1,212.1,212.1,212.1,212.1,209.1,209.1,209.1,206.1,206.1,259.1,259.1,259.1,252.1,252.1,252.1,246.1,246.1,246.1,241.1,241.1,241.1,241.1,236.1,236.1,236.1,231.1,231.1,231.1,226.1,226.1,226.1,222.1,222.1,222.1,222.1,219.1,219.1,219.1,216.1,216.1,216.1,213.1,213.1,213.1,210.1,210.1,210.1,210.1,207.1,207.1,207.1,205.1,205.1,257.1,257.1,257.1,249.1,249.1,249.1,242.1,242.1,242.1,237.1,237.1,237.1,237.1,232.1,232.1,232.1,227.1,227.1,227.1,221.1,221.1,221.1,218.1,218.1,218.1,218.1,216.1,216.1,216.1,213.1,213.1,213.1,210.1,210.1,210.1,207.1,207.1,207.1,207.1,205.1,205.1,205.1,204.1,204.1,257.1,257.1,257.1,249.1,249.1,249.1,242.1,242.1,242.1,237.1,237.1,237.1,237.1,232.1,232.1,232.1,227.1,227.1,227.1,221.1,221.1,221.1,218.1,218.1,218.1,218.1,216.1,216.1,216.1,213.1,213.1,213.1,210.1,210.1,210.1,207.1,207.1,207.1,207.1,205.1,205.1,205.1,204.1,204.1,254.1,254.1,254.1,247.1,247.1,247.1,239.1,239.1,239.1,233.1,233.1,233.1,233.1,228.1,228.1,228.1,222.1,222.1,222.1,217.1,217.1,217.1,214.1,214.1,214.1,214.1,213.1,213.1,213.1,210.1,210.1,210.1,207.1,207.1,207.1,205.1,205.1,205.1,205.1,204.1,204.1,204.1,204.1,204.1,252.1,252.1,252.1,244.1,244.1,244.1,236.1,236.1,236.1,229.1,229.1,229.1,229.1,223.1,223.1,223.1,218.1,218.1,218.1,214.1,214.1,214.1,211.1,211.1,211.1,211.1,210.1,210.1,210.1,207.1,207.1,207.1,205.1,205.1,205.1,203.1,203.1,203.1,203.1,203.1,203.1,203.1,203.1,203.1,252.1,252.1,252.1,244.1,244.1,244.1,236.1,236.1,236.1,229.1,229.1,229.1,229.1,223.1,223.1,223.1,218.1,218.1,218.1,214.1,214.1,214.1,211.1,211.1,211.1,211.1,210.1,210.1,210.1,207.1,207.1,207.1,205.1,205.1,205.1,203.1,203.1,203.1,203.1,203.1,203.1,203.1,203.1,203.1,249.1,249.1,249.1,242.1,242.1,242.1,234.1,234.1,234.1,227.1,227.1,227.1,227.1,221.1,221.1,221.1,215.1,215.1,215.1,211.1,211.1,211.1,209.1,209.1,209.1,209.1,208.1,208.1,208.1,205.1,205.1,205.1,203.1,203.1,203.1,202.1,202.1,202.1,202.1,202.1,202.1,202.1,203.1,203.1,249.1,249.1,249.1,242.1,242.1,242.1,234.1,234.1,234.1,227.1,227.1,227.1,227.1,221.1,221.1,221.1,215.1,215.1,215.1,211.1,211.1,211.1,209.1,209.1,209.1,209.1,208.1,208.1,208.1,205.1,205.1,205.1,203.1,203.1,203.1,202.1,202.1,202.1,202.1,202.1,202.1,202.1,203.1,203.1,247.1,247.1,247.1,240.1,240.1,240.1,233.1,233.1,233.1,227.1,227.1,227.1,227.1,221.1,221.1,221.1,215.1,215.1,215.1,211.1,211.1,211.1,209.1,209.1,209.1,209.1,207.1,207.1,207.1,204.1,204.1,204.1,201.1,201.1,201.1,200.1,200.1,200.1,200.1,200.1,200.1,200.1,201.1,201.1,246.1,246.1,246.1,239.1,239.1,239.1,233.1,233.1,233.1,227.1,227.1,227.1,227.1,222.1,222.1,222.1,216.1,216.1,216.1,212.1,212.1,212.1,209.1,209.1,209.1,209.1,207.1,207.1,207.1,203.1,203.1,203.1,200.1,200.1,200.1,198.1,198.1,198.1,198.1,198.1,198.1,198.1,199.1,199.1,246.1,246.1,246.1,239.1,239.1,239.1,233.1,233.1,233.1,227.1,227.1,227.1,227.1,222.1,222.1,222.1,216.1,216.1,216.1,212.1,212.1,212.1,209.1,209.1,209.1,209.1,207.1,207.1,207.1,203.1,203.1,203.1,200.1,200.1,200.1,198.1,198.1,198.1,198.1,198.1,198.1,198.1,199.1,199.1,245.1,245.1,245.1,239.1,239.1,239.1,233.1,233.1,233.1,228.1,228.1,228.1,228.1,223.1,223.1,223.1,217.1,217.1,217.1,213.1,213.1,213.1,210.1,210.1,210.1,210.1,207.1,207.1,207.1,203.1,203.1,203.1,199.1,199.1,199.1,197.1,197.1,197.1,197.1,196.1,196.1,196.1,195.1,195.1,245.1,245.1,245.1,239.1,239.1,239.1,234.1,234.1,234.1,229.1,229.1,229.1,229.1,224.1,224.1,224.1,219.1,219.1,219.1,214.1,214.1,214.1,211.1,211.1,211.1,211.1,208.1,208.1,208.1,204.1,204.1,204.1,199.1,199.1,199.1,196.1,196.1,196.1,196.1,193.1,193.1,193.1,192.1,192.1,245.1,245.1,245.1,239.1,239.1,239.1,234.1,234.1,234.1,229.1,229.1,229.1,229.1,224.1,224.1,224.1,219.1,219.1,219.1,214.1,214.1,214.1,211.1,211.1,211.1,211.1,208.1,208.1,208.1,204.1,204.1,204.1,199.1,199.1,199.1,196.1,196.1,196.1,196.1,193.1,193.1,193.1,192.1,192.1,246.1,246.1,246.1,240.1,240.1,240.1,235.1,235.1,235.1,230.1,230.1,230.1,230.1,225.1,225.1,225.1,220.1,220.1,220.1,215.1,215.1,215.1,212.1,212.1,212.1,212.1,208.1,208.1,208.1,204.1,204.1,204.1,200.1,200.1,200.1,196.1,196.1,196.1,196.1,192.1,192.1,192.1,190.1,190.1,246.1,246.1,246.1,241.1,241.1,241.1,236.1,236.1,236.1,231.1,231.1,231.1,231.1,226.1,226.1,226.1,221.1,221.1,221.1,216.1,216.1,216.1,212.1,212.1,212.1,212.1,209.1,209.1,209.1,205.1,205.1,205.1,200.1,200.1,200.1,196.1,196.1,196.1,196.1,193.1,193.1,193.1,190.1,190.1,246.1,246.1,246.1,241.1,241.1,241.1,236.1,236.1,236.1,231.1,231.1,231.1,231.1,226.1,226.1,226.1,221.1,221.1,221.1,216.1,216.1,216.1,212.1,212.1,212.1,212.1,209.1,209.1,209.1,205.1,205.1,205.1,200.1,200.1,200.1,196.1,196.1,196.1,196.1,193.1,193.1,193.1,190.1,190.1,247.1,247.1,247.1,242.1,242.1,242.1,237.1,237.1,237.1,232.1,232.1,232.1,232.1,227.1,227.1,227.1,222.1,222.1,222.1,217.1,217.1,217.1,213.1,213.1,213.1,213.1,210.1,210.1,210.1,206.1,206.1,206.1,201.1,201.1,201.1,197.1,197.1,197.1,197.1,193.1,193.1,193.1,190.1,190.1,247.1,247.1,247.1,242.1,242.1,242.1,237.1,237.1,237.1,232.1,232.1,232.1,232.1,227.1,227.1,227.1,222.1,222.1,222.1,217.1,217.1,217.1,213.1,213.1,213.1,213.1,210.1,210.1,210.1,206.1,206.1,206.1,201.1,201.1,201.1,197.1,197.1,197.1,197.1,193.1,193.1,193.1,190.1,190.1,247.1,247.1,247.1,242.1,242.1,242.1,237.1,237.1,237.1,232.1,232.1,232.1,232.1,227.1,227.1,227.1,222.1,222.1,222.1,218.1,218.1,218.1,214.1,214.1,214.1,214.1,210.1,210.1,210.1,206.1,206.1,206.1,202.1,202.1,202.1,198.1,198.1,198.1,198.1,194.1,194.1,194.1,191.1,191.1,246.1,246.1,246.1,241.1,241.1,241.1,237.1,237.1,237.1,232.1,232.1,232.1,232.1,227.1,227.1,227.1,222.1,222.1,222.1,217.1,217.1,217.1,213.1,213.1,213.1,213.1,210.1,210.1,210.1,206.1,206.1,206.1,202.1,202.1,202.1,198.1,198.1,198.1,198.1,194.1,194.1,194.1,190.1,190.1,246.1,246.1,246.1,241.1,241.1,241.1,237.1,237.1,237.1,232.1,232.1,232.1,232.1,227.1,227.1,227.1,222.1,222.1,222.1,217.1,217.1,217.1,213.1,213.1,213.1,213.1,210.1,210.1,210.1,206.1,206.1,206.1,202.1,202.1,202.1,198.1,198.1,198.1,198.1,194.1,194.1,194.1,190.1,190.1,245.1,245.1,245.1,240.1,240.1,240.1,235.1,235.1,235.1,230.1,230.1,230.1,230.1,225.1,225.1,225.1,220.1,220.1,220.1,216.1,216.1,216.1,212.1,212.1,212.1,212.1,208.1,208.1,208.1,205.1,205.1,205.1,201.1,201.1,201.1,197.1,197.1,197.1,197.1,193.1,193.1,193.1,189.1,189.1,243.1,243.1,243.1,238.1,238.1,238.1,233.1,233.1,233.1,228.1,228.1,228.1,228.1,223.1,223.1,223.1,218.1,218.1,218.1,214.1,214.1,214.1,210.1,210.1,210.1,210.1,206.1,206.1,206.1,203.1,203.1,203.1,199.1,199.1,199.1,195.1,195.1,195.1,195.1,191.1,191.1,191.1,187.1,187.1],"relief_m":88.0,"source":"AWS Terrain Tiles"},"maturity":"Early \u00b7 traces only","element":"Au","unit":"g/t","generated":"2026-09-12T16:22:51Z","origin":[-22.61,-0.81,989.94],"extent":[132.5,272.1,275.1],"counts":{"holes":3,"samples":10,"blocks":0},"grade_stats":{"min":1.44,"max":7.06,"mean":3.16,"p50":2.62,"p90":4.85,"top_cut":6.6},"block_stats":{"block_m":15.0,"radius_m":0,"spacing_m":0,"max_gap_m":0,"min_samples":3,"top_cut":6.6,"n_blocks":0,"reason":"only 2 drill hole(s) \u2014 too few to model"},"holes":[{"id":"e2d62a96148f63aa:THN25-336","collar":[67.84,0.0,236.06],"toe":[71.68,109.93,45.53],"depth":220.0},{"id":"e2d62a96148f63aa:THN25-337","collar":[0.0,1.22,275.06],"toe":[47.76,272.1,0.0],"depth":389.0},{"id":"e2d62a96148f63aa:THN25-339","collar":[0.0,1.22,275.06],"toe":[132.52,230.76,52.66],"depth":346.0}],"samples":[{"hole":"e2d62a96148f63aa:THN25-337","from":27.1,"to":33.5,"grade":4.61,"xyz":[3.72,22.32,253.63]},{"hole":"e2d62a96148f63aa:THN25-337","from":95.0,"to":99.0,"grade":1.44,"xyz":[11.91,68.76,206.47]},{"hole":"e2d62a96148f63aa:THN25-337","from":146.5,"to":148.0,"grade":3.03,"xyz":[18.08,103.75,170.94]},{"hole":"e2d62a96148f63aa:THN25-339","from":16.0,"to":31.0,"grade":2.26,"xyz":[9.0,16.81,259.95]},{"hole":"e2d62a96148f63aa:THN25-339","from":53.5,"to":58.5,"grade":2.6,"xyz":[21.45,38.37,239.06]},{"hole":"e2d62a96148f63aa:THN25-339","from":66.0,"to":67.5,"grade":3.5,"xyz":[25.56,45.5,232.15]},{"hole":"e2d62a96148f63aa:THN25-339","from":76.0,"to":77.5,"grade":7.06,"xyz":[29.39,52.13,225.73]},{"hole":"e2d62a96148f63aa:THN25-339","from":242.5,"to":244.0,"grade":2.61,"xyz":[93.17,162.59,118.7]},{"hole":"e2d62a96148f63aa:THN25-339","from":278.5,"to":280.0,"grade":2.62,"xyz":[106.96,186.47,95.56]},{"hole":"e2d62a96148f63aa:THN25-339","from":288.05,"to":291.0,"grade":1.83,"xyz":[110.89,193.29,88.96]}],"blocks":[],"area":"58.49, -132.76"}</script>
+<script src="three.min.js"></script>
+<script>
+"use strict";
+const M = JSON.parse(document.getElementById("model").textContent);
+const RAMP = [[0.00,[35,64,143]],[0.22,[31,158,137]],[0.45,[78,154,61]],
+              [0.68,[232,160,32]],[0.85,[224,98,13]],[1.00,[193,18,31]]];
+function ramp(t){t=Math.max(0,Math.min(1,t));for(let i=1;i<RAMP.length;i++){if(t<=RAMP[i][0]){
+  const a=RAMP[i-1],b=RAMP[i],f=(t-a[0])/(b[0]-a[0]);
+  return[a[1][0]+(b[1][0]-a[1][0])*f,a[1][1]+(b[1][1]-a[1][1])*f,a[1][2]+(b[1][2]-a[1][2])*f];}}
+  return RAMP[RAMP.length-1][1];}
+const CAP = M.grade_stats.top_cut || M.grade_stats.max || 1;
+const $=id=>document.getElementById(id);
+$("m-holes").textContent=M.counts.holes;$("m-samples").textContent=M.counts.samples;$("m-blocks").textContent=M.counts.blocks.toLocaleString();
+$("title").textContent=M.project;
+$("subtitle").textContent=`${M.element} · ${M.maturity||"model"} · ${M.counts.holes} holes`+((M.source==="news"&&M.updated)?` · to ${M.updated}`:"");
+$("leg-el").textContent=M.element;$("leg-unit").textContent=" "+M.unit;$("cutunit").textContent=M.unit;
+$("r-mean").textContent=M.grade_stats.mean+" "+M.unit;$("r-p50").textContent=M.grade_stats.p50+" "+M.unit;
+$("r-p90").textContent=M.grade_stats.p90+" "+M.unit;$("r-max").textContent=M.grade_stats.max+" "+M.unit;
+$("r-cut").textContent=M.grade_stats.top_cut+" "+M.unit;
+$("r-block").textContent=(M.block_stats.block_m)+" m · r"+M.block_stats.radius_m+" m";
+if(M.report_url){const a=$("src");a.href=(M.report_url.startsWith("http")?M.report_url:"https://"+M.report_url);a.textContent=(M.source==="news"?"latest release ↗":"source report ↗");}else{$("src").style.display="none";}
+(function(){const t=$("ticks");for(let i=0;i<=4;i++){const s=document.createElement("span");
+  s.textContent=(CAP*i/4).toFixed(i?1:0);t.appendChild(s);}})();
+
+const host=$("scene");
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+function vh(){return innerHeight-49;}
+renderer.setSize(innerWidth,vh());host.appendChild(renderer.domElement);
+const scene=new THREE.Scene();scene.background=new THREE.Color(0xeef1f6);
+scene.fog=new THREE.FogExp2(0xeef1f6,0.00035);
+const camera=new THREE.PerspectiveCamera(50,innerWidth/vh(),1,20000);
+scene.add(new THREE.AmbientLight(0xffffff,0.82));
+const dl=new THREE.DirectionalLight(0xffffff,0.7);dl.position.set(0.5,1,0.4);scene.add(dl);
+const dl2=new THREE.DirectionalLight(0xdfe6f2,0.35);dl2.position.set(-0.5,0.3,-0.6);scene.add(dl2);
+
+const ext=M.extent;const cx=ext[0]/2, cy=ext[1]/2, cz=ext[2]/2;
+function P(p){return new THREE.Vector3(p[0]-cx, p[2]-cz, p[1]-cy);}
+const R=Math.max(ext[0],ext[1],ext[2]);
+
+const grid=new THREE.GridHelper(Math.max(ext[0],ext[1])*1.15, 26, 0xc3ccd8, 0xd9dfe8);
+grid.position.y=-cz;grid.material.opacity=0.7;grid.material.transparent=true;scene.add(grid);
+
+// hole display name — strip the internal "<release-hash>:" prefix
+const holeName=id=>String(id).replace(/^[0-9a-f]{6,}:/i,"");
+// drill traces: faint grey backbone (collar->toe; carries whole-hole hover) plus a
+// grade-coloured log painted along each assayed interval's TRUE downhole extent
+// (from->to along the hole axis) so the colour actually reads down the hole.
+const traceG=new THREE.BufferGeometry();const tv=[];const COLLAR={};
+M.holes.forEach(h=>{const a=P(h.collar),b=P(h.toe);tv.push(a.x,a.y,a.z,b.x,b.y,b.z);
+  const d=new THREE.Vector3().subVectors(b,a);const L=d.length()||1;
+  COLLAR[h.id]={p:a,d:d.multiplyScalar(1/L)};});
+traceG.setAttribute("position",new THREE.Float32BufferAttribute(tv,3));
+const traces=new THREE.LineSegments(traceG,new THREE.LineBasicMaterial({color:0x9aa3af,transparent:true,opacity:0.30}));
+scene.add(traces);
+// grade-coloured downhole log as VISIBLE cylinders — WebGL caps LineBasicMaterial
+// at 1px, so a coloured *line* is invisible; a thin cylinder per assayed interval
+// (oriented along the hole, radius scaled to the deposit) makes the grade read.
+const _c3=new THREE.Color();const _logR=Math.max(R*0.006,1.6);
+const gradeSegs=new THREE.InstancedMesh(new THREE.CylinderGeometry(_logR,_logR,1,8),new THREE.MeshLambertMaterial({transparent:true,opacity:0.96}),M.samples.length);
+{const _up=new THREE.Vector3(0,1,0),_q=new THREE.Quaternion(),_o=new THREE.Object3D();let _gi=0;
+M.samples.forEach(s=>{const h=COLLAR[s.hole];if(!h)return;
+  const a=h.p.clone().addScaledVector(h.d,s.from),b=h.p.clone().addScaledVector(h.d,s.to);
+  const dir=new THREE.Vector3().subVectors(b,a);const len=Math.max(dir.length(),_logR*1.5);
+  _o.position.copy(a).add(b).multiplyScalar(0.5);_q.setFromUnitVectors(_up,dir.clone().normalize());
+  _o.quaternion.copy(_q);_o.scale.set(1,len,1);_o.updateMatrix();gradeSegs.setMatrixAt(_gi,_o.matrix);
+  const c=ramp(Math.min(s.grade,CAP)/CAP);_c3.setRGB(c[0]/255,c[1]/255,c[2]/255);gradeSegs.setColorAt(_gi,_c3);_gi++;});
+gradeSegs.count=_gi;gradeSegs.instanceMatrix.needsUpdate=true;if(gradeSegs.instanceColor)gradeSegs.instanceColor.needsUpdate=true;}
+scene.add(gradeSegs);
+const colG=new THREE.BufferGeometry();const cv=[];M.holes.forEach(h=>{const a=P(h.collar);cv.push(a.x,a.y,a.z);});
+colG.setAttribute("position",new THREE.Float32BufferAttribute(cv,3));
+const collars=new THREE.Points(colG,new THREE.PointsMaterial({color:0x374151,size:3.4,sizeAttenuation:false}));
+traces.add(collars);
+// topography surface — REAL DEM (AWS Terrain Tiles) sampled over the deposit
+// footprint at build time and carried in M.terrain, in the model's metre frame.
+// Off by default; toggled in Layers.
+let terrain=null;
+(function(){const T=M.terrain;if(!T||!T.z)return;const nx=T.nx,ny=T.ny,verts=[],idx=[];
+  for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){const p=P([i*T.de,j*T.dn,T.z[j*nx+i]]);verts.push(p.x,p.y,p.z);}
+  for(let j=0;j<ny-1;j++)for(let i=0;i<nx-1;i++){const a=j*nx+i,b=a+1,c2=a+nx,d2=c2+1;idx.push(a,c2,b,b,c2,d2);}
+  const geo=new THREE.BufferGeometry();geo.setAttribute("position",new THREE.Float32BufferAttribute(verts,3));
+  geo.setIndex(idx);geo.computeVertexNormals();
+  terrain=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color:0xd7dde6,transparent:true,opacity:0.55,side:THREE.DoubleSide}));
+  terrain.visible=false;scene.add(terrain);
+  terrain.add(new THREE.LineSegments(new THREE.WireframeGeometry(geo),
+    new THREE.LineBasicMaterial({color:0xa7b0c0,transparent:true,opacity:0.32})));})();
+
+const samples=new THREE.InstancedMesh(new THREE.SphereGeometry(1,10,8),new THREE.MeshLambertMaterial(),M.samples.length);
+const dummy=new THREE.Object3D();const col3=new THREE.Color();
+M.samples.forEach((s,i)=>{const p=P(s.xyz);const g=Math.min(s.grade,CAP)/CAP;
+  const r=2.5+g*6.5;dummy.position.copy(p);dummy.scale.setScalar(r);dummy.updateMatrix();
+  samples.setMatrixAt(i,dummy.matrix);const c=ramp(s.grade/CAP);col3.setRGB(c[0]/255,c[1]/255,c[2]/255);samples.setColorAt(i,col3);});
+samples.instanceMatrix.needsUpdate=true;scene.add(samples);
+
+const bs=M.block_stats.block_m;
+const blocks=new THREE.InstancedMesh(new THREE.BoxGeometry(bs,bs,bs),
+  new THREE.MeshLambertMaterial({transparent:true,opacity:0.72}),M.blocks.length);
+const bpos=M.blocks.map(b=>P(b.xyz));
+M.blocks.forEach((b,i)=>{dummy.position.copy(bpos[i]);dummy.scale.setScalar(1);dummy.updateMatrix();
+  blocks.setMatrixAt(i,dummy.matrix);const c=ramp(Math.min(b.grade,CAP)/CAP);
+  col3.setRGB(c[0]/255,c[1]/255,c[2]/255);blocks.setColorAt(i,col3);});
+blocks.instanceMatrix.needsUpdate=true;scene.add(blocks);
+
+function applyCutoff(gc){for(let i=0;i<M.blocks.length;i++){dummy.position.copy(bpos[i]);
+    dummy.scale.setScalar(M.blocks[i].grade>=gc?1:0.0001);dummy.updateMatrix();blocks.setMatrixAt(i,dummy.matrix);}
+  blocks.instanceMatrix.needsUpdate=true;}
+
+const target=new THREE.Vector3(0,0,0);
+let dist=R*1.7, yaw=0.7, pitch=0.6;
+function place(){camera.position.set(
+  target.x+dist*Math.cos(pitch)*Math.sin(yaw),
+  target.y+dist*Math.sin(pitch),
+  target.z+dist*Math.cos(pitch)*Math.cos(yaw));camera.lookAt(target);}
+place();
+let drag=null,px=0,py=0;const el=renderer.domElement;
+el.addEventListener("mousedown",e=>{drag=e.button===2||e.shiftKey?"pan":"orbit";px=e.clientX;py=e.clientY;e.preventDefault();});
+addEventListener("mouseup",()=>drag=null);
+addEventListener("mousemove",e=>{if(!drag){hover(e);return;}
+  const dx=e.clientX-px,dy=e.clientY-py;px=e.clientX;py=e.clientY;
+  if(drag==="orbit"){yaw-=dx*0.006;pitch=Math.max(-1.45,Math.min(1.45,pitch+dy*0.006));}
+  else{const s=dist*0.0016;const right=new THREE.Vector3().crossVectors(camera.up,camera.getWorldDirection(new THREE.Vector3())).normalize();
+    target.addScaledVector(right,dx*s);target.addScaledVector(new THREE.Vector3(0,1,0),dy*s);}
+  place();auto=false;});
+el.addEventListener("wheel",e=>{dist=Math.max(R*0.25,Math.min(R*6,dist*(1+Math.sign(e.deltaY)*0.09)));place();e.preventDefault();},{passive:false});
+el.addEventListener("contextmenu",e=>e.preventDefault());
+$("reset").onclick=()=>{target.set(0,0,0);dist=R*1.7;yaw=0.7;pitch=0.6;place();};
+
+// per-hole interval list (for hovering a whole hole) + hole order matching traces
+const HOLES=M.holes.map(h=>h.id);
+const HINT={};M.samples.forEach(s=>{(HINT[s.hole]=HINT[s.hole]||[]).push(s);});
+Object.values(HINT).forEach(a=>a.sort((x,y)=>x.from-y.from));
+const ray=new THREE.Raycaster();ray.params.Line.threshold=Math.max(4,R*0.012);
+const mouse=new THREE.Vector2();const tip=$("tip");
+function showTip(html,e){tip.innerHTML=html;tip.style.display="block";
+  tip.style.left=Math.min(e.clientX+14,innerWidth-230)+"px";tip.style.top=Math.min(e.clientY+14,innerHeight-160)+"px";}
+function hover(e){mouse.x=(e.clientX/innerWidth)*2-1;mouse.y=-((e.clientY-49)/vh())*2+1;
+  ray.setFromCamera(mouse,camera);
+  // 1) precise: an individual assay sample
+  const sh=samples.visible?ray.intersectObject(samples):[];
+  if(sh.length){const s=M.samples[sh[0].instanceId];
+    showTip(`<b>${holeName(s.hole)}</b> · ${s.from.toFixed(1)}–${s.to.toFixed(1)} m<br><span class="g">${s.grade.toFixed(2)} ${M.unit} ${M.element}</span>`,e);return;}
+  // 2) the drill hole itself (its whole assay string)
+  const th=traces.visible?ray.intersectObject(traces):[];
+  if(th.length){const hi=Math.floor((th[0].index||0)/2);const id=HOLES[hi];const iv=HINT[id]||[];
+    const rows=iv.slice(0,9).map(s=>`${s.from.toFixed(1)}–${s.to.toFixed(1)}m <span class="g">${s.grade.toFixed(2)}</span>`).join("<br>");
+    showTip(`<b>${holeName(id)}</b> · ${iv.length} assay${iv.length===1?"":"s"} ${M.element}<br>${rows||"<span style='color:var(--mut)'>no assays parsed</span>"}${iv.length>9?"<br>+"+(iv.length-9)+" more":""}`,e);return;}
+  tip.style.display="none";}
+
+$("t-blocks").onchange=e=>blocks.visible=e.target.checked;
+$("t-samples").onchange=e=>samples.visible=e.target.checked;
+$("t-traces").onchange=e=>{traces.visible=e.target.checked;gradeSegs.visible=e.target.checked;};
+$("t-topo").onchange=e=>{if(terrain)terrain.visible=e.target.checked;};
+if(terrain)$("topo-row").hidden=false;
+// too few holes to model -> no block layer to toggle
+if(!M.counts.blocks){const tb=$("t-blocks");if(tb){tb.checked=false;tb.disabled=true;
+  const lab=tb.closest(".toggle");if(lab){lab.style.opacity=".5";lab.title="Block model needs ≥5 drill holes";}}}
+// live scale bar — a round distance sized to the current zoom
+const sbarTrack=document.querySelector('#scalebar .sbar'),sbarLabel=$("sbar-label");
+function niceNum(x){const p=Math.pow(10,Math.floor(Math.log10(x)));const f=x/p;return (f<1.5?1:f<3.5?2:f<7.5?5:10)*p;}
+function fmtM(m){return m>=1000?(+(m/1000).toFixed(m%1000?1:0))+" km":Math.round(m)+" m";}
+function updateScale(){const wh=2*dist*Math.tan(camera.fov*Math.PI/360);const mpp=wh/vh();
+  if(!isFinite(mpp)||mpp<=0)return;const nice=niceNum(110*mpp);
+  if(sbarTrack)sbarTrack.style.width=Math.max(20,Math.min(240,nice/mpp))+"px";
+  if(sbarLabel)sbarLabel.textContent=fmtM(nice);}
+// data-sources list
+(function(){const list=$("srclist"),srcs=M.sources||[];
+  if(!srcs.length){$("srcgroup").style.display="none";return;}
+  $("src-n").textContent="· "+srcs.length;
+  srcs.slice(0,40).forEach(s=>{const a=document.createElement("a");
+    a.href=(s.url&&s.url.startsWith("http"))?s.url:("https://"+(s.url||""));a.target="_blank";a.rel="noopener";
+    a.innerHTML=`${(s.title||s.kind||"source").replace(/</g,"&lt;")}<span class="sd"> — ${s.kind}${s.date?" · "+s.date:""}</span>`;
+    list.appendChild(a);});})();
+
+// grade × tonnage above cut-off (block volume × density). Indicative only.
+const BV=Math.pow(M.block_stats.block_m,3)*(M.density||2.7);   // tonnes per block
+const cutEl=$("cutoff");
+function fmtT(t){return t>=1e6?(t/1e6).toFixed(2)+" Mt":t>=1e3?(t/1e3).toFixed(0)+" kt":Math.round(t)+" t";}
+function updateCut(){const gc=+(cutEl.value/100*CAP).toFixed(2);$("cut").textContent=gc.toFixed(2);
+  applyCutoff(gc);
+  let n=0,sum=0;for(const b of M.blocks){if(b.grade>=gc){n++;sum+=Math.min(b.grade,CAP);}}
+  $("rc-cut").textContent="≥ "+gc.toFixed(2)+" "+M.unit;
+  $("rc-tonnes").textContent=n?fmtT(n*BV):"—";
+  $("rc-grade").textContent=n?(sum/n).toFixed(2)+" "+M.unit:"—";
+  $("rc-blocks").textContent=n.toLocaleString();}
+cutEl.oninput=updateCut;updateCut();
+
+let auto=!matchMedia("(prefers-reduced-motion: reduce)").matches;
+const hintEl=$("hint");setTimeout(()=>{hintEl.style.opacity=0;},5000);
+function loop(){if(auto){yaw+=0.0016;place();}updateScale();renderer.render(scene,camera);requestAnimationFrame(loop);}
+updateScale();loop();
+addEventListener("resize",()=>{camera.aspect=innerWidth/vh();camera.updateProjectionMatrix();renderer.setSize(innerWidth,vh());});
+addEventListener("mousedown",()=>{auto=false;},{once:true});
+</script>

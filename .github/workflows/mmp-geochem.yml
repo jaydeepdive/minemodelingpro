@@ -1,0 +1,46 @@
+name: mmp-gov-geochem
+
+# Ingests the provincial/territorial government GEOCHEMISTRY sample databases
+# (rock/soil/silt/core samples with multi-element assays) into the MMP shard
+# store. Government ArcGIS isn't IP-throttled, so this runs headless in the cloud.
+# These layers are large (Yukon alone ~424k samples), so this is monthly + manual.
+on:
+  schedule:
+    - cron: "0 4 1 * *"        # 1st of each month, 04:00 UTC
+  workflow_dispatch:
+    inputs:
+      sources:
+        description: "space-separated source keys (blank = all)"
+        default: ""
+
+concurrency:
+  group: mmp-geochem
+  cancel-in-progress: false
+
+jobs:
+  geochem:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Python deps
+        run: pip install -r requirements.txt
+      - name: Ingest government geochemistry, then re-shard
+        run: |
+          PYTHONPATH=src python -m minemodelingpro.shards rebuild || true
+          PYTHONPATH=src python -m minemodelingpro.gov_samples ${{ github.event.inputs.sources }}
+          PYTHONPATH=src python -m minemodelingpro.shards
+      - name: Commit the MMP shard store
+        run: |
+          git config user.name "closeology-bot"
+          git config user.email "actions@github.com"
+          git pull --no-edit -X ours origin main || true
+          git add -A data/keep/mmp 2>/dev/null || true
+          git fetch -q origin main 2>/dev/null || true; git checkout -q origin/main -- site 2>/dev/null || true  # never carry site/ backward — the daily build owns it
+          git commit -m "MMP government geochem ingest $(date -u +%Y-%m-%d) [skip ci]" || echo "no changes"
+          git push || echo "nothing to push"

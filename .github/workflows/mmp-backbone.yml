@@ -1,0 +1,51 @@
+name: mmp-drillhole-backbone
+
+# Refreshes the MineModelingPro collar backbone from the provincial/territorial
+# government drill-hole databases (public ArcGIS services). Unlike the news wires,
+# these government services do NOT rate-limit datacenter IPs, so this runs cleanly
+# in GitHub Actions — no residential machine needed. Weekly is plenty (these DBs
+# update monthly at most). Also re-exports the unified MMP modelling tables.
+on:
+  schedule:
+    - cron: "0 8 * * 1"        # Mondays 08:00 UTC
+  workflow_dispatch:
+    inputs:
+      sources:
+        description: "space-separated source keys (blank = all)"
+        default: ""
+
+concurrency:
+  group: mmp-backbone
+  cancel-in-progress: false
+
+jobs:
+  backbone:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Python deps
+        run: pip install -r requirements.txt
+      - name: Refresh provincial collar backbone
+        run: |
+          # load the full current store (gov + 43-101 + news) from committed shards
+          # so refreshing gov collars never drops the report/assay data
+          PYTHONPATH=src python -m minemodelingpro.shards rebuild || true
+          PYTHONPATH=src python -m minemodelingpro.gov_drillholes ${{ github.event.inputs.sources }}
+          PYTHONPATH=src python -m minemodelingpro.export   # merges news + writes size-capped shards
+      - name: Commit the MMP shard store
+        run: |
+          git config user.name "closeology-bot"
+          git config user.email "actions@github.com"
+          git pull --no-edit -X ours origin main || true
+          # retire any legacy monolithic exports (superseded by the shard store)
+          git rm -q --cached --ignore-unmatch data/keep/mmp_collars.parquet data/keep/mmp_assays.parquet data/keep/mmp_lithology.parquet data/keep/mmp_deposit_models.parquet 2>/dev/null || true
+          git add -A data/keep/mmp data/keep/mmp_collars_sample.csv 2>/dev/null || true
+          git fetch -q origin main 2>/dev/null || true; git checkout -q origin/main -- site 2>/dev/null || true  # never carry site/ backward — the daily build owns it
+          git commit -m "MMP drillhole backbone refresh $(date -u +%Y-%m-%d) [skip ci]" || echo "no changes"
+          git push || echo "nothing to push"
