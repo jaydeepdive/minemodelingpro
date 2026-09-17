@@ -25,3 +25,6 @@ data/keep/sedar_cursor.json
 __pycache__/
 *.pyc
 .DS_Store
+
+# Mirror of Closeology-collected datasets (full data access), synced at build time
+data/closeology/

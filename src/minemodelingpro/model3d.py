@@ -689,10 +689,29 @@ def build_all(site_dir="site"):
     """Build a 3D model page for EVERY project we hold drill-hole assays on —
     the NI 43-101 deposits from the shard store AND the news drill bank (which
     grows release by release) — plus a gallery. Idempotent; safe for the daily
-    pipeline. Gallery = top-level site/models.html; viewers live in site/models/."""
+    pipeline. Gallery = top-level site/models.html; viewers live in site/models/.
+    Also writes site/models_index.json so Closeology's drill radar can deep-link
+    each drill release to its 3D model."""
     out_dir = os.path.join(site_dir, "models")
     os.makedirs(out_dir, exist_ok=True)
-    cards, seen = [], set()
+    cards, seen, index = [], set(), []
+    site_base = os.environ.get("MMP_SITE_URL", "https://jaydeepdive.github.io/minemodelingpro/")
+    if not site_base.endswith("/"):
+        site_base += "/"
+
+    def _idx(m, slug, g=None):
+        c = m.get("counts", {}) or {}
+        e = {"slug": slug, "url": site_base + "models/" + slug + ".html",
+             "project": m.get("project"), "company": m.get("company"),
+             "region": m.get("region"), "element": m.get("element"),
+             "updated": m.get("updated"), "source": m.get("source", "report"),
+             "holes": c.get("holes"), "samples": c.get("samples")}
+        if g is not None:
+            ctr = g.get("center")
+            if ctr:
+                e["center"] = [round(float(ctr[0]), 5), round(float(ctr[1]), 5)]
+            e["releases"] = [s["url"] for s in (g.get("sources") or []) if s.get("url")]
+        index.append(e)
 
     # (1) NI 43-101 deposits from the MMP shard store
     for sid, nc, na in discover_candidates():
@@ -700,9 +719,9 @@ def build_all(site_dir="site"):
         slug = _slug(sid)
         try:
             m = build_and_render(sid, os.path.join(out_dir, slug + ".html"), element=el)
-        except Exception as e:
-            print(f"[model3d] skip {sid}: {str(e)[:90]}"); continue
-        cards.append(_card(m, slug)); seen.add(slug)
+        except Exception as ex:
+            print(f"[model3d] skip {sid}: {str(ex)[:90]}"); continue
+        cards.append(_card(m, slug)); seen.add(slug); _idx(m, slug)
         print(f"[model3d] report {m['project']}: {m['counts']['holes']}h "
               f"{m['counts']['samples']}s {m['counts']['blocks']}blk")
 
@@ -714,14 +733,24 @@ def build_all(site_dir="site"):
             if slug in seen:
                 continue
             write_viewer(m, os.path.join(out_dir, slug + ".html"))
-        except Exception as e:
-            print(f"[model3d] skip news:{key}: {str(e)[:90]}"); continue
-        cards.append(_card(m, slug)); seen.add(slug)
+        except Exception as ex:
+            print(f"[model3d] skip news:{key}: {str(ex)[:90]}"); continue
+        cards.append(_card(m, slug)); seen.add(slug); _idx(m, slug, g=g)
         print(f"[model3d] news {m['project']}: {m['counts']['holes']}h "
               f"{m['counts']['samples']}s {m['counts']['blocks']}blk ({m['maturity']})")
 
     _write_gallery(cards, os.path.join(site_dir, "models.html"))
-    print(f"[model3d] built {len(cards)} project model(s) -> {site_dir}/models.html")
+    by_release = {}
+    for e in index:
+        for u in (e.get("releases") or []):
+            by_release[u] = e["url"]
+    import datetime as _dt
+    json.dump({"generated": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%MZ"),
+               "site": site_base, "count": len(index),
+               "models": index, "by_release": by_release},
+              open(os.path.join(site_dir, "models_index.json"), "w"), separators=(",", ":"))
+    print(f"[model3d] built {len(cards)} project model(s); models_index.json "
+          f"({len(by_release)} release links) -> {site_dir}/models.html")
     return cards
 
 
