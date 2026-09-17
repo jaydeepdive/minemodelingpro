@@ -1,5 +1,5 @@
 {
-  "generated": "2026-09-17T19:29:26Z",
+  "generated": "2026-09-17T20:31:06Z",
   "max_bytes": 94371840,
   "tables": {
     "collars": [
@@ -36,8 +36,8 @@
       {
         "file": "mmp/collars/news__accesswire.parquet",
         "source": "news:accesswire",
-        "rows": 484,
-        "bytes": 34394
+        "rows": 547,
+        "bytes": 37884
       },
       {
         "file": "mmp/collars/news__businesswire.parquet",
@@ -48,20 +48,20 @@
       {
         "file": "mmp/collars/news__cision.parquet",
         "source": "news:cision",
-        "rows": 361,
-        "bytes": 34007
+        "rows": 396,
+        "bytes": 36153
       },
       {
         "file": "mmp/collars/news__globenewswire.parquet",
         "source": "news:globenewswire",
-        "rows": 722,
-        "bytes": 45341
+        "rows": 906,
+        "bytes": 53488
       },
       {
         "file": "mmp/collars/news__juniorminingnetwork.parquet",
         "source": "news:juniorminingnetwork",
         "rows": 312,
-        "bytes": 33296
+        "bytes": 33342
       },
       {
         "file": "mmp/collars/news__newsfilecorp.parquet",
@@ -72,8 +72,8 @@
       {
         "file": "mmp/collars/news__thenewswire.parquet",
         "source": "news:thenewswire",
-        "rows": 87,
-        "bytes": 19597
+        "rows": 110,
+        "bytes": 20452
       },
       {
         "file": "mmp/collars/sedar__ADY-2026-09-11-technical-report-ni-43-101-english-8e43.pdf.parquet",
@@ -122,8 +122,8 @@
       {
         "file": "mmp/assays/news__accesswire.parquet",
         "source": "news:accesswire",
-        "rows": 4711,
-        "bytes": 60759
+        "rows": 5660,
+        "bytes": 69723
       },
       {
         "file": "mmp/assays/news__businesswire.parquet",
@@ -134,14 +134,14 @@
       {
         "file": "mmp/assays/news__cision.parquet",
         "source": "news:cision",
-        "rows": 2446,
-        "bytes": 37459
+        "rows": 3072,
+        "bytes": 44543
       },
       {
         "file": "mmp/assays/news__globenewswire.parquet",
         "source": "news:globenewswire",
-        "rows": 4846,
-        "bytes": 65558
+        "rows": 5417,
+        "bytes": 75896
       },
       {
         "file": "mmp/assays/news__juniorminingnetwork.parquet",
@@ -158,8 +158,8 @@
       {
         "file": "mmp/assays/news__thenewswire.parquet",
         "source": "news:thenewswire",
-        "rows": 1089,
-        "bytes": 21551
+        "rows": 1450,
+        "bytes": 25074
       },
       {
         "file": "mmp/assays/sedar__blade-resources-inc-000109640_20260909T1306.parquet",
@@ -552,9 +552,9 @@
     ]
   },
   "totals": {
-    "collars": 416506,
+    "collars": 416811,
     "survey": 0,
-    "assays": 17408,
+    "assays": 19915,
     "lithology": 759931,
     "deposit_model": 291,
     "model_method": 18,
