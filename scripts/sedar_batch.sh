@@ -7,7 +7,7 @@
 set -u
 # Prefer the non-Downloads location (macOS blocks launchd from ~/Downloads);
 # fall back to the old path during/after the move.
-REPO="$HOME/closeology"; [ -d "$REPO" ] || REPO="$HOME/Downloads/closeology"
+REPO="$HOME/minemodelingpro"; [ -d "$REPO" ] || REPO="$HOME/Downloads/minemodelingpro"
 cd "$REPO" || exit 1
 export PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$HOME/Library/Python/3.9/bin:$PATH"
 LOG="$REPO/data/keep/sedar_batch.log"
@@ -51,7 +51,7 @@ fi
   python3 -m pip install --user --quiet playwright >/dev/null 2>&1 || true
   python3 -m playwright install chromium >/dev/null 2>&1 || true
   export GITHUB_TOKEN="$(git remote get-url origin | sed -E 's#https://([^@]+)@.*#\1#')"
-  export GITHUB_REPOSITORY="jaydeepdive/closeology"
+  export GITHUB_REPOSITORY="jaydeepdive/minemodelingpro"
   PYTHONPATH=src python3 -m minemodelingpro.sedar_collect --chrome --limit 4 --max-pages 150 --throttle 5 | tee "$RUN_OUT"
   # If the IP clamp is active (no downloads + throttle, or the collector said so),
   # pause batches for 20h so the IP can recover; otherwise clear any cooldown.
