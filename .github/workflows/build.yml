@@ -34,6 +34,8 @@ jobs:
         run: sudo apt-get update -q && sudo apt-get install -y -q ghostscript
       - name: Python deps
         run: pip install -r requirements.txt
+      - name: Sync ALL Closeology-collected data (drill bank, prices, facts, ...)
+        run: PYTHONPATH=src python -m minemodelingpro.closeology_sync || true
       - name: Sync drill-news bank (MineTerminalPro API, if configured)
         env:
           MTP_API_URL: ${{ secrets.MTP_API_URL }}
