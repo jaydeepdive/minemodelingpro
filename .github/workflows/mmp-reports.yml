@@ -6,7 +6,7 @@ name: mmp-43101-reports
 # Resumable: each run skips already-ingested reports and continues the backlog.
 on:
   schedule:
-    - cron: "0 6 * * 3"        # Wednesdays 06:00 UTC
+    - cron: "0 6 * * *"        # daily 06:00 UTC (SEDAR extraction)
   workflow_dispatch:
     inputs:
       max_seconds:
