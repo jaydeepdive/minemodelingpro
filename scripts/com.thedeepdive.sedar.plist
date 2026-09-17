@@ -8,7 +8,7 @@
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
-    <string>/Users/jordanlutz/closeology/scripts/sedar_batch.sh</string>
+    <string>/Users/jordanlutz/minemodelingpro/scripts/sedar_batch.sh</string>
   </array>
 
   <!-- Five batches a day, spaced ~3-4h so SEDAR's per-session download limit
@@ -26,8 +26,8 @@
   <false/>
 
   <key>StandardOutPath</key>
-  <string>/Users/jordanlutz/closeology/data/keep/sedar_launchd.out</string>
+  <string>/Users/jordanlutz/minemodelingpro/data/keep/sedar_launchd.out</string>
   <key>StandardErrorPath</key>
-  <string>/Users/jordanlutz/closeology/data/keep/sedar_launchd.err</string>
+  <string>/Users/jordanlutz/minemodelingpro/data/keep/sedar_launchd.err</string>
 </dict>
 </plist>
