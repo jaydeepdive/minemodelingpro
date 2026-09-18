@@ -13,7 +13,7 @@ Two sources, tried in order:
      (CI). Public repo needs no token; a private one needs CLOSEOLOGY_TOKEN.
 
 As a convenience, the drill-news bank (drillbank.sqlite) is also dropped into
-data/keep/ where export.py / model3d.py read it, UNLESS the MineTerminalPro API
+data/keep/ where export.py / model3d.py read it, UNLESS the MiningNewsTerminal API
 is configured (drill_sync owns it then).
 
 Run:  PYTHONPATH=src python -m minemodelingpro.closeology_sync
@@ -45,7 +45,7 @@ def _want(name):
 
 def _place_drillbank():
     """Make the mirrored drill bank visible where MMP reads it, unless the API owns it."""
-    if os.environ.get("MTP_API_URL") and os.environ.get("MTP_API_KEY"):
+    if os.environ.get("MNT_API_URL") and os.environ.get("MNT_API_KEY"):
         return
     src = os.path.join(DEST, "drillbank.sqlite")
     if os.path.exists(src):

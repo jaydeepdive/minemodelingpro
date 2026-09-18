@@ -5,7 +5,7 @@ MMP's economic + 3D modelling reads a drill-news bank at
 used to produce that file in the same repo. After the split MMP owns its own
 copy, populated at build time by one of two sources:
 
-  1. MineTerminalPro API  (target)  -- set MTP_API_URL + MTP_API_KEY
+  1. MiningNewsTerminal API  (target)  -- set MNT_API_URL + MNT_API_KEY
   2. A local copy         (interim) -- set CLOSEOLOGY_DRILLBANK=/path/to/drillbank.sqlite
 
 If neither is configured this is a no-op: export.py and model3d.py already skip
@@ -55,9 +55,9 @@ def _commit_swap(con, tmp, path):
     os.replace(tmp, path)
 
 
-# ---- source 1: MineTerminalPro API -------------------------------------------
+# ---- source 1: MiningNewsTerminal API -------------------------------------------
 def sync_from_api(url, key, since=None, timeout=45):
-    """Pull drill-result releases from the MineTerminalPro API into drillbank.sqlite.
+    """Pull drill-result releases from the MiningNewsTerminal API into drillbank.sqlite.
 
     Maps the response shape agreed in the integration brief:
       {results:[{id, published_at, company, ticker, exchange, title, source_url,
@@ -93,7 +93,7 @@ def sync_from_api(url, key, since=None, timeout=45):
                 " VALUES(?,?,?,?,?,?,?,?)",
                 (rid, rel.get("company"), rel.get("project"),
                  rel.get("jurisdiction") or rel.get("country"),
-                 rel.get("source") or "mineterminalpro",
+                 rel.get("source") or "miningnewsterminal",
                  rel.get("source_url") or rel.get("url"),
                  rel.get("published_at") or rel.get("published"),
                  rel.get("title")))
@@ -142,13 +142,13 @@ def sync_from_copy(src_path):
 
 
 def sync():
-    url, key = os.environ.get("MTP_API_URL"), os.environ.get("MTP_API_KEY")
+    url, key = os.environ.get("MNT_API_URL"), os.environ.get("MNT_API_KEY")
     if url and key:
-        return sync_from_api(url, key, since=os.environ.get("MTP_SINCE"))
+        return sync_from_api(url, key, since=os.environ.get("MNT_SINCE"))
     cp = os.environ.get("CLOSEOLOGY_DRILLBANK")
     if cp:
         return sync_from_copy(cp)
-    print("[drill_sync] no source configured (MTP_API_URL/KEY or CLOSEOLOGY_DRILLBANK); "
+    print("[drill_sync] no source configured (MNT_API_URL/KEY or CLOSEOLOGY_DRILLBANK); "
           "leaving drill bank as-is -- news layer will be skipped if absent")
     return {"noop": True}
 

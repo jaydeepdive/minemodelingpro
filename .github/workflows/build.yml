@@ -1,7 +1,7 @@
 name: mmp-daily-build
 
 # Builds the standalone MineModelingPro site: syncs the drill-news bank (from the
-# MineTerminalPro API when configured, else a no-op), rebuilds the working store
+# MiningNewsTerminal API when configured, else a no-op), rebuilds the working store
 # from committed shards, exports, renders the 3D model gallery + viewers, then
 # commits site/ and deploys to GitHub Pages.
 on:
@@ -36,10 +36,10 @@ jobs:
         run: pip install -r requirements.txt
       - name: Sync ALL Closeology-collected data (drill bank, prices, facts, ...)
         run: PYTHONPATH=src python -m minemodelingpro.closeology_sync || true
-      - name: Sync drill-news bank (MineTerminalPro API, if configured)
+      - name: Sync drill-news bank (MiningNewsTerminal API, if configured)
         env:
-          MTP_API_URL: ${{ secrets.MTP_API_URL }}
-          MTP_API_KEY: ${{ secrets.MTP_API_KEY }}
+          MNT_API_URL: ${{ secrets.MNT_API_URL }}
+          MNT_API_KEY: ${{ secrets.MNT_API_KEY }}
         run: PYTHONPATH=src python -m minemodelingpro.drill_sync || true
       - name: Rebuild working store from committed shards + export
         run: |
