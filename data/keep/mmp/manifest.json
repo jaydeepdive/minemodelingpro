@@ -1,5 +1,5 @@
 {
-  "generated": "2026-09-18T03:44:51Z",
+  "generated": "2026-09-18T10:02:40Z",
   "max_bytes": 94371840,
   "tables": {
     "collars": [
@@ -54,14 +54,14 @@
       {
         "file": "mmp/collars/news__globenewswire.parquet",
         "source": "news:globenewswire",
-        "rows": 911,
-        "bytes": 53571
+        "rows": 918,
+        "bytes": 53867
       },
       {
         "file": "mmp/collars/news__juniorminingnetwork.parquet",
         "source": "news:juniorminingnetwork",
-        "rows": 312,
-        "bytes": 33342
+        "rows": 538,
+        "bytes": 43999
       },
       {
         "file": "mmp/collars/news__miningnewsterminal.parquet",
@@ -146,14 +146,14 @@
       {
         "file": "mmp/assays/news__globenewswire.parquet",
         "source": "news:globenewswire",
-        "rows": 5537,
-        "bytes": 77195
+        "rows": 5544,
+        "bytes": 77269
       },
       {
         "file": "mmp/assays/news__juniorminingnetwork.parquet",
         "source": "news:juniorminingnetwork",
-        "rows": 2747,
-        "bytes": 43313
+        "rows": 3690,
+        "bytes": 55759
       },
       {
         "file": "mmp/assays/news__miningnewsterminal.parquet",
@@ -564,9 +564,9 @@
     ]
   },
   "totals": {
-    "collars": 418974,
+    "collars": 419207,
     "survey": 0,
-    "assays": 68484,
+    "assays": 69434,
     "lithology": 759931,
     "deposit_model": 291,
     "model_method": 18,
