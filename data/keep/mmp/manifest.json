@@ -1,5 +1,5 @@
 {
-  "generated": "2026-09-17T20:31:06Z",
+  "generated": "2026-09-18T03:44:51Z",
   "max_bytes": 94371840,
   "tables": {
     "collars": [
@@ -54,14 +54,20 @@
       {
         "file": "mmp/collars/news__globenewswire.parquet",
         "source": "news:globenewswire",
-        "rows": 906,
-        "bytes": 53488
+        "rows": 911,
+        "bytes": 53571
       },
       {
         "file": "mmp/collars/news__juniorminingnetwork.parquet",
         "source": "news:juniorminingnetwork",
         "rows": 312,
         "bytes": 33342
+      },
+      {
+        "file": "mmp/collars/news__miningnewsterminal.parquet",
+        "source": "news:miningnewsterminal",
+        "rows": 2158,
+        "bytes": 116822
       },
       {
         "file": "mmp/collars/news__newsfilecorp.parquet",
@@ -128,8 +134,8 @@
       {
         "file": "mmp/assays/news__businesswire.parquet",
         "source": "news:businesswire",
-        "rows": 825,
-        "bytes": 17340
+        "rows": 853,
+        "bytes": 17757
       },
       {
         "file": "mmp/assays/news__cision.parquet",
@@ -140,14 +146,20 @@
       {
         "file": "mmp/assays/news__globenewswire.parquet",
         "source": "news:globenewswire",
-        "rows": 5417,
-        "bytes": 75896
+        "rows": 5537,
+        "bytes": 77195
       },
       {
         "file": "mmp/assays/news__juniorminingnetwork.parquet",
         "source": "news:juniorminingnetwork",
         "rows": 2747,
         "bytes": 43313
+      },
+      {
+        "file": "mmp/assays/news__miningnewsterminal.parquet",
+        "source": "news:miningnewsterminal",
+        "rows": 48418,
+        "bytes": 362153
       },
       {
         "file": "mmp/assays/news__newsfilecorp.parquet",
@@ -158,8 +170,8 @@
       {
         "file": "mmp/assays/news__thenewswire.parquet",
         "source": "news:thenewswire",
-        "rows": 1450,
-        "bytes": 25074
+        "rows": 1453,
+        "bytes": 25112
       },
       {
         "file": "mmp/assays/sedar__blade-resources-inc-000109640_20260909T1306.parquet",
@@ -552,14 +564,14 @@
     ]
   },
   "totals": {
-    "collars": 416811,
+    "collars": 418974,
     "survey": 0,
-    "assays": 19915,
+    "assays": 68484,
     "lithology": 759931,
     "deposit_model": 291,
     "model_method": 18,
     "metallurgy": 15,
     "economics": 3
   },
-  "shard_count": 89
+  "shard_count": 91
 }
