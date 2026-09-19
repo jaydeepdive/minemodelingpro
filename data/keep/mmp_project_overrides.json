@@ -1,0 +1,18 @@
+{
+ "goliath-resources": {
+  "name": "Golddigger",
+  "company": "Goliath Resources"
+ },
+ "canstar-resources": {
+  "name": "Mary March",
+  "company": "Canstar Resources"
+ },
+ "faraday-copper": {
+  "name": "Copper Creek",
+  "company": "Faraday Copper"
+ },
+ "fireweed": {
+  "name": "Macpass",
+  "company": "Fireweed Metals"
+ }
+}

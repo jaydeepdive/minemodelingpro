@@ -4,6 +4,8 @@ curl_cffi
 pandas
 pyarrow
 numpy
+scipy
+pillow
 shapely
 pyproj
 tabulate

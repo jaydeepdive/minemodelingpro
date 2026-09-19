@@ -45,6 +45,12 @@ jobs:
         run: |
           PYTHONPATH=src python -m minemodelingpro.shards rebuild || true
           PYTHONPATH=src python -m minemodelingpro.export || true
+      - name: DEM tile cache (terrain)
+        uses: actions/cache@v4
+        with:
+          path: data/cache/dem
+          key: dem-${{ github.run_id }}
+          restore-keys: dem-
       - name: Render 3D model gallery + viewers
         run: PYTHONPATH=src python -c "from minemodelingpro import model3d; model3d.build_all('site')"
       - name: Root index = gallery

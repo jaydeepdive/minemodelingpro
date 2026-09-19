@@ -1,0 +1,563 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ChangShanHao CSH · 3D model · MineModelingPro</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bitter:wght@600;700;800&family=Roboto:wght@400;500;700&display=swap">
+<style>
+:root{
+  --red:#D71920; --ink:#111418; --mut:#5f6670; --line:#e3e6ea; --panel:#f5f7fa; --card:#ffffff;
+  --bg:#e9edf2; --chip:#fdecec; --shadow:0 6px 24px rgba(17,20,24,.12);
+  --serif:'Bitter',Georgia,serif; --sans:'Roboto',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --bar:52px;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);overflow:hidden;
+  -webkit-text-size-adjust:100%;touch-action:none}
+#scene{position:fixed;left:0;right:0;bottom:0;top:var(--bar);z-index:0}
+#scene canvas{display:block;width:100%;height:100%;touch-action:none}
+/* ---------- top bar ---------- */
+#bar{position:fixed;top:0;left:0;right:0;height:var(--bar);z-index:30;background:#fff;border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:12px;padding:0 14px}
+#bar a.back{font-size:13px;font-weight:500;color:var(--red);text-decoration:none;white-space:nowrap}
+#bar .ttl{min-width:0;flex:1;display:flex;flex-direction:column;line-height:1.15}
+#bar .ttl b{font-family:var(--serif);font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#bar .ttl span{font-size:11.5px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#bar .brand{font-family:var(--serif);font-weight:800;font-size:13px;color:var(--ink);text-decoration:none;white-space:nowrap}
+#bar .brand em{color:var(--red);font-style:normal}
+/* ---------- panels ---------- */
+.panel{position:fixed;z-index:20;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);
+  display:flex;flex-direction:column;max-height:calc(100vh - var(--bar) - 28px);overflow:hidden}
+.phead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px 10px 14px;cursor:pointer;
+  user-select:none;border-bottom:1px solid var(--line)}
+.phead h2{font-family:var(--serif);font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--ink);margin:0}
+.pbtn{border:1px solid var(--line);background:var(--panel);border-radius:7px;width:28px;height:26px;display:grid;place-items:center;
+  cursor:pointer;color:var(--mut);font-size:15px;line-height:1;padding:0;flex:none}
+.pbtn:hover{border-color:var(--red);color:var(--red)}
+.pbody{padding:12px 14px 14px;overflow-y:auto;overscroll-behavior:contain}
+.panel.min .pbody{display:none}
+.panel.min .phead{border-bottom:0}
+#pModel{top:calc(var(--bar) + 12px);left:12px;width:306px}
+#pGrade{top:calc(var(--bar) + 12px);right:12px;width:318px}
+#pLegend{bottom:14px;left:330px;width:236px}
+@media (max-width:1180px) and (min-width:761px){#pLegend{left:12px}#pModel{max-height:calc(100vh - var(--bar) - 300px)}}
+/* ---------- controls ---------- */
+.sec{border-top:1px solid var(--line);padding-top:11px;margin-top:11px}
+.sec:first-child{border-top:0;padding-top:0;margin-top:0}
+.lab{font-family:var(--serif);font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);margin:0 0 7px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+.stat b{display:block;font-family:var(--serif);font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
+.stat span{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:4px 11px;font-size:12.5px;font-weight:700;cursor:pointer;color:var(--ink)}
+.chip.on{background:var(--red);border-color:var(--red);color:#fff}
+.tg{display:flex;align-items:center;gap:9px;padding:4px 0;cursor:pointer;user-select:none;font-size:13.5px}
+.tg input{appearance:none;-webkit-appearance:none;width:32px;height:18px;border-radius:10px;background:#cfd6e0;position:relative;cursor:pointer;
+  transition:background .15s;flex:none;margin:0}
+.tg input:checked{background:var(--red)}
+.tg input::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:transform .15s;
+  box-shadow:0 1px 2px rgba(0,0,0,.25)}
+.tg input:checked::after{transform:translateX(14px)}
+.tg input:disabled{opacity:.4}
+.tg small{color:var(--mut);font-size:11px;margin-left:auto}
+.rng{margin:6px 0 2px}
+.rng .row{display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;margin-bottom:5px}
+.rng .v{font-weight:700;color:var(--red);font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;-webkit-appearance:none;appearance:none;height:5px;border-radius:3px;background:#d7dde5;outline:none;margin:6px 0}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:#fff;border:2px solid var(--red);
+  cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.3)}
+input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:#fff;border:2px solid var(--red);cursor:pointer}
+.btns{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.btn{padding:7px 4px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font-size:12px;font-weight:500;border-radius:8px;cursor:pointer;
+  font-family:var(--sans)}
+.btn:hover{background:var(--chip);border-color:var(--red);color:var(--red)}
+.find{display:flex;gap:6px}
+.find input{flex:1;min-width:0;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:13px;font-family:var(--sans)}
+.hint{font-size:11.5px;color:var(--mut);line-height:1.45;margin:8px 0 0}
+.kv{display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:13px;color:var(--mut)}
+.kv b{color:var(--ink);font-weight:700;font-variant-numeric:tabular-nums;text-align:right}
+.big{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin:4px 0 2px}
+.big div{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:7px 8px}
+.big b{display:block;font-family:var(--serif);font-size:15.5px;font-weight:700;font-variant-numeric:tabular-nums}
+.big span{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut)}
+.big div.hl{background:#fff5f5;border-color:#f3c9cb}
+.cmp{margin-top:6px}
+.cmpbar{height:10px;border-radius:5px;background:#eef1f5;position:relative;overflow:hidden;margin:3px 0 7px}
+.cmpbar i{position:absolute;left:0;top:0;bottom:0;background:var(--red);border-radius:5px}
+.cmpbar.pub i{background:#274b8f}
+.note{font-size:11.5px;color:var(--mut);line-height:1.5;margin:6px 0 0}
+.res{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:6px;font-size:12.5px}
+.res a{color:var(--red);text-decoration:none;font-size:11.5px}
+.res table{width:100%;border-collapse:collapse;margin-top:4px;font-variant-numeric:tabular-nums}
+.res td{padding:2px 0;font-size:12px}
+.res td:nth-child(n+2){text-align:right}
+.src{display:flex;flex-direction:column;gap:6px;max-height:190px;overflow-y:auto}
+.src a{display:block;font-size:12px;line-height:1.35;color:var(--ink);text-decoration:none;padding-left:12px;position:relative}
+.src a::before{content:"";position:absolute;left:0;top:6px;width:6px;height:6px;border-radius:50%;background:var(--red)}
+.src a.rep::before{background:#274b8f;border-radius:1px}
+.src a:hover{color:var(--red)}
+.src a em{font-style:normal;color:var(--mut);font-size:10.5px}
+svg.gt{width:100%;height:110px;display:block;margin-top:4px}
+/* legend */
+.lg{display:flex;flex-direction:column;gap:3px}
+.lg div{display:flex;align-items:center;gap:8px;font-size:12px;font-variant-numeric:tabular-nums}
+.lg i{width:22px;height:9px;border-radius:3px;flex:none}
+.lg i.lo{background:#c3cad4;height:3px}
+/* overlays */
+#tip{position:fixed;z-index:40;pointer-events:none;background:#fff;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:12px;
+  display:none;box-shadow:0 8px 24px rgba(17,20,24,.18);line-height:1.5;font-variant-numeric:tabular-nums;max-width:260px}
+#tip .g{font-weight:700}
+#hud2{position:fixed;z-index:15;bottom:14px;right:12px;display:flex;align-items:flex-end;gap:10px;pointer-events:none}
+#scalebar{display:flex;align-items:center;gap:8px;font-size:11px;background:rgba(255,255,255,.9);border:1px solid var(--line);border-radius:8px;padding:4px 9px}
+#scalebar .sb{height:8px;border-left:2px solid var(--ink);border-right:2px solid var(--ink);display:flex;align-items:center;width:90px}
+#scalebar .sb span{display:block;height:2px;width:100%;background:var(--ink)}
+#compass{width:46px;height:46px;border-radius:50%;background:rgba(255,255,255,.9);border:1px solid var(--line);display:grid;place-items:center}
+#compass svg{width:34px;height:34px;transition:none}
+#pivot{position:fixed;z-index:14;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;border:2px solid var(--red);background:rgba(215,25,32,.18);
+  pointer-events:none;opacity:0;transition:opacity .4s}
+#toast{position:fixed;z-index:35;left:50%;top:calc(var(--bar) + 12px);transform:translateX(-50%);background:rgba(17,20,24,.86);color:#fff;
+  font-size:12.5px;padding:7px 13px;border-radius:20px;opacity:0;transition:opacity .4s;pointer-events:none;white-space:nowrap}
+#labels{position:fixed;inset:0;top:var(--bar);pointer-events:none;z-index:12;overflow:hidden}
+#labels span{position:absolute;font-size:10.5px;font-weight:500;color:#1d2530;background:rgba(255,255,255,.78);padding:0 4px;border-radius:3px;
+  transform:translate(6px,-50%);white-space:nowrap}
+#mtools{display:none}
+@media (max-width:760px){
+  :root{--bar:48px}
+  #bar .brand{display:none}
+  #bar .ttl b{font-size:14.5px}
+  .panel{left:8px!important;right:8px!important;width:auto!important;top:auto!important;bottom:62px!important;max-height:58vh;display:none;
+    border-radius:14px}
+  .panel.open{display:flex}
+  .panel.min .pbody{display:block}
+  .phead{cursor:default}
+  #mtools{display:flex;position:fixed;z-index:25;bottom:10px;left:8px;right:8px;gap:6px;background:#fff;border:1px solid var(--line);
+    border-radius:14px;box-shadow:var(--shadow);padding:5px}
+  #mtools button{flex:1;border:0;background:transparent;font-family:var(--sans);font-size:12.5px;font-weight:700;color:var(--ink);padding:9px 4px;border-radius:10px}
+  #mtools button.on{background:var(--chip);color:var(--red)}
+  #hud2{bottom:66px;right:8px}
+  #compass{width:40px;height:40px}
+  #toast{white-space:normal;text-align:center;max-width:90vw}
+}
+</style>
+</head>
+<body>
+<div id="bar">
+  <a class="back" href="../models.html">← Models</a>
+  <div class="ttl"><b id="t-name">ChangShanHao CSH</b><span id="t-sub"></span></div>
+  <a class="brand" href="../models.html">Mine<em>Modeling</em>Pro</a>
+</div>
+<div id="scene"></div>
+<div id="labels"></div>
+<div id="pivot"></div>
+<div id="toast"></div>
+
+<section id="pModel" class="panel">
+  <div class="phead" data-p="pModel"><h2>Model</h2><button class="pbtn" aria-label="Minimise">–</button></div>
+  <div class="pbody">
+    <div class="sec">
+      <div class="stats">
+        <div class="stat"><b id="s-holes">–</b><span>Holes</span></div>
+        <div class="stat"><b id="s-int">–</b><span>Intervals</span></div>
+        <div class="stat"><b id="s-src">–</b><span>Sources</span></div>
+      </div>
+    </div>
+    <div class="sec" id="elsec"><p class="lab">Colour by</p><div class="chips" id="els"></div></div>
+    <div class="sec">
+      <p class="lab">Layers</p>
+      <label class="tg"><input type="checkbox" id="L-int" checked>Drill intervals by grade</label>
+      <label class="tg"><input type="checkbox" id="L-trace" checked>Drill traces &amp; collars</label>
+      <label class="tg"><input type="checkbox" id="L-blocks" checked>Block model<small id="blk-note"></small></label>
+      <label class="tg"><input type="checkbox" id="L-terrain">Terrain<small id="ter-note"></small></label>
+      <label class="tg"><input type="checkbox" id="L-labels">Hole labels</label>
+      <div class="rng" id="ter-op-row"><div class="row"><span>Terrain opacity</span><span class="v" id="ter-op-v">45%</span></div>
+        <input type="range" id="ter-op" min="10" max="100" value="45"></div>
+      <div class="rng"><div class="row"><span>Block opacity</span><span class="v" id="blk-op-v">35%</span></div>
+        <input type="range" id="blk-op" min="10" max="100" value="35"></div>
+    </div>
+    <div class="sec">
+      <p class="lab">View</p>
+      <div class="btns">
+        <button class="btn" id="v-3d">3D</button><button class="btn" id="v-plan">Plan</button>
+        <button class="btn" id="v-ns" title="Section looking east">Sec E</button><button class="btn" id="v-ew" title="Section looking north">Sec N</button>
+      </div>
+      <div class="find" style="margin-top:8px"><input id="find" list="holelist" placeholder="Go to hole…" autocomplete="off"><button class="btn" id="find-go" style="width:52px">Go</button></div>
+      <datalist id="holelist"></datalist>
+      <p class="hint" id="navhint">Drag to orbit · right-drag or shift-drag to pan · scroll to zoom toward the cursor · <b>double-click anything to pivot around it</b>.</p>
+    </div>
+  </div>
+</section>
+
+<section id="pGrade" class="panel">
+  <div class="phead" data-p="pGrade"><h2>Grade, tonnes &amp; metal</h2><button class="pbtn" aria-label="Minimise">–</button></div>
+  <div class="pbody">
+    <div class="sec" id="gtsec">
+      <div class="rng"><div class="row"><span>Cut-off grade</span><span class="v"><span id="cut-v">–</span></span></div>
+        <input type="range" id="cut" min="0" max="10" value="0" step="1"></div>
+      <p class="lab" style="margin-top:6px">MMP block model above cut-off</p>
+      <div class="big">
+        <div><b id="g-t">–</b><span>Tonnes</span></div>
+        <div><b id="g-g">–</b><span>Grade</span></div>
+        <div class="hl"><b id="g-c">–</b><span id="g-cu">Contained</span></div>
+      </div>
+      <svg class="gt" id="gtchart" viewBox="0 0 300 110" preserveAspectRatio="none"></svg>
+      <div id="cmp"></div>
+    </div>
+    <div class="sec" id="nogt" hidden><p class="note" id="nogt-msg"></p></div>
+    <div class="sec" id="ressec"><p class="lab">Published resource</p><div id="res"></div></div>
+    <div class="sec"><p class="lab">Block model parameters</p><div id="params"></div></div>
+    <div class="sec"><p class="lab">Data sources <span id="src-n" style="font-weight:400"></span></p><div class="src" id="srclist"></div></div>
+    <div class="sec"><p class="note">Grades are inverse-distance estimates for <b>visualisation only</b> — not a mineral resource estimate. Verify every figure against the source filings.</p></div>
+  </div>
+</section>
+
+<section id="pLegend" class="panel">
+  <div class="phead" data-p="pLegend"><h2 id="lg-h">Grade</h2><button class="pbtn" aria-label="Minimise">–</button></div>
+  <div class="pbody"><div class="lg" id="legend"></div></div>
+</section>
+
+<div id="mtools">
+  <button data-open="pModel">Model</button><button data-open="pGrade">Grade &amp; metal</button><button data-open="pLegend">Legend</button>
+</div>
+<div id="hud2">
+  <div id="scalebar"><div class="sb"><span></span></div><b id="sb-l"></b></div>
+  <div id="compass" title="North"><svg viewBox="-20 -20 40 40"><g id="needle"><path d="M0,-16 L5,2 L0,-2 L-5,2Z" fill="#D71920"/><path d="M0,16 L5,2 L0,-2 L-5,2Z" fill="#9aa3ae"/><text x="0" y="-9" font-size="0" fill="#fff">N</text></g></svg></div>
+</div>
+<div id="tip"></div>
+
+<script id="model" type="application/json">{"slug":"changshanhao-csh","project":"ChangShanHao CSH","company":null,"region":"China","kinds":["report"],"updated":"2026-09-19","generated":"2026-09-19T16:15:13Z","frame":{"kind":"local","lat0":null,"lon0":null,"grid":"ni43101:b7eccddec19ae8e0"},"holes":[["C100000200910",-2043.54,-1913.56,0.0,0.0,-90.0,0.0],["DDH8000_3",-1316.33,-949.12,0.0,0.0,-90.0,0.0],["DDH8200_3",-1166.29,-797.48,0.0,0.0,-90.0,0.0],["DDH8600_3",-782.57,-673.19,0.0,0.0,-90.0,0.0],["DDH8800_3",-422.78,-960.64,0.0,0.0,-90.0,0.0],["DDH9000_1",-430.41,-483.77,0.0,0.0,-90.0,0.0],["DDH9100_1",-286.48,-555.32,0.0,0.0,-90.0,0.0],["DDH9200_1",-306.2,-278.17,0.0,0.0,-90.0,0.0],["DDH9300_3",-6.48,-672.96,0.0,0.0,-90.0,0.0],["DDH9300_4",-19.26,-646.7,0.0,0.0,-90.0,0.0],["DDH9300_5",-274.54,-112.21,0.0,0.0,-90.0,0.0],["DDH9300_6",-270.54,-92.58,0.0,0.0,-90.0,0.0],["DDH9400_3",98.71,-660.94,0.0,0.0,-90.0,0.0],["DDH9400_4",89.68,-642.49,0.0,0.0,-90.0,0.0],["DDH9500_3",-77.43,-60.6,0.0,0.0,-90.0,0.0],["DDH9500_4",-206.72,209.32,0.0,0.0,-90.0,0.0],["DDH9500_5",-42.75,-137.64,0.0,0.0,-90.0,0.0],["DDH9500_6",-49.53,-119.4,0.0,0.0,-90.0,0.0],["DDH9500_7",-58.87,-99.82,0.0,0.0,-90.0,0.0],["DDH9550_1",-13.73,-78.71,0.0,0.0,-90.0,0.0],["DDH9550_2",-22.43,-60.51,0.0,0.0,-90.0,0.0],["DDH9550_3",-31.24,-41.95,0.0,0.0,-90.0,0.0],["DDH9600_5",-123.29,266.64,0.0,0.0,-90.0,0.0],["DDH9600_6",-133.17,287.26,0.0,0.0,-90.0,0.0],["DDH9600_8",0.0,8.87,0.0,0.0,-90.0,0.0],["DDH9650_1",76.66,-35.78,0.0,0.0,-90.0,0.0],["DDH9650_2",68.83,-19.15,0.0,0.0,-90.0,0.0],["DDH9650_3",60.08,0.0,0.0,0.0,-90.0,0.0],["DDH9700_5",6.68,226.3,0.0,0.0,-90.0,0.0],["DDH9700_6",-73.19,394.01,0.0,0.0,-90.0,0.0],["DDH9700_7",110.38,10.31,0.0,0.0,-90.0,0.0],["DDH9700_8",79.99,73.4,0.0,0.0,-90.0,0.0],["DDH9700_9",70.99,92.27,0.0,0.0,-90.0,0.0],["DDH9750_1",147.33,48.48,0.0,0.0,-90.0,0.0],["DDH9750_2",141.29,61.26,0.0,0.0,-90.0,0.0],["DDH9750_3",132.84,78.9,0.0,0.0,-90.0,0.0],["DDH9800_5",13.63,444.17,0.0,0.0,-90.0,1099.4],["DDH9800_6",-15.8,505.97,0.0,0.0,-90.0,0.0],["DDH9800_7",172.83,111.12,0.0,0.0,-90.0,0.0],["DDH9800_8",152.77,152.8,0.0,0.0,-90.0,0.0],["DDH9850_1",210.76,147.59,0.0,0.0,-90.0,0.0],["DDH9850_2",202.21,165.81,0.0,0.0,-90.0,0.0],["DDH9850_3",199.51,176.45,0.0,0.0,-90.0,0.0],["DDH9900_5",66.61,565.51,0.0,0.0,-90.0,0.0],["DDH9900_6",265.47,148.86,0.0,0.0,-90.0,0.0],["DDH9900_7",256.0,167.75,0.0,0.0,-90.0,0.0],["DDH10100_5",318.82,502.37,0.0,0.0,-90.0,0.0],["DDH10300_6",491.12,605.38,0.0,0.0,-90.0,0.0],["ESHK03",99.55,-206.74,0.0,0.0,-90.0,0.0]],"elements":{"Au":{"unit":"g/t","bins":[0.1,0.3,0.5,1,2,5,10],"colors":["#3b4cc0","#2c9fd0","#9bcf3c","#f2cf1d","#f39a1f","#b8123a","#7a0b6e"],"segments":[[36,1051.4,1053.4,0.773],[36,1053.4,1055.2,55.7]],"n_holes":1,"stats":{"max":55.7,"mean":28.237,"p50":28.237}}},"primary":"Au","terrain":null,"sources":[{"kind":"NI 43-101 technical report","id":"ni43101:b7eccddec19ae8e0","title":"NI 43-101 technical report \u2014 ChangShanHao CSH, 2026-09","url":"https://minedocs.com/24/ChangShanHao_CSH_TR_08192022.pdf","archive":"https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ni43101_b7eccddec19ae8e0.pdf","date":"2026-09-19","collars":49,"intervals":10,"has_resource":true}],"resources":[{"source":"ni43101:b7eccddec19ae8e0","date":"2026-09-19","url":"https://minedocs.com/24/ChangShanHao_CSH_TR_08192022.pdf","title":"NI 43-101 technical report \u2014 ChangShanHao CSH, 2026-09","page":76,"contained_unit":"oz","categories":{"Measured":{"tonnes":178050000,"grade":0.62,"contained":3560000},"Indicated":{"tonnes":89850000,"grade":0.58,"contained":1670000},"Inferred":{"tonnes":62090000,"grade":0.49,"contained":990000}},"year":2022,"element":"Au","tonnes":329990000,"contained":6220000,"mi_tonnes":267900000,"mi_contained":5230000,"inf_tonnes":62090000,"inf_contained":990000}],"counts":{"holes":49,"assayed_holes":1,"intervals":2,"blocks":0,"reports":1,"releases":0}}</script>
+<script src="three.min.js"></script>
+<script>
+"use strict";
+const M=JSON.parse(document.getElementById("model").textContent);
+const $=id=>document.getElementById(id);
+const MOBILE=matchMedia("(max-width:760px)").matches;
+const store={get(k,d){try{const v=localStorage.getItem("mmp:"+k);return v===null?d:JSON.parse(v);}catch(e){return d;}},
+             set(k,v){try{localStorage.setItem("mmp:"+k,JSON.stringify(v));}catch(e){}}};
+function b64(s,T){const b=atob(s),u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return new T(u.buffer);}
+function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+function fmtN(v,d){return v==null?"–":Number(v).toLocaleString(undefined,{maximumFractionDigits:d==null?0:d,minimumFractionDigits:d==null?0:d});}
+function fmtT(t){if(!t)return"0 t";return t>=1e9?(t/1e9).toFixed(2)+" Bt":t>=1e6?(t/1e6).toFixed(t>=1e8?0:2)+" Mt":t>=1e3?(t/1e3).toFixed(0)+" kt":Math.round(t)+" t";}
+function fmtC(v,u){if(v==null)return"–";if(u==="oz"){return v>=1e6?(v/1e6).toFixed(2)+" Moz":v>=1e3?(v/1e3).toFixed(v>=1e5?0:1)+" koz":Math.round(v)+" oz";}
+  if(u==="lb"){return v>=1e9?(v/1e9).toFixed(2)+" Blb":v>=1e6?(v/1e6).toFixed(v>=1e8?0:1)+" Mlb":v>=1e3?(v/1e3).toFixed(0)+" klb":Math.round(v)+" lb";}
+  return v>=1e6?(v/1e6).toFixed(2)+" Mt":v>=1e3?(v/1e3).toFixed(1)+" kt":Math.round(v)+" t";}
+function fmtG(g,u){if(g==null)return"–";const d=g>=100?0:g>=10?1:g>=1?2:3;return g.toFixed(d)+" "+u;}
+function toast(msg,ms){const t=$("toast");t.textContent=msg;t.style.opacity=1;clearTimeout(toast._t);toast._t=setTimeout(()=>t.style.opacity=0,ms||2600);}
+
+/* ---------------- header ---------------- */
+{const bits=[];if(M.company)bits.push(M.company);if(M.region)bits.push(M.region);
+ const k=(M.kinds||[]);bits.push(k.includes("report")&&k.includes("news")?"43-101 + news":k.includes("report")?"43-101 report data":"news releases");
+ if(M.updated)bits.push("to "+String(M.updated).slice(0,10));$("t-sub").textContent=bits.join(" · ");}
+$("s-holes").textContent=fmtN(M.counts.holes);$("s-int").textContent=fmtN(M.counts.intervals);
+$("s-src").textContent=fmtN((M.sources||[]).length);
+
+/* ---------------- panels (minimise / mobile sheets) ---------------- */
+document.querySelectorAll(".phead").forEach(h=>{const p=h.parentElement,id=p.id;
+  if(!MOBILE&&store.get("min:"+id,false))p.classList.add("min");
+  const upd=()=>{h.querySelector(".pbtn").textContent=MOBILE?"×":(p.classList.contains("min")?"+":"–");};upd();
+  h.addEventListener("click",e=>{if(MOBILE){p.classList.remove("open");document.querySelectorAll("#mtools button").forEach(b=>b.classList.remove("on"));return;}
+    p.classList.toggle("min");store.set("min:"+id,p.classList.contains("min"));upd();});});
+document.querySelectorAll("#mtools button").forEach(b=>b.addEventListener("click",()=>{const id=b.dataset.open,p=$(id),was=p.classList.contains("open");
+  document.querySelectorAll(".panel").forEach(x=>x.classList.remove("open"));document.querySelectorAll("#mtools button").forEach(x=>x.classList.remove("on"));
+  if(!was){p.classList.add("open");b.classList.add("on");}}));
+if(MOBILE)$("navhint").textContent="One finger to orbit · two fingers to pan and pinch-zoom · double-tap anything to pivot around it.";
+
+/* ---------------- three.js scene ---------------- */
+const host=$("scene");
+const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:"high-performance"});
+renderer.setPixelRatio(Math.min(devicePixelRatio,MOBILE?1.5:2));
+host.appendChild(renderer.domElement);
+const scene=new THREE.Scene();scene.background=new THREE.Color(0xe9edf2);
+const camera=new THREE.PerspectiveCamera(45,1,1,1e6);
+scene.add(new THREE.HemisphereLight(0xffffff,0xb9c2cc,0.75));
+const sun=new THREE.DirectionalLight(0xffffff,0.62);sun.position.set(-0.55,0.9,-0.35);scene.add(sun);
+function W(){return host.clientWidth;} function Hh(){return host.clientHeight;}
+function resize(){renderer.setSize(W(),Hh(),false);renderer.domElement.style.width="100%";renderer.domElement.style.height="100%";
+  camera.aspect=W()/Hh();camera.updateProjectionMatrix();for(const m of fatMats)m.uniforms.uRes.value.set(W(),Hh());}
+
+/* model frame: x east, y north, z masl  ->  world X=x, Y=z-zRef, Z=-y */
+const HO=M.holes.map(r=>({id:r[0],x:r[1],y:r[2],z:r[3],az:r[4],dip:r[5],depth:r[6]}));
+const zs=HO.map(h=>h.z).sort((a,b)=>a-b);const zRef=zs.length?zs[zs.length>>1]:0;
+function V(x,y,z){return new THREE.Vector3(x,z-zRef,-y);}
+HO.forEach(h=>{const a=h.az*Math.PI/180,d=h.dip*Math.PI/180;h.d=[Math.cos(d)*Math.sin(a),Math.cos(d)*Math.cos(a),Math.sin(d)];});
+function at(h,m){return V(h.x+h.d[0]*m,h.y+h.d[1]*m,h.z+h.d[2]*m);}
+
+/* ---- fat (screen-space width) line segments ---- */
+const fatMats=[];
+function fatMaterial(){const m=new THREE.ShaderMaterial({side:THREE.DoubleSide,uniforms:{uRes:{value:new THREE.Vector2(W(),Hh())},uScale:{value:1}},
+  vertexShader:`uniform vec2 uRes;uniform float uScale;attribute vec3 aA;attribute vec3 aB;attribute float aSide;attribute float aEnd;attribute float aW;attribute vec3 aCol;varying vec3 vC;
+  void main(){vec4 ca=projectionMatrix*modelViewMatrix*vec4(aA,1.0);vec4 cb=projectionMatrix*modelViewMatrix*vec4(aB,1.0);
+   if(ca.w<=0.0||cb.w<=0.0){gl_Position=vec4(2.0,2.0,2.0,1.0);return;}
+   vec2 sa=ca.xy/ca.w*uRes,sb=cb.xy/cb.w*uRes;vec2 dir=sb-sa;float L=length(dir);dir=L>1e-4?dir/L:vec2(1.0,0.0);
+   vec2 n=vec2(-dir.y,dir.x);vec4 c=mix(ca,cb,aEnd);float w=aW*uScale;
+   c.xy+=n*aSide*w/uRes*c.w;c.xy+=dir*(aEnd*2.0-1.0)*w*0.35/uRes*c.w;gl_Position=c;vC=aCol;}`,
+  fragmentShader:`varying vec3 vC;void main(){gl_FragColor=vec4(vC,1.0);}`});fatMats.push(m);return m;}
+function fatSegments(segs){ // segs: [{a:V3,b:V3,w:px,c:THREE.Color}]
+  const n=segs.length,A=new Float32Array(n*12),B=new Float32Array(n*12),S=new Float32Array(n*4),E=new Float32Array(n*4),Wd=new Float32Array(n*4),C=new Float32Array(n*12),I=new Uint32Array(n*6);
+  segs.forEach((s,i)=>{for(let k=0;k<4;k++){const o=(i*4+k)*3;A[o]=s.a.x;A[o+1]=s.a.y;A[o+2]=s.a.z;B[o]=s.b.x;B[o+1]=s.b.y;B[o+2]=s.b.z;
+      C[o]=s.c.r;C[o+1]=s.c.g;C[o+2]=s.c.b;S[i*4+k]=(k&1)?1:-1;E[i*4+k]=k>>1;Wd[i*4+k]=s.w;}
+    const v=i*4;I.set([v,v+1,v+2,v+1,v+3,v+2],i*6);});
+  const g=new THREE.BufferGeometry();g.setAttribute("position",new THREE.BufferAttribute(A,3));g.setAttribute("aA",new THREE.BufferAttribute(A,3));
+  g.setAttribute("aB",new THREE.BufferAttribute(B,3));g.setAttribute("aSide",new THREE.BufferAttribute(S,1));g.setAttribute("aEnd",new THREE.BufferAttribute(E,1));
+  g.setAttribute("aW",new THREE.BufferAttribute(Wd,1));g.setAttribute("aCol",new THREE.BufferAttribute(C,3));g.setIndex(new THREE.BufferAttribute(I,1));
+  g.boundingSphere=new THREE.Sphere(new THREE.Vector3(),1e9);
+  const mesh=new THREE.Mesh(g,fatMaterial());mesh.frustumCulled=false;return mesh;}
+
+/* ---- drill traces + collars ---- */
+const traceGroup=new THREE.Group();scene.add(traceGroup);
+{const segs=[],grey=new THREE.Color(0x7d8794);HO.forEach(h=>{if(h.depth>0)segs.push({a:at(h,0),b:at(h,h.depth),w:1.4,c:grey});});
+ if(segs.length)traceGroup.add(fatSegments(segs));
+ const cg=new THREE.BufferGeometry(),cv=[];HO.forEach(h=>{const p=at(h,0);cv.push(p.x,p.y,p.z);});
+ cg.setAttribute("position",new THREE.Float32BufferAttribute(cv,3));
+ const dot=document.createElement("canvas");dot.width=dot.height=32;{const x=dot.getContext("2d");x.beginPath();x.arc(16,16,12,0,Math.PI*2);x.fillStyle="#1f2833";x.fill();x.lineWidth=5;x.strokeStyle="#ffffff";x.stroke();}
+ traceGroup.add(new THREE.Points(cg,new THREE.PointsMaterial({map:new THREE.CanvasTexture(dot),size:MOBILE?7:8,sizeAttenuation:false,transparent:true,alphaTest:0.3,depthWrite:false})));}
+
+/* ---- per-element state ---- */
+const ELS=Object.keys(M.elements);let EL=store.get("el:"+M.slug,M.primary);if(!M.elements[EL])EL=M.primary;
+let intMesh=null,blockMesh=null,IV=[],curCut=0;
+function binIdx(E,g){let k=-1;for(let i=0;i<E.bins.length;i++)if(g>=E.bins[i])k=i;return k;}
+function binCol(E,k){return new THREE.Color(k<0?"#c3cad4":E.colors[k]);}
+function buildIntervals(){if(intMesh){scene.remove(intMesh);intMesh.geometry.dispose();}
+  const E=M.elements[EL];IV=[];const segs=[];
+  E.segments.forEach(s=>{const h=HO[s[0]];if(!h)return;const k=binIdx(E,s[3]);const a=at(h,s[1]),b=at(h,s[2]);
+    IV.push({h,f:s[1],t:s[2],g:s[3],a,b,k});segs.push({a,b,w:k<0?2.6:(5.5+k*0.75),c:binCol(E,k)});});
+  intMesh=segs.length?fatSegments(segs):new THREE.Group();intMesh.visible=$("L-int").checked;scene.add(intMesh);}
+/* ---- block model ---- */
+let BK=null;
+function buildBlocks(){if(blockMesh){scene.remove(blockMesh);blockMesh.geometry.dispose();blockMesh=null;}
+  const E=M.elements[EL],B=E.blocks;BK=null;
+  $("L-blocks").disabled=!B;$("blk-note").textContent=B?(fmtN(B.n_total)+" blocks"):"too few holes";
+  if(!B)return;const ijk=b64(B.ijk,Uint16Array),g=b64(B.g,Float32Array),n=B.n,[bx,by,bz]=B.size,o=B.origin;
+  const pos=new Float32Array(n*3);for(let i=0;i<n;i++){const p=V(o[0]+(ijk[i*3]+.5)*bx,o[1]+(ijk[i*3+1]+.5)*by,o[2]+(ijk[i*3+2]+.5)*bz);pos[i*3]=p.x;pos[i*3+1]=p.y;pos[i*3+2]=p.z;}
+  BK={n,g,pos};
+  const geo=new THREE.BoxGeometry(bx*0.97,bz*0.97,by*0.97);
+  blockMesh=new THREE.InstancedMesh(geo,new THREE.MeshLambertMaterial({transparent:true,opacity:+$("blk-op").value/100,depthWrite:false}),n);
+  blockMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);blockMesh.visible=$("L-blocks").checked;scene.add(blockMesh);applyCut();}
+const _m=new THREE.Matrix4(),_c=new THREE.Color();
+function applyCut(){if(!BK||!blockMesh)return;const E=M.elements[EL];let j=0;
+  for(let i=0;i<BK.n;i++){if(BK.g[i]<curCut)continue;_m.makeTranslation(BK.pos[i*3],BK.pos[i*3+1],BK.pos[i*3+2]);blockMesh.setMatrixAt(j,_m);
+    _c.set(E.colors[Math.max(0,binIdx(E,BK.g[i]))]);blockMesh.setColorAt(j,_c);j++;}
+  blockMesh.count=j;blockMesh.instanceMatrix.needsUpdate=true;if(blockMesh.instanceColor)blockMesh.instanceColor.needsUpdate=true;}
+
+/* ---- terrain ---- */
+let terrain=null;
+(function(){const T=M.terrain;if(!T){$("L-terrain").disabled=true;$("ter-note").textContent="n/a";$("ter-op-row").style.display="none";return;}
+  const z=b64(T.z,Float32Array),nx=T.nx,ny=T.ny;const pos=new Float32Array(nx*ny*3),el=new Float32Array(nx*ny);let lo=1e9,hi=-1e9;
+  for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){const k=j*nx+i,p=V(T.x0+i*T.dx,T.y0+j*T.dy,z[k]);pos[k*3]=p.x;pos[k*3+1]=p.y;pos[k*3+2]=p.z;el[k]=z[k];lo=Math.min(lo,z[k]);hi=Math.max(hi,z[k]);}
+  const idx=[];for(let j=0;j<ny-1;j++)for(let i=0;i<nx-1;i++){const a=j*nx+i,b=a+1,c=a+nx,d=c+1;idx.push(a,b,c,b,d,c);}
+  const g=new THREE.BufferGeometry();g.setAttribute("position",new THREE.BufferAttribute(pos,3));g.setAttribute("aEl",new THREE.BufferAttribute(el,1));
+  g.setIndex(idx);g.computeVertexNormals();
+  const rel=hi-lo;const ci=[5,10,20,25,50,100,200].find(v=>rel/v<=14)||250;
+  $("ter-note").textContent=Math.round(rel)+" m relief";
+  const mat=new THREE.ShaderMaterial({transparent:true,side:THREE.DoubleSide,depthWrite:false,
+    uniforms:{uLo:{value:lo},uHi:{value:hi},uCi:{value:ci},uOp:{value:0.6},uSun:{value:sun.position.clone().normalize()}},
+    extensions:{derivatives:true},
+    vertexShader:`attribute float aEl;varying float vE;varying vec3 vN;void main(){vE=aEl;vN=normalize(normal);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
+    fragmentShader:`uniform float uLo,uHi,uCi,uOp;uniform vec3 uSun;varying float vE;varying vec3 vN;
+     vec3 hyps(float t){vec3 c0=vec3(0.36,0.50,0.33),c1=vec3(0.55,0.60,0.38),c2=vec3(0.70,0.62,0.46),c3=vec3(0.62,0.55,0.50),c4=vec3(0.93,0.93,0.94);
+      if(t<.3)return mix(c0,c1,t/.3);if(t<.6)return mix(c1,c2,(t-.3)/.3);if(t<.85)return mix(c2,c3,(t-.6)/.25);return mix(c3,c4,(t-.85)/.15);}
+     void main(){float t=clamp((vE-uLo)/max(uHi-uLo,1.0),0.0,1.0);vec3 n=normalize(vN);float sh=clamp(dot(n,uSun),0.0,1.0);
+      vec3 col=hyps(t)*(0.32+0.95*sh);float f=vE/uCi;float w=fwidth(f);float ln=(1.0-smoothstep(0.0,w*1.2,abs(fract(f-0.5)-0.5)))*(1.0-smoothstep(0.12,0.3,w));
+      float f5=f/5.0;float w5=fwidth(f5);float maj=(1.0-smoothstep(0.0,w5*1.4,abs(fract(f5-0.5)-0.5)))*(1.0-smoothstep(0.15,0.35,w5));
+      col=mix(col,col*0.6,max(ln*0.35,maj*0.75));
+      gl_FragColor=vec4(col,uOp);}`});
+  terrain=new THREE.Mesh(g,mat);terrain.renderOrder=5;scene.add(terrain);
+  const on=store.get("terrain",true);$("L-terrain").checked=on;terrain.visible=on;
+  const op=store.get("terop",45);$("ter-op").value=op;mat.uniforms.uOp.value=op/100;$("ter-op-v").textContent=op+"%";
+  $("ter-note").textContent=Math.round(rel)+" m relief · "+ci+" m contours";})();
+
+/* ---------------- element chips, legend, grade panel ---------------- */
+function drawEls(){const box=$("els");box.innerHTML="";if(ELS.length<2){$("elsec").style.display="none";}
+  ELS.forEach(e=>{const b=document.createElement("button");b.className="chip"+(e===EL?" on":"");b.textContent=e;b.onclick=()=>setEl(e);box.appendChild(b);});}
+function drawLegend(){const E=M.elements[EL];$("lg-h").textContent=EL+" grade ("+E.unit+")";const L=$("legend");L.innerHTML="";
+  for(let k=E.bins.length-1;k>=0;k--){const d=document.createElement("div");const hi=k<E.bins.length-1?E.bins[k+1]:null;
+    d.innerHTML=`<i style="background:${E.colors[k]}"></i>${hi==null?"≥ "+E.bins[k]:E.bins[k]+" – "+hi} ${esc(E.unit)}`;L.appendChild(d);}
+  const d=document.createElement("div");d.innerHTML=`<i class="lo"></i>&lt; ${E.bins[0]} ${esc(E.unit)} · <span style="color:var(--mut)">grey = no reported intercept</span>`;L.appendChild(d);}
+function setEl(e){EL=e;store.set("el:"+M.slug,e);drawEls();buildIntervals();drawLegend();setupGT();buildBlocks();}
+
+function setupGT(){const E=M.elements[EL];const cut=$("cut");
+  if(!E.gt){$("gtsec").hidden=true;$("nogt").hidden=false;
+    $("nogt-msg").textContent="Not enough assayed holes with "+EL+" to interpolate a block model yet — the drill intervals are shown, coloured by grade. The model fills in as more holes are reported.";
+    curCut=0;drawParams();drawRes();return;}
+  $("gtsec").hidden=false;$("nogt").hidden=true;cut.max=E.gt.length-1;
+  const def=store.get("cut:"+M.slug+":"+EL,null);let i0=E.gt.findIndex(r=>r[0]>=(E.bins[1]!=null?E.bins[1]:E.bins[0]));if(i0<0)i0=0;
+  cut.value=def!=null&&def<E.gt.length?def:i0;updCut();drawParams();drawRes();}
+function updCut(){const E=M.elements[EL];if(!E.gt)return;const r=E.gt[+$("cut").value];curCut=r[0];store.set("cut:"+M.slug+":"+EL,+$("cut").value);
+  $("cut-v").textContent="≥ "+fmtG(r[0],E.unit);$("g-t").textContent=fmtT(r[1]);$("g-g").textContent=r[1]?fmtG(r[2],E.unit):"–";
+  $("g-c").textContent=fmtC(r[3],E.contained_unit);$("g-cu").textContent="Contained "+({oz:"oz",lb:"lb",t:"t"}[E.contained_unit]||"");
+  applyCut();drawChart(r);drawCmp(r);}
+function pubFor(){const E=M.elements[EL];const cu=E.contained_unit;return (M.resources||[]).filter(r=>r.contained_unit===cu&&r.contained>0&&(!r.element||r.element===EL||r.element===EL.replace("Eq","")));}
+function drawChart(cur){const E=M.elements[EL],svg=$("gtchart"),G=E.gt;const maxC=Math.max(...G.map(r=>r[3]),...pubFor().map(r=>r.contained||0),1);
+  const maxX=G[G.length-1][0]||1;const X=v=>6+v/maxX*288,Y=v=>104-v/maxC*96;
+  let p="";G.forEach((r,i)=>{p+=(i?"L":"M")+X(r[0]).toFixed(1)+","+Y(r[3]).toFixed(1);});
+  let s=`<path d="${p}" fill="none" stroke="#D71920" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
+  pubFor().slice(0,1).forEach(r=>{s+=`<line x1="6" x2="294" y1="${Y(r.contained)}" y2="${Y(r.contained)}" stroke="#274b8f" stroke-dasharray="4 3" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`;});
+  s+=`<line x1="${X(cur[0])}" x2="${X(cur[0])}" y1="4" y2="106" stroke="#111418" stroke-width="1" vector-effect="non-scaling-stroke" opacity=".5"/>`;
+  s+=`<circle cx="${X(cur[0])}" cy="${Y(cur[3])}" r="3.5" fill="#D71920"/>`;
+  svg.innerHTML=s;svg.setAttribute("aria-label","Contained metal versus cut-off grade");}
+function drawCmp(cur){const E=M.elements[EL],box=$("cmp"),pubs=pubFor();
+  if(!pubs.length){box.innerHTML=`<p class="note">Red line: contained ${EL} vs cut-off. No published ${E.contained_unit==="oz"?"ounce":"metal"} resource matched to this project yet${(M.resources||[]).length?" in these units":""}.</p>`;return;}
+  const p=pubs[0],mx=Math.max(p.contained,cur[3]),ratio=cur[3]/p.contained;
+  box.innerHTML=`<p class="lab" style="margin-top:8px">Check against published resource</p>
+   <div class="kv"><span>MMP at this cut-off</span><b>${fmtC(cur[3],E.contained_unit)}</b></div><div class="cmpbar"><i style="width:${(cur[3]/mx*100).toFixed(1)}%"></i></div>
+   <div class="kv"><span>Published M+I+Inf</span><b>${fmtC(p.contained,p.contained_unit)}</b></div><div class="cmpbar pub"><i style="width:${(p.contained/mx*100).toFixed(1)}%"></i></div>
+   <p class="note">MMP is <b>${(ratio*100).toFixed(0)}%</b> of the published total. ${ratio<0.5?"Well below: we hold only part of the drilling behind the published estimate (see sources), or interpolation stays close to holes.":ratio>1.5?"Well above: likely a lower effective cut-off, wider interpolation than the resource wireframes, or composite intercepts reported at a low threshold.":"Broadly consistent in size with the published estimate."} Dashed blue line on the chart = published total.</p>`;}
+function drawRes(){const box=$("res"),R=M.resources||[];if(!R.length){$("ressec").style.display="none";return;}
+  box.innerHTML=R.map(r=>{const c=r.categories||{},u=r.contained_unit,gu=u==="oz"?"g/t":"%";
+    const rows=Object.entries(c).filter(([k])=>["Measured","Indicated","M+I","Inferred"].includes(k)).map(([k,v])=>`<tr><td>${esc(k)}</td><td>${fmtT(v.tonnes)}</td><td>${v.grade} ${gu}</td><td>${fmtC(v.contained,u)}</td></tr>`).join("");
+    return `<div class="res"><div class="kv" style="padding:0"><span>${esc(r.title||r.source)}</span></div>
+      <table>${rows}<tr style="border-top:1px solid var(--line)"><td><b>Total</b></td><td><b>${fmtT(r.tonnes)}</b></td><td></td><td><b>${fmtC(r.contained,u)}</b></td></tr></table>
+      ${r.url?`<a href="${esc(r.url)}" target="_blank" rel="noopener">open report ↗</a>`:""}${r.page?` <span class="note">· p.${r.page}</span>`:""}</div>`;}).join("");}
+function drawParams(){const E=M.elements[EL],B=E.blocks,box=$("params");
+  if(!B){box.innerHTML=`<p class="note">No block model for ${EL} (needs ≥4 assayed holes).</p>`;return;}const q=B.params;
+  box.innerHTML=[["Block size",B.size.map(v=>+v.toFixed(2)).join(" × ")+" m"],["Block size from",q.block_source],["Estimator","Inverse distance²"],
+    ["Composites",q.composite_m+" m (gaps between intercepts = 0)"],["Drill spacing",q.spacing_m+" m"],["Max distance to data",q.max_gap_m+" m"],
+    ["Search radius",q.radius_m+" m, ≥2 holes"],["Top-cut",fmtG(q.top_cut,E.unit)],["Density",B.density+" t/m³"],["Blocks estimated",fmtN(B.n_total)]]
+    .map(([k,v])=>`<div class="kv"><span>${k}</span><b>${esc(v)}</b></div>`).join("")+(q.coarsened>1?`<p class="note">Display grid coarsened ×${q.coarsened} (very large extent).</p>`:"");}
+function drawSources(){const S=M.sources||[],L=$("srclist");$("src-n").textContent="· "+S.length;
+  L.innerHTML=S.map(s=>`<a class="${s.kind==="news release"?"":"rep"}" href="${esc(s.url||s.archive||"#")}" target="_blank" rel="noopener">${esc(s.title||s.kind)}<br><em>${esc(s.kind)}${s.date?" · "+esc(String(s.date).slice(0,10)):""}${s.intervals!=null?" · "+s.collars+" collars, "+s.intervals+" intervals":""}</em></a>`).join("");}
+$("cut").addEventListener("input",updCut);
+
+/* ---------------- camera + controls ---------------- */
+const target=new THREE.Vector3();let dist=1000,yaw=-0.75,pitch=0.62,R0=500;
+function place(){pitch=Math.max(-1.5,Math.min(1.553,pitch));const cp=Math.cos(pitch);
+  camera.position.set(target.x+dist*cp*Math.sin(yaw),target.y+dist*Math.sin(pitch),target.z+dist*cp*Math.cos(yaw));
+  camera.up.set(0,1,0);camera.lookAt(target);camera.near=Math.max(0.5,dist/2000);camera.far=dist*60+R0*20;camera.updateProjectionMatrix();}
+function framing(){ // focus on the densest part of the drilling, not the whole footprint
+  let pts=[];IV.forEach(v=>{pts.push(v.a.clone().lerp(v.b,0.5));});if(pts.length<4)HO.forEach(h=>{pts.push(at(h,(h.depth||0)/2));});
+  if(!pts.length)return{c:new THREE.Vector3(),r:200};
+  const step=Math.max(1,Math.floor(pts.length/500)),S=pts.filter((_,i)=>i%step===0);
+  // scale: median nearest-neighbour spacing between samples
+  let best=S[0],bn=-1;const rad=(()=>{const d=[];for(let i=0;i<Math.min(S.length,200);i++){let m=1e18;for(let j=0;j<S.length;j++)if(i!==j)m=Math.min(m,S[i].distanceToSquared(S[j]));d.push(Math.sqrt(m));}
+    d.sort((a,b)=>a-b);return Math.max(80,(d[d.length>>1]||50)*8);})();
+  for(const p of S){let n=0;for(const q of S)if(p.distanceToSquared(q)<rad*rad)n++;if(n>bn){bn=n;best=p;}}
+  const near=pts.filter(p=>p.distanceTo(best)<rad*6);const c=new THREE.Vector3();near.forEach(p=>c.add(p));c.multiplyScalar(1/near.length);
+  const ds=near.map(p=>p.distanceTo(c)).sort((a,b)=>a-b);const r=Math.max(ds[Math.floor(ds.length*0.9)]||100,70)*1.15;
+  const all=pts.map(p=>p.distanceTo(c)).sort((a,b)=>a-b);R0=Math.max(r,all[all.length-1]||r);
+  return{c,r};}
+let F=null;
+function terrainTop(x,z,r){if(!terrain)return -1e9;const P=terrain.geometry.attributes.position.array;let m=-1e9;
+  for(let i=0;i<P.length;i+=3){const dx=P[i]-x,dz=P[i+2]-z;if(dx*dx+dz*dz<r*r*0.5&&P[i+1]>m)m=P[i+1];}return m;}
+function view(kind,anim){if(!F)F=framing();const fov=camera.fov*Math.PI/180;const fit=F.r/Math.sin(Math.min(fov,fov*camera.aspect)/2)*1.02;
+  const to={x:F.c.x,y:F.c.y,z:F.c.z,dist:fit,yaw:-0.75,pitch:0.62};
+  if(kind==="plan"){to.pitch=1.553;to.yaw=0;}else if(kind==="ns"){to.pitch=0.0;to.yaw=Math.PI/2;}else if(kind==="ew"){to.pitch=0.0;to.yaw=0;}
+  else if(terrain&&terrain.visible){ // keep the 3D camera above the ground surface
+    const top=terrainTop(to.x,to.z,to.dist);const need=(top+0.12*to.dist-to.y)/to.dist;
+    if(need>Math.sin(to.pitch)){if(need<0.93)to.pitch=Math.asin(need);else{to.pitch=1.2;to.dist=Math.max(to.dist,(top-to.y)/0.8);}}}
+  fly(to,anim?600:0);}
+let flyAnim=null;
+function fly(to,ms){const from={x:target.x,y:target.y,z:target.z,dist,yaw,pitch};
+  if(!ms){target.set(to.x,to.y,to.z);dist=to.dist!=null?to.dist:dist;if(to.yaw!=null)yaw=to.yaw;if(to.pitch!=null)pitch=to.pitch;place();return;}
+  let dy=(to.yaw!=null?to.yaw:yaw)-from.yaw;dy=((dy+Math.PI)%(2*Math.PI)+2*Math.PI)%(2*Math.PI)-Math.PI;
+  const t0=performance.now();flyAnim=()=>{let t=Math.min(1,(performance.now()-t0)/ms);const e=t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
+    target.set(from.x+(to.x-from.x)*e,from.y+(to.y-from.y)*e,from.z+(to.z-from.z)*e);
+    if(to.dist!=null)dist=Math.exp(Math.log(from.dist)+(Math.log(to.dist)-Math.log(from.dist))*e);
+    yaw=from.yaw+dy*e;if(to.pitch!=null)pitch=from.pitch+(to.pitch-from.pitch)*e;place();if(t>=1)flyAnim=null;};}
+$("v-3d").onclick=()=>view("3d",1);$("v-plan").onclick=()=>view("plan",1);$("v-ns").onclick=()=>view("ns",1);$("v-ew").onclick=()=>view("ew",1);
+
+/* picking: nearest interval / hole / block / terrain under a screen point */
+const ray=new THREE.Raycaster();const _v=new THREE.Vector3();
+function scr(p){_v.copy(p).project(camera);return[(_v.x+1)/2*W(),(1-_v.y)/2*Hh(),_v.z];}
+function segDist(px,py,a,b){const dx=b[0]-a[0],dy=b[1]-a[1];const L=dx*dx+dy*dy;let t=L?((px-a[0])*dx+(py-a[1])*dy)/L:0;t=Math.max(0,Math.min(1,t));
+  const x=a[0]+t*dx,y=a[1]+t*dy;return[Math.hypot(px-x,py-y),t];}
+function pickInterval(px,py,tol){let best=null,bd=tol;if(!intMesh||!intMesh.visible)return null;
+  for(const v of IV){const a=scr(v.a),b=scr(v.b);if(a[2]>1||b[2]>1)continue;const[d,t]=segDist(px,py,a,b);if(d<bd){bd=d;best={v,t};}}return best;}
+function pickHole(px,py,tol){let best=null,bd=tol;if(!traceGroup.visible)return null;
+  for(const h of HO){const a=scr(at(h,0)),b=scr(at(h,h.depth||0));if(a[2]>1||b[2]>1)continue;const[d,t]=segDist(px,py,a,b);if(d<bd){bd=d;best={h,t};}}return best;}
+function pick3D(px,py){const iv=pickInterval(px,py,14);if(iv)return iv.v.a.clone().lerp(iv.v.b,iv.t);
+  const hh=pickHole(px,py,12);if(hh)return at(hh.h,(hh.h.depth||0)*hh.t);
+  ray.setFromCamera({x:px/W()*2-1,y:-(py/Hh())*2+1},camera);const objs=[];if(blockMesh&&blockMesh.visible)objs.push(blockMesh);if(terrain&&terrain.visible)objs.push(terrain);
+  const hit=ray.intersectObjects(objs,false)[0];if(hit)return hit.point;
+  const pl=new THREE.Plane(new THREE.Vector3(0,1,0),-target.y),o=new THREE.Vector3();return ray.ray.intersectPlane(pl,o)?o:null;}
+function setPivot(px,py){const p=pick3D(px,py);if(!p){toast("Nothing under the cursor");return;}
+  const off=camera.position.clone().sub(p);const nd=Math.max(Math.min(off.length(),dist),R0*0.02);
+  fly({x:p.x,y:p.y,z:p.z,dist:nd},450);flashPivot(px,py);toast("Pivot set — orbit now turns around this point");}
+function flashPivot(px,py){const e=$("pivot");e.style.left=px+"px";e.style.top=(py+host.getBoundingClientRect().top)+"px";e.style.opacity=1;clearTimeout(e._t);e._t=setTimeout(()=>e.style.opacity=0,900);}
+
+const el=renderer.domElement;let drag=null,lx=0,ly=0,auto=false;
+function orbit(dx,dy){yaw-=dx*0.0055;pitch+=dy*0.0055;place();}
+function pan(dx,dy){const s=2*dist*Math.tan(camera.fov*Math.PI/360)/Hh();const right=new THREE.Vector3().setFromMatrixColumn(camera.matrix,0);
+  const up=new THREE.Vector3().setFromMatrixColumn(camera.matrix,1);target.addScaledVector(right,-dx*s).addScaledVector(up,dy*s);place();}
+function zoomAt(f,px,py){ // dolly toward the point under the cursor
+  const nd=Math.max(R0*0.004,Math.min(R0*40,dist*f));const p=(px!=null)?pickZoomPoint(px,py):null;
+  if(p){const k=1-nd/dist;target.lerp(p,k*0.9);}dist=nd;place();}
+function pickZoomPoint(px,py){ray.setFromCamera({x:px/W()*2-1,y:-(py/Hh())*2+1},camera);const pl=new THREE.Plane().setFromNormalAndCoplanarPoint(
+  camera.getWorldDirection(new THREE.Vector3()).negate(),target);const o=new THREE.Vector3();return ray.ray.intersectPlane(pl,o)?o:null;}
+el.addEventListener("pointerdown",e=>{if(e.pointerType==="touch")return;el.setPointerCapture(e.pointerId);drag=(e.button===2||e.shiftKey||e.button===1)?"pan":"orbit";lx=e.clientX;ly=e.clientY;flyAnim=null;hideTip();});
+el.addEventListener("pointermove",e=>{if(e.pointerType==="touch")return;const r=el.getBoundingClientRect();
+  if(!drag){hoverAt(e.clientX-r.left,e.clientY-r.top,e.clientX,e.clientY);return;}
+  const dx=e.clientX-lx,dy=e.clientY-ly;lx=e.clientX;ly=e.clientY;drag==="orbit"?orbit(dx,dy):pan(dx,dy);});
+el.addEventListener("pointerup",e=>{drag=null;});
+el.addEventListener("wheel",e=>{e.preventDefault();const r=el.getBoundingClientRect();const f=Math.exp(Math.sign(e.deltaY)*Math.min(Math.abs(e.deltaY),120)*0.0018);
+  zoomAt(f,e.clientX-r.left,e.clientY-r.top);},{passive:false});
+el.addEventListener("dblclick",e=>{const r=el.getBoundingClientRect();setPivot(e.clientX-r.left,e.clientY-r.top);});
+el.addEventListener("contextmenu",e=>e.preventDefault());
+/* touch: 1 finger orbit, 2 fingers pan + pinch, double-tap pivot, tap = inspect */
+let T0=null,lastTap=0,tapStart=null;
+function tinfo(ts){const r=el.getBoundingClientRect();if(ts.length===1)return{x:ts[0].clientX-r.left,y:ts[0].clientY-r.top,d:0};
+  const x=(ts[0].clientX+ts[1].clientX)/2-r.left,y=(ts[0].clientY+ts[1].clientY)/2-r.top;return{x,y,d:Math.hypot(ts[0].clientX-ts[1].clientX,ts[0].clientY-ts[1].clientY)};}
+el.addEventListener("touchstart",e=>{e.preventDefault();flyAnim=null;T0=tinfo(e.touches);if(e.touches.length===1)tapStart={x:T0.x,y:T0.y,t:performance.now()};else tapStart=null;},{passive:false});
+el.addEventListener("touchmove",e=>{e.preventDefault();const t=tinfo(e.touches);if(!T0)return;
+  if(e.touches.length===1&&T0.d===0){orbit(t.x-T0.x,t.y-T0.y);}
+  else if(e.touches.length===2&&T0.d>0){pan(t.x-T0.x,t.y-T0.y);if(t.d>10)zoomAt(T0.d/t.d,t.x,t.y);}
+  if(tapStart&&Math.hypot(t.x-tapStart.x,t.y-tapStart.y)>8)tapStart=null;T0=t;},{passive:false});
+el.addEventListener("touchend",e=>{e.preventDefault();if(e.touches.length){T0=tinfo(e.touches);return;}
+  if(tapStart&&performance.now()-tapStart.t<280){const now=performance.now();
+    if(now-lastTap<320){setPivot(tapStart.x,tapStart.y);lastTap=0;hideTip();}
+    else{lastTap=now;const r=el.getBoundingClientRect();hoverAt(tapStart.x,tapStart.y,tapStart.x+r.left,tapStart.y+r.top,true);}}
+  T0=null;tapStart=null;},{passive:false});
+
+/* tooltip */
+const tip=$("tip");function hideTip(){tip.style.display="none";}
+let hovPending=null;
+function hoverAt(px,py,cx,cy,touch){hovPending=[px,py,cx,cy,touch];}
+function doHover(){if(!hovPending)return;const[px,py,cx,cy,touch]=hovPending;hovPending=null;const E=M.elements[EL];
+  const iv=pickInterval(px,py,touch?18:8);let html=null;
+  if(iv){const v=iv.v;const incl=IV.filter(x=>x.h===v.h);
+    html=`<b>${esc(v.h.id)}</b> · ${v.f.toFixed(1)}–${v.t.toFixed(1)} m (${(v.t-v.f).toFixed(1)} m)<br><span class="g" style="color:${v.k<0?"#5f6670":E.colors[v.k]}">${fmtG(v.g,E.unit)} ${EL}</span>`+
+      `<br><span style="color:var(--mut)">${incl.length} interval${incl.length>1?"s":""} on this hole · az ${v.h.az}° dip ${v.h.dip}°</span>`;}
+  else{const hh=pickHole(px,py,touch?16:7);if(hh){const h=hh.h;const n=IV.filter(x=>x.h===h).length;
+    html=`<b>${esc(h.id)}</b><br>${h.depth?h.depth.toFixed(0)+" m":"depth n/a"} · az ${h.az}° · dip ${h.dip}°<br><span style="color:var(--mut)">${n?n+" "+EL+" interval"+(n>1?"s":""):"no "+EL+" intervals reported"} · collar ${h.z.toFixed(0)} masl</span>`;}}
+  if(!html){hideTip();return;}tip.innerHTML=html;tip.style.display="block";
+  const w=tip.offsetWidth,h=tip.offsetHeight;tip.style.left=Math.min(cx+14,innerWidth-w-8)+"px";tip.style.top=Math.max(8,Math.min(cy+14,innerHeight-h-8))+"px";}
+
+/* find hole */
+{const dl=$("holelist");HO.slice(0,3000).forEach(h=>{const o=document.createElement("option");o.value=h.id;dl.appendChild(o);});
+ const go=()=>{const q=$("find").value.trim().toLowerCase();if(!q)return;const h=HO.find(x=>x.id.toLowerCase()===q)||HO.find(x=>x.id.toLowerCase().includes(q));
+   if(!h){toast("No hole matching “"+$("find").value+"”");return;}const mid=at(h,(h.depth||0)/2);const L=Math.max(h.depth||100,120);
+   fly({x:mid.x,y:mid.y,z:mid.z,dist:L*1.8},600);toast("Pivoting on "+h.id);if(MOBILE){document.querySelectorAll(".panel").forEach(x=>x.classList.remove("open"));}};
+ $("find-go").onclick=go;$("find").addEventListener("keydown",e=>{if(e.key==="Enter")go();});}
+
+/* layers */
+$("L-int").onchange=e=>{if(intMesh)intMesh.visible=e.target.checked;};
+$("L-trace").onchange=e=>{traceGroup.visible=e.target.checked;};
+$("L-blocks").onchange=e=>{if(blockMesh)blockMesh.visible=e.target.checked;store.set("blocks",e.target.checked);};
+$("L-terrain").onchange=e=>{if(terrain)terrain.visible=e.target.checked;store.set("terrain",e.target.checked);};
+$("ter-op").oninput=e=>{const v=+e.target.value;$("ter-op-v").textContent=v+"%";if(terrain){terrain.material.uniforms.uOp.value=v/100;terrain.material.depthWrite=v>=100;}store.set("terop",v);};
+$("blk-op").oninput=e=>{const v=+e.target.value;$("blk-op-v").textContent=v+"%";if(blockMesh){blockMesh.material.opacity=v/100;blockMesh.material.transparent=v<100;blockMesh.material.depthWrite=v>=100;blockMesh.material.needsUpdate=true;}store.set("blkop",v);};
+{const v=store.get("blkop",35);$("blk-op").value=v;$("blk-op-v").textContent=v+"%";$("L-blocks").checked=store.get("blocks",true);}
+/* hole labels (nearest ~80 to screen centre) */
+const LBL=$("labels");let lblOn=false;$("L-labels").onchange=e=>{lblOn=e.target.checked;if(!lblOn)LBL.innerHTML="";};
+function drawLabels(){if(!lblOn)return;const cands=[];for(const h of HO){const s=scr(at(h,0));if(s[2]>1||s[0]<0||s[1]<0||s[0]>W()||s[1]>Hh())continue;cands.push([Math.hypot(s[0]-W()/2,s[1]-Hh()/2),h,s]);}
+  cands.sort((a,b)=>a[0]-b[0]);LBL.innerHTML=cands.slice(0,MOBILE?40:90).map(c=>`<span style="left:${c[2][0]}px;top:${c[2][1]}px">${esc(c[1].id)}</span>`).join("");}
+
+/* scale bar + compass */
+function niceNum(x){const p=Math.pow(10,Math.floor(Math.log10(x)));const f=x/p;return(f<1.5?1:f<3.5?2:f<7.5?5:10)*p;}
+function updHud(){const mpp=2*dist*Math.tan(camera.fov*Math.PI/360)/Hh();const n=niceNum(90*mpp);
+  document.querySelector("#scalebar .sb").style.width=Math.max(20,Math.min(200,n/mpp))+"px";$("sb-l").textContent=n>=1000?(n/1000)+" km":Math.round(n)+" m";
+  $("needle").setAttribute("transform",`rotate(${(-yaw*180/Math.PI+180).toFixed(1)})`);}
+
+/* ---------------- start ---------------- */
+drawEls();buildIntervals();drawLegend();drawSources();buildBlocks();setupGT();
+resize();F=framing();view("3d",0);
+addEventListener("resize",()=>{resize();place();});
+if(!store.get("seen-pivot",false)){setTimeout(()=>toast(MOBILE?"Double-tap any hole to pivot around it":"Tip: double-click any hole or block to pivot around it",4200),900);store.set("seen-pivot",true);}
+let frames=0;
+function loop(){requestAnimationFrame(loop);if(flyAnim)flyAnim();doHover();updHud();if((frames++&1)===0)drawLabels();renderer.render(scene,camera);}
+loop();
+</script>
+</body>
+</html>

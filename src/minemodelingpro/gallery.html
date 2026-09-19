@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>3D deposit models · MineModelingPro</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+__FONTS__
+<style>
+__THEME_CSS__
+.hero h1{font-size:30px;letter-spacing:-.3px}
+.hero p{color:var(--mut);max-width:820px;margin:12px 0 0}
+.tools{position:sticky;top:0;z-index:20;background:#fff;padding:14px 0 12px;margin-top:18px;border-bottom:1px solid var(--line);
+  display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.tools input[type=search]{flex:1 1 260px;min-width:200px;border:1px solid var(--line);border-radius:9px;padding:9px 12px;font-size:14px;font-family:inherit}
+.tools input[type=search]:focus{outline:2px solid var(--red);outline-offset:1px}
+.tools select{border:1px solid var(--line);border-radius:9px;padding:8px 10px;font-size:13.5px;font-family:inherit;background:#fff;color:var(--ink)}
+.count{font-size:13px;color:var(--mut);margin:14px 0 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:14px;margin-top:12px}
+.card{display:flex;flex-direction:column;gap:10px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;color:var(--ink);
+  text-decoration:none;transition:border-color .15s,box-shadow .15s,transform .15s}
+.card:hover{border-color:var(--red);box-shadow:0 8px 22px rgba(0,0,0,.07);transform:translateY(-2px);text-decoration:none}
+.card h3{font-size:18px;line-height:1.2;margin:0}
+.co{font-size:12.5px;color:var(--mut);margin-top:3px;font-weight:500}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.c{font-size:10.5px;font-weight:700;letter-spacing:.04em;padding:2px 7px;border-radius:5px;background:#eef1f6;color:#4a525c}
+.c.el{background:#fdecec;color:var(--red)}
+.c.rep{background:#eaf0fb;color:#274b8f}
+.c.news{background:#fff4e0;color:#8a5a00}
+.st{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:auto}
+.st div{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+.st b{display:block;font-family:'Bitter',serif;font-size:15.5px;font-variant-numeric:tabular-nums;line-height:1.15}
+.st span{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut)}
+.meta{font-size:11.5px;color:var(--mut)}
+.empty{color:var(--mut);padding:30px 0}
+.note{margin-top:40px;color:var(--mut);font-size:12.5px;line-height:1.6;border-top:1px solid var(--line);padding-top:16px}
+@media (max-width:640px){.hero h1{font-size:24px}.tools{position:static;display:grid;grid-template-columns:1fr 1fr;gap:8px}.tools input[type=search]{grid-column:1/-1;min-width:0}.tools select{min-width:0;width:100%;font-size:13px;padding:8px 6px}.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+__HEADER__
+<div class="wrap">
+  <div class="hero">
+    <h1>3D deposit models</h1>
+    <div class="rule"></div>
+    <p>One model per project, built from every NI 43-101 technical report and drill-result release we hold for it — collars and intercepts in 3D on real terrain, drill intervals coloured by grade, an inverse-distance block model on the report's own block size, and contained metal checked against the published resource.</p>
+  </div>
+  <div class="tools">
+    <input type="search" id="q" placeholder="Search project, company, commodity, region…" aria-label="Search models">
+    <select id="fel" aria-label="Commodity"><option value="">All commodities</option></select>
+    <select id="freg" aria-label="Region"><option value="">All regions</option></select>
+    <select id="fsrc" aria-label="Data source"><option value="">All data sources</option><option value="report">Has 43-101 data</option><option value="news">Has news releases</option><option value="both">43-101 + news</option></select>
+    <select id="sort" aria-label="Sort"><option value="name">Sort: Project A–Z</option><option value="company">Sort: Company A–Z</option><option value="holes">Sort: Most holes</option><option value="updated">Sort: Recently updated</option><option value="resource">Sort: Largest published resource</option></select>
+  </div>
+  <p class="count" id="count"></p>
+  <div class="grid" id="grid"></div>
+  <p class="note">Grades are inverse-distance estimates for <b>visualisation</b>, not a mineral resource estimate. Every model page lists the exact reports and releases it was built from — verify figures against those filings before relying on them.</p>
+</div>
+__FOOTER__
+<script id="cards" type="application/json">__CARDS_JSON__</script>
+<script>
+"use strict";
+const C=JSON.parse(document.getElementById("cards").textContent);
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function fmtC(v,u){if(!v)return"–";if(u==="oz")return v>=1e6?(v/1e6).toFixed(2)+" Moz":(v/1e3).toFixed(0)+" koz";
+  if(u==="lb")return v>=1e9?(v/1e9).toFixed(2)+" Blb":(v/1e6).toFixed(0)+" Mlb";return v>=1e6?(v/1e6).toFixed(1)+" Mt":(v/1e3).toFixed(0)+" kt";}
+const els=[...new Set(C.map(c=>c.element))].sort(),regs=[...new Set(C.map(c=>c.region).filter(Boolean))].sort();
+els.forEach(e=>$("fel").insertAdjacentHTML("beforeend",`<option>${esc(e)}</option>`));
+regs.forEach(r=>$("freg").insertAdjacentHTML("beforeend",`<option>${esc(r)}</option>`));
+const st={};try{Object.assign(st,JSON.parse(sessionStorage.getItem("mmp-gallery")||"{}"));}catch(e){}
+["q","fel","freg","fsrc","sort"].forEach(k=>{if(st[k]!=null)$(k).value=st[k];$(k).addEventListener("input",render);});
+function card(c){const k=c.kinds||[];const src=(k.includes("report")?'<span class="c rep">43-101</span>':"")+(k.includes("news")?'<span class="c news">News</span>':"");
+  const els=(c.elements||[c.element]).map(e=>`<span class="c el">${esc(e)}</span>`).join("");
+  const res=c.resource&&c.resource.contained?fmtC(c.resource.contained,c.resource.unit):"–";
+  return `<a class="card" href="models/${esc(c.slug)}.html"><div><h3>${esc(c.project)}</h3>${c.company?`<div class="co">${esc(c.company)}</div>`:""}</div>
+   <div class="chips">${els}${src}${c.region?`<span class="c">${esc(c.region)}</span>`:""}</div>
+   <div class="st"><div><b>${c.counts.holes.toLocaleString()}</b><span>Holes</span></div><div><b>${c.counts.intervals.toLocaleString()}</b><span>Intervals</span></div>
+   <div><b>${res}</b><span>Published</span></div></div>
+   <div class="meta">${c.counts.reports?c.counts.reports+" report"+(c.counts.reports>1?"s":""):""}${c.counts.reports&&c.counts.releases?" · ":""}${c.counts.releases?c.counts.releases+" release"+(c.counts.releases>1?"s":""):""}${c.updated?" · to "+esc(String(c.updated).slice(0,10)):""}</div></a>`;}
+function render(){const q=$("q").value.trim().toLowerCase(),fe=$("fel").value,fr=$("freg").value,fs=$("fsrc").value,so=$("sort").value;
+  try{sessionStorage.setItem("mmp-gallery",JSON.stringify({q:$("q").value,fel:fe,freg:fr,fsrc:fs,sort:so}));}catch(e){}
+  let L=C.filter(c=>{const k=c.kinds||[];
+    if(fe&&c.element!==fe&&!(c.elements||[]).includes(fe))return false;if(fr&&c.region!==fr)return false;
+    if(fs==="report"&&!k.includes("report"))return false;if(fs==="news"&&!k.includes("news"))return false;if(fs==="both"&&!(k.includes("report")&&k.includes("news")))return false;
+    if(q){const hay=[c.project,c.company,c.region,c.element,...(c.elements||[])].join(" ").toLowerCase();return q.split(/\s+/).every(t=>hay.includes(t));}return true;});
+  const nm=c=>(c.project||"").toLowerCase();
+  const S={name:(a,b)=>nm(a).localeCompare(nm(b)),company:(a,b)=>(a.company||a.project||"").toLowerCase().localeCompare((b.company||b.project||"").toLowerCase())||nm(a).localeCompare(nm(b)),
+    holes:(a,b)=>b.counts.holes-a.counts.holes,updated:(a,b)=>String(b.updated||"").localeCompare(String(a.updated||"")),
+    resource:(a,b)=>((b.resource||{}).contained||0)-((a.resource||{}).contained||0)};
+  L.sort(S[so]||S.name);
+  $("count").textContent=L.length+" of "+C.length+" project models";
+  $("grid").innerHTML=L.length?L.map(card).join(""):'<p class="empty">No models match these filters.</p>';}
+render();
+</script>
+</body>
+</html>

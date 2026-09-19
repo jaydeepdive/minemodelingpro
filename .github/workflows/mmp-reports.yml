@@ -23,7 +23,7 @@ concurrency:
 jobs:
   reports:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     permissions:
       contents: write
     steps:
@@ -44,12 +44,22 @@ jobs:
           PYTHONPATH=src python -m minemodelingpro.pdf_reports queue \
             --max-seconds ${{ github.event.inputs.max_seconds || 2400 }} \
             ${{ (github.event.inputs.refresh == 'true') && '--refresh' || '' }}
+      - name: DEM tile cache (collar-elevation georeferencing)
+        uses: actions/cache@v4
+        with:
+          path: data/cache/dem
+          key: dem-${{ github.run_id }}
+          restore-keys: dem-
+      - name: Full drill-data extraction (collars, intercepts, CRS, resource, block size) from every archived report
+        run: |
+          PYTHONPATH=src python -m minemodelingpro.drill_tables all --max-seconds 1200 \
+            ${{ (github.event.inputs.refresh == 'true') && '--refresh' || '' }}
       - name: Commit the MMP shard store
         run: |
           git config user.name "closeology-bot"
           git config user.email "actions@github.com"
           git pull --no-edit -X ours origin main || true
-          git add -A data/keep/mmp data/keep/mmp_report_queue.json data/keep/mmp_reports_index.json data/keep/mmp_collars_sample.csv 2>/dev/null || true
+          git add -A data/keep/mmp data/keep/mmp_reports data/keep/mmp_report_queue.json data/keep/mmp_reports_index.json data/keep/mmp_collars_sample.csv 2>/dev/null || true
           git fetch -q origin main 2>/dev/null || true; git checkout -q origin/main -- site 2>/dev/null || true  # never carry site/ backward — the daily build owns it
           git commit -m "MMP 43-101 report ingest $(date -u +%Y-%m-%d) [skip ci]" || echo "no changes"
           git push || echo "nothing to push"

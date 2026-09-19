@@ -1,4 +1,4 @@
-name: closeology-ceo-sedar
+name: mmp-ceo-sedar
 
 # Forward-only NI 43-101 collector from ceo.ca's PUBLIC #sedar feed. ceo.ca mirrors
 # every SEDAR filing and serves the raw PDF from an OPEN endpoint with no login,
@@ -17,7 +17,7 @@ on:
         default: "12"
 
 concurrency:
-  group: closeology-ceo-sedar
+  group: mmp-ceo-sedar
   cancel-in-progress: false
 
 jobs:

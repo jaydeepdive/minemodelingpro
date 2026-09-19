@@ -28,3 +28,6 @@ __pycache__/
 
 # Mirror of Closeology-collected datasets (full data access), synced at build time
 data/closeology/
+
+# DEM tile cache (re-downloadable; cached in CI via actions/cache)
+data/cache/
