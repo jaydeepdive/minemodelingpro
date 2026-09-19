@@ -38,7 +38,7 @@ from minemodelingpro import holeid
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 OUT_DIR = os.path.join(_ROOT, "data", "keep", "mmp_reports")
-EXTRACTOR = "dt9"
+EXTRACTOR = "dt15"
 
 # ------------------------------------------------------------------ elements
 _EL = {"au": "Au", "gold": "Au", "ag": "Ag", "silver": "Ag", "cu": "Cu", "copper": "Cu",
@@ -266,6 +266,8 @@ def _classify(cols):
         return "collar", roles
     if "from" in roles and "to" in roles and elems:
         return "interval", roles
+    if "az" in roles and "dip" in roles and "depth" in roles and "from" not in roles and "hole" in roles:
+        return "survey", roles          # downhole survey: hole, depth, azimuth, dip
     return None, None
 
 
@@ -333,7 +335,8 @@ def _find_header(lines, i):
             continue
         # quick keyword gate on the header text
         htxt = " ".join(w["t"] for l in h for w in l["words"]).lower()
-        if not (re.search(r"east|north|\bx\b|lat", htxt) or re.search(r"\bfrom\b", htxt)):
+        if not (re.search(r"east|north|\bx\b|lat", htxt) or re.search(r"\bfrom\b", htxt)
+                or (re.search(r"azimuth|\baz\b", htxt) and re.search(r"\bdip\b|inclination", htxt))):
             continue
         dl = []
         for l in lines[i + span:i + span + 10]:
@@ -362,8 +365,9 @@ def _cell(row, roles, k):
     return row[i] if i is not None and i < len(row) else None
 
 
-def extract_tables(doc, max_pages=None):
+def extract_tables(doc, max_pages=None, surveys=None):
     collars, intervals = {}, []
+    surveys = surveys if surveys is not None else []
     spec = None            # (cols, kind, roles) carried to continuation pages
     spec_page = -9
     n_pages = len(doc) if not max_pages else min(len(doc), max_pages)
@@ -449,6 +453,12 @@ def extract_tables(doc, max_pages=None):
                 old = collars.get(k)
                 if not old or sum(v is not None for v in rec.values()) >= sum(v is not None for v in old.values()):
                     collars[k] = rec
+            elif kind == "survey":
+                f = 0.3048 if roles.get("feet") else 1.0
+                dep, az, dp = num(_cell(row, roles, "depth")), num(_cell(row, roles, "az")), num(_cell(row, roles, "dip"))
+                if dep is None or az is None or dp is None or not (0 <= az <= 360) or not (-90 <= dp <= 90) or not (0 <= dep * f <= 4000):
+                    continue
+                surveys.append({"hole": hole, "depth": round(dep * f, 2), "az": az, "dip": -abs(dp)})
             else:
                 fr, to = num(_cell(row, roles, "from")), num(_cell(row, roles, "to"))
                 if fr is None or to is None or to <= fr or to - fr > 1500 or fr < 0:
@@ -572,7 +582,7 @@ def _center_from_text(pages_text):
     return None
 
 
-def georeference(collars, pages_text, jurisdiction=None):
+def georeference(collars, pages_text, jurisdiction=None, trust_jurisdiction=False):
     """Attach lat/lon to each collar when its coordinates are UTM and the zone is
     known (from the report text, or inferred from a text centre)."""
     crs = detect_crs(pages_text, jurisdiction)
@@ -613,9 +623,22 @@ def georeference(collars, pages_text, jurisdiction=None):
                     for c in utm:
                         c.pop("lat", None); c.pop("lon", None)
                     kind = "utm?"
-    # elevation check: published collar elevations must sit on the ground. A zone
-    # that puts them hundreds of metres off the DEM is wrong — search nearby zones.
-    if utm and kind in ("utm", "utm?"):
+    # 1) place check: the coordinate system must put the collars where the report
+    #    says the project is (its own lat/long text, or the curated jurisdiction).
+    #    Searches every EPSG projected CRS for that area — UTM, MTM (Québec / NS),
+    #    US state plane in feet, national grids — not just UTM.
+    en = [c for c in collars if c.get("e") is not None and c.get("n") is not None]
+    placed = False
+    if len(en) >= 3 and kind != "latlon" and (tc or trust_jurisdiction):
+        try:
+            placed = _crs_search(en, crs, tc, jurisdiction if trust_jurisdiction else None, kind)
+            if placed:
+                kind = crs["kind"]
+        except Exception as ex:
+            crs["search_error"] = str(ex)[:80]
+    # 2) otherwise, elevation check: published collar elevations must sit on the
+    #    ground; a UTM zone that puts them far off the DEM is wrong.
+    if not placed and utm and kind in ("utm", "utm?"):
         try:
             _dem_fix_zone(utm, crs)
             if all(c.get("lat") is not None for c in utm[:5]):
@@ -630,6 +653,106 @@ def georeference(collars, pages_text, jurisdiction=None):
         mid = pts[len(pts) // 2]
         center = [round(mid[0], 5), round(mid[1], 5)]
     return crs, center or None, tc
+
+
+def _crs_search(en, crs, tc, jurisdiction, kind):
+    """Find the projected CRS that places the collar coordinates at the project.
+    Candidates: every EPSG projected CRS whose area of use covers the place.
+    Accept one that lands the collars within 25 km of the report's stated centre
+    (or inside the trusted jurisdiction), tie-broken by collar-elevation/DEM fit
+    (metres or feet). Returns True when collars were (re)georeferenced."""
+    import numpy as np
+    from shapely.geometry import Point
+    from pyproj import Transformer
+    from pyproj.aoi import AreaOfInterest
+    from pyproj.database import query_crs_info
+    from pyproj.enums import PJType
+    from minemodelingpro import terrain
+    geom = None
+    if tc:
+        aoi = AreaOfInterest(tc[1] - 0.3, tc[0] - 0.3, tc[1] + 0.3, tc[0] + 0.3)
+    else:
+        geom = terrain.region_geom(jurisdiction)
+        if geom is None or geom.area > 30:        # a whole country/large province can't discriminate
+            return False
+        b = geom.bounds
+        aoi = AreaOfInterest(b[0], b[1], b[2], b[3])
+    e = float(np.median([c["e"] for c in en])); n = float(np.median([c["n"] for c in en]))
+    # the current UTM solution is kept if it already agrees with the place
+    if kind == "utm" and en[0].get("lat") is not None:
+        la = float(np.median([c["lat"] for c in en if c.get("lat") is not None]))
+        lo = float(np.median([c["lon"] for c in en if c.get("lon") is not None]))
+        if (tc and _km(la, lo, tc[0], tc[1]) < 40) or (geom is not None and geom.buffer(0.3).contains(Point(lo, la))):
+            return False
+    cands = []
+    for ci in query_crs_info(auth_name="EPSG", pj_types=[PJType.PROJECTED_CRS], area_of_interest=aoi):
+        if ci.deprecated:
+            continue
+        try:
+            tr = _TR.get(("x", ci.code))
+            if tr is None:
+                tr = _TR[("x", ci.code)] = Transformer.from_crs(f"EPSG:{ci.code}", "EPSG:4326", always_xy=True)
+            lo, la = tr.transform(e, n)
+        except Exception:
+            continue
+        if not (np.isfinite(lo) and np.isfinite(la)):
+            continue
+        if tc:
+            d = _km(la, lo, tc[0], tc[1])
+            if d <= 25:
+                cands.append((d, ci.code, ci.name, tr))
+        elif geom.buffer(0.05).contains(Point(lo, la)):
+            cands.append((0.0, ci.code, ci.name, tr))
+    if not cands:
+        return False
+    # collapse near-identical solutions (datum realisations), keep distinct ones
+    zc = [c for c in en if c.get("z") is not None and -500 < c["z"] < 20000][:40]
+    best = None
+    if zc:
+        for d, code, name, tr in cands:
+            lo, la = tr.transform([c["e"] for c in zc], [c["n"] for c in zc])
+            dem = terrain.elevations(np.asarray(la), np.asarray(lo), 11)
+            Z = np.array([c["z"] for c in zc])
+            for scale in (1.0, 0.3048):
+                m = float(np.nanmedian(np.abs(dem - Z * scale)))
+                sc = (m, d, 0 if code.startswith(("326", "327", "269")) else 1)
+                if best is None or sc < best[0]:
+                    best = (sc, code, name, tr, scale)
+        if best[0][0] > 60:
+            # elevations don't confirm any candidate (often a local mine grid whose
+            # numbers happen to fall near the project): only a UTM solution within
+            # 5 km of the report's stated centre is trusted.
+            utm_c = [c for c in cands if c[1].startswith(("326", "327", "269")) and c[0] <= 5]
+            if not utm_c:
+                return False
+            d, code, name, tr = min(utm_c, key=lambda x: x[0])
+            best = ((None, d, 0), code, name, tr, 1.0)
+    else:
+        # no elevations to confirm: trust a UTM zone close to the stated centre, or a
+        # national/state grid named for the place itself (e.g. "Arizona West")
+        place = (terrain.region_of(tc[0], tc[1]) if tc else None) or jurisdiction or ""
+        pk = terrain._fold(place).split(" ")[0] if place else ""
+        good = [c for c in cands if (c[1].startswith(("326", "327", "269")) and c[0] <= 5)
+                or (pk and len(pk) > 3 and pk in terrain._fold(c[2]))]
+        if not good:
+            return False
+        d, code, name, tr = min(good, key=lambda x: (x[0], 0 if x[1].startswith(("326", "327", "269")) else 1))
+        best = ((None, d, 0), code, name, tr, 1.0)
+    _, code, name, tr, scale = best
+    lo_, la_ = tr.transform(np.array([c["e"] for c in en]), np.array([c["n"] for c in en]))
+    mlat, mlon = float(np.median(la_)), float(np.median(lo_))
+    if (tc and _km(mlat, mlon, tc[0], tc[1]) > 40) or (geom is not None and not geom.buffer(0.3).contains(Point(mlon, mlat))):
+        return False
+    for c in en:
+        lo, la = tr.transform(c["e"], c["n"])
+        c["lat"], c["lon"] = round(la, 6), round(lo, 6)
+        if scale != 1.0 and c.get("z") is not None:
+            c["z"] = round(c["z"] * scale, 2)
+    crs.update({"kind": "projected", "epsg": int(code), "crs_name": name,
+                "source": "placed at " + ("report lat/long" if tc else str(jurisdiction)),
+                "dem_misfit_m": round(best[0][0], 1) if best[0][0] is not None else None,
+                "z_units": "ft" if scale != 1.0 else crs.get("z_units")})
+    return True
 
 
 def _dem_fix_zone(utm, crs):
@@ -974,9 +1097,13 @@ _TP = [
                r"Zinc\s+|Polymetallic\s+|Rare\s+Earth\s+|Graphite\s+|Phosphate\s+|Mineral\s+)?"
                r"(?:Project|Property|Deposit|Mine|Complex|Operations?)\b", re.I | re.S),
     re.compile(r"^\s*([A-Z][\w'’.&\- ]{2,40}?)\s+(?:Gold\s+|Silver\s+|Copper\s+|Lithium\s+|Uranium\s+|Nickel\s+|Zinc\s+)?"
-               r"(?:Project|Property|Deposit|Mine)\s*$", re.M),
+               r"(?:Project|Property|Deposit|Mine|Mines)\b(?!\s*(?:No|Number|#|Manager|Director))[^\n]{0,70}$", re.M),
 ]
-_TP_BAD = re.compile(r"^(the|a|an|this|mineral|technical|report|updated?|amended|independent|ni|nat)\b", re.I)
+_TP_BAD = re.compile(r"^(the|a|an|this|mineral|technical|report|updated?|amended|independent|ni|nat|"
+                     r"slr|amc|wsp|micon|ausenco|tetra ?tech|srk|rpa|agp|p ?& ?e|moose mountain|hatch|wood|golder|"
+                     r"stantec|bba|gms|kappes|lycopodium|mining plus|erm|goldspot|innovexplo|ginto|caracle|apex|"
+                     r"equity|sgs|dra|fluor|jds|nordmin|cube|snowden|optiro|entech|kca|m3|samuel|global resource|"
+                     r"mining associates|red pine|mercator geological|watts|minefill)\b", re.I)
 
 
 def title_project(pages_text):
@@ -993,7 +1120,7 @@ def title_project(pages_text):
                 cnt[nm] += 2 if rx is _TP[0] else 1
     # running page headers ("AURMAC PROPERTY, MAYO MINING DISTRICT | TECHNICAL REPORT")
     hdr = Counter()
-    hrx = re.compile(r"^\s*([A-Z][\w'’.&\- ]{2,40}?)\s+(?:Gold\s+|Silver\s+|Copper\s+)?(PROJECT|PROPERTY|Project|Property|DEPOSIT|Deposit)\b", re.M)
+    hrx = re.compile(r"^\s*([A-Z][\w'’.&\- ]{2,40}?)\s+(?:Gold\s+|Silver\s+|Copper\s+)?(PROJECT|PROPERTY|Project|Property|DEPOSIT|Deposit)\b(?!\s*(?:No|Number|#))", re.M)
     for t in pages_text[4:60]:
         for m in {m.group(1).strip() for m in hrx.finditer(t[:400])}:
             if not _TP_BAD.match(m) and not re.search(r"\d{3,}", m):
@@ -1004,9 +1131,15 @@ def title_project(pages_text):
             cnt[nm] += c
     if not cnt:
         return None
-    nm = cnt.most_common(1)[0][0]
-    m = re.search(r"\bat\s+(?:the\s+)?(.+)$", nm)
-    return m.group(1) if m else nm
+    for nm, _ in cnt.most_common():
+        m = re.search(r"\bat\s+(?:the\s+)?(.+)$", nm)
+        nm = m.group(1) if m else nm
+        nm = re.sub(r"^(?:preliminary economic assessment|mineral resource estimate|pre-?feasibility study|"
+                    r"feasibility study|geological introduction to the|technical report on the|updated)\s+", "", nm, flags=re.I)
+        if re.search(r"reclamation|restoration|national id|introduction|table of contents|summary|appendix", nm, re.I):
+            continue
+        return nm
+    return None
 
 
 # ----------------------------------------------------------------- main entry
@@ -1020,8 +1153,11 @@ def extract_report(pdf_path, meta=None):
             pages_text.append(p.get_text())
         except Exception:
             pages_text.append("")
-    collars, intervals = extract_tables(doc)
-    crs, center, tcenter = georeference(collars, pages_text, meta.get("jurisdiction"))
+    surveys = []
+    collars, intervals = extract_tables(doc, surveys=surveys)
+    surveys = _clean_surveys(surveys)
+    crs, center, tcenter = georeference(collars, pages_text, meta.get("jurisdiction"),
+                                        trust_jurisdiction=str(meta.get("id", "")).startswith("ni43101:"))
     res_rows = extract_resources(doc, pages_text)
     head = headline_resource(res_rows)
     block, density = extract_block_params(pages_text)
@@ -1040,12 +1176,37 @@ def extract_report(pdf_path, meta=None):
         "crs": crs, "center": center or tcenter, "text_center": tcenter,
         "block_size": block, "density": density,
         "resource": head, "resource_rows": res_rows[:80],
-        "counts": {"collars": len(collars), "intervals": len(intervals),
+        "counts": {"collars": len(collars), "intervals": len(intervals), "surveyed_holes": len({x["hole"] for x in surveys}),
                    "holes_with_intervals": len(ikeys), "linked": len(ckeys & ikeys)},
-        "collars": collars, "intervals": intervals,
+        "collars": collars, "intervals": intervals, "surveys": surveys,
     }
     if commodity:
         out["commodity"] = commodity
+    return out
+
+
+def _clean_surveys(rows):
+    """Per-hole survey stations sorted by depth, duplicates removed; a hole needs
+    >=2 stations to be a real downhole survey (1 station = collar orientation)."""
+    by = defaultdict(dict)
+    for r in rows:
+        by[holeid.key(r["hole"])].setdefault(r["depth"], r)
+    out = []
+    for k, st in by.items():
+        ds = sorted(st)
+        if len(ds) < 3 or ds[0] > 150:
+            continue
+        ok = True
+        for a, b in zip(ds, ds[1:]):
+            A, B = st[a], st[b]
+            daz = abs((B["az"] - A["az"] + 180) % 360 - 180)
+            # real downhole surveys drift gently between closely spaced stations;
+            # anything else is a collar/summary table mis-read as a survey
+            if b - a > 200 or daz > 25 or abs(B["dip"] - A["dip"]) > 12:
+                ok = False
+                break
+        if ok:
+            out.extend(st[d] for d in ds)
     return out
 
 

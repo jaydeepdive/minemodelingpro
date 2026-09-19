@@ -144,6 +144,10 @@ def project_from_titles(titles):
         nm = " ".join(w)
         if len(nm) < 3 or nm.lower() in _PROJ_STOP or re.search(r"\d+(\.\d+)?\s*(%|g/t|m\b)", nm) or re.fullmatch(r"[\d.,]+", nm):
             return None
+        if nm[0].isdigit() or re.search(r"\b(drill\w*|results?|intersect\w*|extend\w*|metres?|meters?|assays?|grades?|"
+                                         r"program\w*|update\w*|announce\w*|reports?|intercepts?|widths?|supergene|"
+                                         r"high|new|step|infill|expansion|mineralization|mineralisation)\b", nm, re.I):
+            return None
         if nm.isupper() and len(nm) > 4:
             nm = nm.title()
         return nm
@@ -224,7 +228,7 @@ def load_news():
                       "url": _s(r.url), "title": _s(r.title), "project": _s(r.project)})
     ivs = defaultdict(list)
     for r in iv.itertuples(index=False):
-        if r.from_m is None or r.to_m is None or r.grade is None:
+        if _f(r.from_m) is None or _f(r.to_m) is None or _f(r.grade) is None:
             continue
         ivs[(r.release_id, str(r.hole_id).strip())].append(
             {"from": float(r.from_m), "to": float(r.to_m), "el": r.element, "grade": float(r.grade),
@@ -362,7 +366,9 @@ def assemble(min_holes=3, min_intervals=8, verbose=False):
             same_co = bool(a["companies"] & b["companies"])
             same_name = a["project"] and b["project"] and name_key(a["project"]) == name_key(b["project"])
             diff_name = a["project"] and b["project"] and not same_name
+            one_unnamed = not (a["project"] and b["project"])
             if (same_co and same_name and d <= 60) or (same_co and not diff_name and d <= MERGE_KM) \
+                    or (same_co and one_unnamed and d <= 30) \
                     or (same_name and d <= 10) or d <= 2.5:
                 g_uf.union(i, j)
     merged = defaultdict(list)
@@ -433,7 +439,8 @@ def assemble(min_holes=3, min_intervals=8, verbose=False):
             ca, cb = a.get("center"), b.get("center")
             near = ca and cb and _km(ca[0], ca[1], cb[0], cb[1]) < 25
             far = ca and cb and not near
-            if not far and ((na and na == nb) or len(ka & kb) >= 10):
+            same_co = bool(rep_company(a)) and rep_company(a) == rep_company(b)
+            if not far and ((na and na == nb and (near or same_co)) or len(ka & kb) >= 10):
                 su.union(i, j)
     sg = defaultdict(list)
     for i in range(len(standalone)):
@@ -444,8 +451,10 @@ def assemble(min_holes=3, min_intervals=8, verbose=False):
                       "companies": {rep_company(r) for r in rl if rep_company(r)},
                       "project": next((rep_name(r) for r in rl if rep_name(r)), None),
                       "lat": c[0] if c else None, "lon": c[1] if c else None, "keys": set(),
-                      "country": next((r.get("jurisdiction") for r in rl if r.get("jurisdiction")), None)})
+                      "country": next((r.get("jurisdiction") for r in rl if r.get("jurisdiction")
+                                       and str(r.get("id", "")).startswith("ni43101:")), None)})
 
+    projs = _apply_merges(projs, ov)
     # ---- 4. materialise each project's unified dataset
     out = []
     for p in projs:
@@ -465,6 +474,63 @@ def assemble(min_holes=3, min_intervals=8, verbose=False):
         if seen[s] > 1:
             ds["slug"] = f"{s}-{seen[s]}"
     return out
+
+
+def _auto_names(p):
+    """(display name, company, stable slug) for an unmaterialised project."""
+    reports = p["reports"]
+    rnames = []
+    for r in sorted(reports, key=lambda r: r.get("date") or "", reverse=True):
+        x = clean_project(r.get("project")) or clean_project(r.get("title_project"))
+        if x and name_key(x) != name_key(clean_company(r.get("company")) or ""):
+            rnames.append(x)
+    name = (rnames[0] if rnames else None) or clean_project(p.get("project")) or clean_company(p.get("company")) or "Unnamed project"
+    company = clean_company(p.get("company")) or next((clean_company(r.get("company")) for r in reports
+                                                      if clean_company(r.get("company"))), None)
+    if company and (name_key(company) == name_key(name) or re.fullmatch(r"[A-Z]{2,5}", company)):
+        company = None if name_key(company) == name_key(name) else company
+    slug = _slugify(name + ("-" + company if company else ""))
+    return name, company, slug
+
+
+def _apply_merges(projs, ov):
+    """Manual merges from the overrides file: {"_merge": [["slug-a", "slug-b"], ...]}
+    joins projects the automatic rules keep apart (e.g. a company's news cluster and
+    the technical report for the same deposit in an un-georeferenced mine grid)."""
+    groups = ov.get("_merge") or []
+    if not groups:
+        return projs
+    slug_of = [_auto_names(p)[2] for p in projs]
+    uf = _UF(len(projs))
+    for g in groups:
+        idx = [i for i, sl in enumerate(slug_of) if sl in g]
+        for i in idx[1:]:
+            uf.union(idx[0], i)
+    out = defaultdict(list)
+    for i, p in enumerate(projs):
+        out[uf.find(i)].append((g_order(groups, slug_of[i]), p))
+    res = []
+    for items in out.values():
+        items.sort(key=lambda t: t[0])
+        base = dict(items[0][1])
+        for _, q in items[1:]:
+            base["news"] = base["news"] + q["news"]
+            base["reports"] = base["reports"] + q["reports"]
+            base["companies"] = set(base["companies"]) | set(q["companies"])
+            base["keys"] = set(base["keys"]) | set(q["keys"])
+            base["project"] = base["project"] or q["project"]
+            base["company"] = base["company"] or q["company"]
+            if base.get("lat") is None:
+                base["lat"], base["lon"] = q.get("lat"), q.get("lon")
+        res.append(base)
+    return res
+
+
+def g_order(groups, slug):
+    for g in groups:
+        if slug in g:
+            return g.index(slug)
+    return 99
 
 
 def _slugify(s):
@@ -507,6 +573,14 @@ def _materialise(p, news_holes, news_ivs, ov):
                         "url": r.get("report_url") or r.get("archive_url"), "archive": r.get("archive_url"),
                         "date": r.get("date"), "collars": len(r.get("collars") or []),
                         "intervals": len(r.get("intervals") or []), "has_resource": bool(res)})
+    # downhole surveys from reports (joined by normalised hole id)
+    for r in reports:
+        by = defaultdict(list)
+        for sv in r.get("surveys") or []:
+            by[holeid.key(sv["hole"])].append((float(sv["depth"]), float(sv["az"]), float(sv["dip"])))
+        for k, st in by.items():
+            if k in holes and len(st) >= 2 and not holes[k].get("survey"):
+                holes[k]["survey"] = sorted(st)
     rel_seen = {}
     for i in p["news"]:
         nh = news_holes[i]
@@ -576,25 +650,37 @@ def _materialise(p, news_holes, news_ivs, ov):
             if math.hypot(h["x"] - mx, h["y"] - my) > 40000:
                 h["_ok"] = False
 
-    rnames = []
-    for r in sorted(reports, key=lambda r: r.get("date") or "", reverse=True):
-        x = clean_project(r.get("project")) or clean_project(r.get("title_project"))
-        if x and name_key(x) != name_key(clean_company(r.get("company")) or ""):
-            rnames.append(x)
-    name = (rnames[0] if rnames else None) or clean_project(p.get("project")) or clean_company(p.get("company")) or "Unnamed project"
-    company = clean_company(p.get("company"))
-    if company and name_key(company) == name_key(name):
-        company = None
-    slug = _slugify(name + ("-" + company if company else ""))
+    name, company, slug = _auto_names(p)
     o = ov.get(slug) or {}
     name = o.get("name", name)
     company = o.get("company", company)
-    region = p.get("country") or next((r.get("jurisdiction") for r in reports if r.get("jurisdiction")), None)
+    # region: news releases' stated place; else the report's own lat/long text; else the
+    # curated index jurisdiction. (A SEDAR filing's jurisdiction is the ISSUER's filing
+    # province, not where the deposit is, so it is never used as the region.)
+    region = p.get("country") if p.get("country") not in (None, "International", "Canada", "USA") else None
+    if not region:
+        for r in reports:
+            if r.get("text_center"):
+                try:
+                    from minemodelingpro import terrain
+                    region = terrain.region_of(*r["text_center"])
+                except Exception:
+                    region = None
+                if region:
+                    break
+    if not region:
+        region = next((r.get("jurisdiction") for r in reports
+                       if r.get("jurisdiction") and str(r.get("id", "")).startswith("ni43101:")), None)
     dates = [s.get("date") for s in sources if s.get("date")]
     # resource statements & block parameters from attached reports (latest first)
     res = []
+    seen_res = set()
     for r in sorted(reports, key=lambda r: r.get("date") or "", reverse=True):
         if r.get("resource"):
+            kk = (r["resource"].get("tonnes"), r["resource"].get("contained"))
+            if kk in seen_res:
+                continue                         # same statement repeated in another report
+            seen_res.add(kk)
             res.append({"source": r["id"], "date": r.get("date"), "url": r.get("report_url") or r.get("archive_url"),
                         "title": sources[[s.get("id") for s in sources].index(r["id"])]["title"] if r["id"] in [s.get("id") for s in sources] else r["id"],
                         **r["resource"]})

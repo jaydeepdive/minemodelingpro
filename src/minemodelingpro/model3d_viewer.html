@@ -253,6 +253,10 @@ function toast(msg,ms){const t=$("toast");t.textContent=msg;t.style.opacity=1;cl
  if(M.updated)bits.push("to "+String(M.updated).slice(0,10));$("t-sub").textContent=bits.join(" · ");}
 $("s-holes").textContent=fmtN(M.counts.holes);$("s-int").textContent=fmtN(M.counts.intervals);
 $("s-src").textContent=fmtN((M.sources||[]).length);
+{const sv=M.counts.surveyed||0,st=document.createElement("p");st.className="hint";st.style.margin="8px 0 0";
+ st.textContent=sv?`${fmtN(sv)} hole${sv>1?"s":""} drawn from downhole surveys (minimum curvature); the rest straight on collar azimuth/dip.`
+   :"Holes drawn straight on collar azimuth/dip (no downhole surveys published for this project).";
+ document.querySelector("#pModel .stats").after(st);}
 
 /* ---------------- panels (minimise / mobile sheets) ---------------- */
 document.querySelectorAll(".phead").forEach(h=>{const p=h.parentElement,id=p.id;
@@ -279,11 +283,17 @@ function resize(){renderer.setSize(W(),Hh(),false);renderer.domElement.style.wid
   camera.aspect=W()/Hh();camera.updateProjectionMatrix();for(const m of fatMats)m.uniforms.uRes.value.set(W(),Hh());}
 
 /* model frame: x east, y north, z masl  ->  world X=x, Y=z-zRef, Z=-y */
-const HO=M.holes.map(r=>({id:r[0],x:r[1],y:r[2],z:r[3],az:r[4],dip:r[5],depth:r[6]}));
+const HO=M.holes.map(r=>({id:r[0],x:r[1],y:r[2],z:r[3],az:r[4],dip:r[5],depth:r[6],p:r[7]||null}));
 const zs=HO.map(h=>h.z).sort((a,b)=>a-b);const zRef=zs.length?zs[zs.length>>1]:0;
 function V(x,y,z){return new THREE.Vector3(x,z-zRef,-y);}
 HO.forEach(h=>{const a=h.az*Math.PI/180,d=h.dip*Math.PI/180;h.d=[Math.cos(d)*Math.sin(a),Math.cos(d)*Math.cos(a),Math.sin(d)];});
-function at(h,m){return V(h.x+h.d[0]*m,h.y+h.d[1]*m,h.z+h.d[2]*m);}
+function at(h,m){ // position at measured depth m: surveyed (min-curvature) path, else straight
+  const p=h.p;if(p&&p.length>=8){const n=p.length/4;let i=0;while(i<n-2&&p[(i+1)*4]<m)i++;
+    const m0=p[i*4],m1=p[(i+1)*4],t=m1>m0?(m-m0)/(m1-m0):0;
+    return V(h.x+p[i*4+1]+(p[i*4+5]-p[i*4+1])*t,h.y+p[i*4+2]+(p[i*4+6]-p[i*4+2])*t,h.z+p[i*4+3]+(p[i*4+7]-p[i*4+3])*t);}
+  return V(h.x+h.d[0]*m,h.y+h.d[1]*m,h.z+h.d[2]*m);}
+function holeSegs(h,a,b){ // split [a,b] at survey stations so curved holes bend
+  if(!h.p)return[[a,b]];const out=[];let s=a;for(let i=0;i<h.p.length;i+=4){const m=h.p[i];if(m>s&&m<b){out.push([s,m]);s=m;}}out.push([s,b]);return out;}
 
 /* ---- fat (screen-space width) line segments ---- */
 const fatMats=[];
@@ -308,7 +318,7 @@ function fatSegments(segs){ // segs: [{a:V3,b:V3,w:px,c:THREE.Color}]
 
 /* ---- drill traces + collars ---- */
 const traceGroup=new THREE.Group();scene.add(traceGroup);
-{const segs=[],grey=new THREE.Color(0x7d8794);HO.forEach(h=>{if(h.depth>0)segs.push({a:at(h,0),b:at(h,h.depth),w:1.4,c:grey});});
+{const segs=[],grey=new THREE.Color(0x7d8794);HO.forEach(h=>{if(h.depth>0)holeSegs(h,0,h.depth).forEach(([a,b])=>segs.push({a:at(h,a),b:at(h,b),w:1.4,c:grey}));});
  if(segs.length)traceGroup.add(fatSegments(segs));
  const cg=new THREE.BufferGeometry(),cv=[];HO.forEach(h=>{const p=at(h,0);cv.push(p.x,p.y,p.z);});
  cg.setAttribute("position",new THREE.Float32BufferAttribute(cv,3));
@@ -322,8 +332,9 @@ function binIdx(E,g){let k=-1;for(let i=0;i<E.bins.length;i++)if(g>=E.bins[i])k=
 function binCol(E,k){return new THREE.Color(k<0?"#c3cad4":E.colors[k]);}
 function buildIntervals(){if(intMesh){scene.remove(intMesh);intMesh.geometry.dispose();}
   const E=M.elements[EL];IV=[];const segs=[];
-  E.segments.forEach(s=>{const h=HO[s[0]];if(!h)return;const k=binIdx(E,s[3]);const a=at(h,s[1]),b=at(h,s[2]);
-    IV.push({h,f:s[1],t:s[2],g:s[3],a,b,k});segs.push({a,b,w:k<0?2.6:(5.5+k*0.75),c:binCol(E,k)});});
+  E.segments.forEach(s=>{const h=HO[s[0]];if(!h)return;const k=binIdx(E,s[3]);
+    holeSegs(h,s[1],s[2]).forEach(([f,t])=>{const a=at(h,f),b=at(h,t);
+      IV.push({h,f:s[1],t:s[2],g:s[3],a,b,k});segs.push({a,b,w:k<0?2.6:(5.5+k*0.75),c:binCol(E,k)});});});
   intMesh=segs.length?fatSegments(segs):new THREE.Group();intMesh.visible=$("L-int").checked;scene.add(intMesh);}
 /* ---- block model ---- */
 let BK=null;

@@ -170,3 +170,30 @@ def _label(n, c):
     if n and c in ("Canada", "USA", "Australia"):
         return n
     return c
+
+
+_ALIASES = {"newfoundland": "newfoundland and labrador", "newfoundland & labrador": "newfoundland and labrador",
+            "labrador": "newfoundland and labrador", "drc": "democratic republic of the congo",
+            "congo": "democratic republic of the congo", "cote d'ivoire": "ivory coast", "usa": "united states of america",
+            "nwt": "northwest territories", "bc": "british columbia", "quebec": "quebec", "yukon territory": "yukon",
+            "tanzania": "united republic of tanzania", "serbia": "republic of serbia"}
+
+
+def _fold(s):
+    import unicodedata
+    return unicodedata.normalize("NFKD", str(s or "")).encode("ascii", "ignore").decode().lower().strip()
+
+
+def region_geom(name):
+    """Shapely geometry for a province/state/country name (accent/alias tolerant)."""
+    if not name:
+        return None
+    region_of(0, 0)                      # ensure polygons are loaded
+    key = _ALIASES.get(_fold(name), _fold(name))
+    geoms = [g for n, c, g in _REGIONS if _fold(n) == key]
+    if not geoms:
+        geoms = [g for n, c, g in _REGIONS if _fold(c) == key]
+    if not geoms:
+        return None
+    from shapely.ops import unary_union
+    return unary_union(geoms)

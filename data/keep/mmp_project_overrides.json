@@ -1,4 +1,94 @@
 {
+ "_note": "Manual project fixes keyed by the automatic slug (URLs stay stable). name/company override the display; _merge joins projects the automatic rules keep apart.",
+ "_merge": [
+  [
+   "goldboro",
+   "nexgold-mining"
+  ]
+ ],
+ "aurmac-banyan-gold": {
+  "name": "AurMac"
+ },
+ "canterra-minerals": {
+  "name": "Buchans",
+  "company": "Canterra Minerals"
+ },
+ "changshanhao-csh": {
+  "name": "ChangShanHao"
+ },
+ "chicken-mountain-tectonic-metals": {
+  "name": "Flat (Chicken Mountain)"
+ },
+ "district-metals": {
+  "name": "Viken",
+  "company": "District Metals"
+ },
+ "empire": {
+  "company": "Phoenix Copper"
+ },
+ "goldboro": {
+  "company": "NexGold Mining"
+ },
+ "horne-5": {
+  "company": "Falco Resources"
+ },
+ "juggernaut": {
+  "name": "Big One",
+  "company": "Juggernaut Exploration"
+ },
+ "la-cumbre": {
+  "name": "La Cumbre"
+ },
+ "las-maras-outcrop-silver-gold": {
+  "name": "Santa Ana"
+ },
+ "limousine-butte-gold-antimony-nevgold": {
+  "name": "Limousine Butte"
+ },
+ "lithium-africa": {
+  "name": "Springbok",
+  "company": "Lithium Africa"
+ },
+ "meps-sterling-metals": {
+  "name": "Soo Copper (MEPS)"
+ },
+ "mont-sorcier": {
+  "company": "Voyager Metals"
+ },
+ "murray-brook": {
+  "company": "Canadian Copper"
+ },
+ "pak": {
+  "company": "Frontier Lithium"
+ },
+ "rc-sitka-gold": {
+  "name": "RC Gold"
+ },
+ "regionally-the-white-gold": {
+  "name": "White Gold",
+  "company": "White Gold Corp"
+ },
+ "reid": {
+  "company": "Canada Nickel"
+ },
+ "springpole": {
+  "company": "First Mining Gold"
+ },
+ "kuya-silver": {
+  "name": "Silver Kings",
+  "company": "Kuya Silver"
+ },
+ "doubleview-gold": {
+  "name": "Hat",
+  "company": "Doubleview Gold"
+ },
+ "star-copper": {
+  "name": "Star",
+  "company": "Star Copper"
+ },
+ "prince": {
+  "company": "Prince Silver"
+ },
  "goliath-resources": {
   "name": "Golddigger",
   "company": "Goliath Resources"
@@ -12,6 +102,10 @@
   "company": "Faraday Copper"
  },
  "fireweed": {
+  "name": "Macpass",
+  "company": "Fireweed Metals"
+ },
+ "tom-south-fireweed": {
   "name": "Macpass",
   "company": "Fireweed Metals"
  }

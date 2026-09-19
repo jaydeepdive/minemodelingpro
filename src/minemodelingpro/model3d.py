@@ -108,6 +108,34 @@ def _dir(az, dip):
     return (math.cos(dp) * math.sin(az), math.cos(dp) * math.cos(az), math.sin(dp))
 
 
+def min_curve(stations, depth):
+    """Minimum-curvature desurvey. stations: [(md, az, dip)] sorted, dip negative
+    down. Returns (md[], dx[], dy[], dz[]) offsets from the collar (x east, y
+    north, z up), extended to `depth` on the last orientation."""
+    st = [s for s in stations if s[0] is not None]
+    if not st:
+        return None
+    if st[0][0] > 0:
+        st = [(0.0, st[0][1], st[0][2])] + st
+    if depth > st[-1][0]:
+        st = st + [(float(depth), st[-1][1], st[-1][2])]
+    md = [0.0]; x = [0.0]; y = [0.0]; z = [0.0]
+    for (m1, a1, d1), (m2, a2, d2) in zip(st, st[1:]):
+        L = m2 - m1
+        if L <= 0:
+            continue
+        i1, i2 = math.radians(90 + d1), math.radians(90 + d2)      # inclination from vertical
+        A1, A2 = math.radians(a1), math.radians(a2)
+        cb = math.cos(i2 - i1) - math.sin(i1) * math.sin(i2) * (1 - math.cos(A2 - A1))
+        b = math.acos(max(-1.0, min(1.0, cb)))
+        rf = 1.0 if b < 1e-6 else 2 / b * math.tan(b / 2)
+        dn = L / 2 * (math.sin(i1) * math.cos(A1) + math.sin(i2) * math.cos(A2)) * rf
+        de = L / 2 * (math.sin(i1) * math.sin(A1) + math.sin(i2) * math.sin(A2)) * rf
+        dv = L / 2 * (math.cos(i1) + math.cos(i2)) * rf
+        md.append(m2); x.append(x[-1] + de); y.append(y[-1] + dn); z.append(z[-1] - dv)
+    return np.array(md), np.array(x), np.array(y), np.array(z)
+
+
 def _segments(ivs):
     """Resolve overlapping intervals of ONE hole/element into non-overlapping
     segments. Longest first; an interval inside an accepted segment is an
@@ -328,10 +356,19 @@ def build_project(ds, max_elements=3, verbose=False):
         dip = h.get("dip")
         if dip is not None and dip > 0:
             dip = -dip
-        H.append({"id": str(h["id"]), "x": float(h["x"]), "y": float(h["y"]), "z": float(z),
-                  "az": h.get("az") if h.get("az") is not None else 0.0,
-                  "dip": dip if dip is not None else -90.0, "depth": float(d), "key": h["key"],
-                  "src": sorted(h.get("src") or [])})
+        rec = {"id": str(h["id"]), "x": float(h["x"]), "y": float(h["y"]), "z": float(z),
+               "az": h.get("az") if h.get("az") is not None else 0.0,
+               "dip": dip if dip is not None else -90.0, "depth": float(d), "key": h["key"],
+               "src": sorted(h.get("src") or [])}
+        sv = h.get("survey") or []
+        if len(sv) >= 2:
+            rec["depth"] = max(rec["depth"], max(s_[0] for s_ in sv))
+            if h.get("az") is None:
+                rec["az"] = sv[0][1]
+            if h.get("dip") is None:
+                rec["dip"] = sv[0][2]
+            rec["path"] = min_curve([(0.0, rec["az"], rec["dip"])] + [s_ for s_ in sv if s_[0] > 0], rec["depth"])
+        H.append(rec)
     # --- recentre the frame on the drilling
     cx = float(np.median([h["x"] for h in H])); cy = float(np.median([h["y"] for h in H]))
     for h in H:
@@ -360,7 +397,6 @@ def build_project(ds, max_elements=3, verbose=False):
             if not segs:
                 continue
             h = H[hi]
-            d = _dir(h["az"], h["dip"])
             depth = max(h["depth"], segs[-1][1])
             for s in segs:
                 segs_out.append([hi, round(s[0], 2), round(s[1], 2), round(s[2], 4)])
@@ -378,7 +414,7 @@ def build_project(ds, max_elements=3, verbose=False):
                     mid = (s[0] + s[1]) / 2
                     j = min(len(mids) - 1, int(mid // clen))
                     gg[j] = max(gg[j], s[2] * (s[1] - s[0]) / clen)
-            xyz = np.stack([h["x"] + mids * d[0], h["y"] + mids * d[1], h["z"] + mids * d[2]], 1)
+            xyz = hole_xyz(h, mids)
             comp_p.append(xyz); comp_g.append(gg); comp_h.append(np.full(len(mids), hi))
             pos = gg > 0
             if pos.any():
@@ -462,8 +498,14 @@ def build_project(ds, max_elements=3, verbose=False):
             region = _t.region_of(lat0, lon0) or region
         except Exception:
             pass
-    hole_rows = [[h["id"], round(h["x"], 2), round(h["y"], 2), round(h["z"], 2), round(h["az"], 1),
-                  round(h["dip"], 1), round(h["depth"], 1)] for h in H]
+    hole_rows = []
+    for h in H:
+        row = [h["id"], round(h["x"], 2), round(h["y"], 2), round(h["z"], 2), round(h["az"], 1),
+               round(h["dip"], 1), round(h["depth"], 1)]
+        if h.get("path") is not None:
+            pm, px, py, pz = h["path"]
+            row.append([round(float(v), 2) for t in zip(pm, px, py, pz) for v in t])   # md,dx,dy,dz,...
+        hole_rows.append(row)
     return {
         "slug": ds["slug"], "project": ds["name"], "company": ds.get("company"), "region": region,
         "kinds": ds.get("kinds"), "updated": ds.get("updated"),
@@ -474,10 +516,28 @@ def build_project(ds, max_elements=3, verbose=False):
         "terrain": terr, "sources": ds["sources"], "resources": ds.get("resources") or [],
         "counts": {"holes": len(H), "assayed_holes": len({s[0] for e in elements.values() for s in e["segments"]}),
                    "intervals": sum(len(e["segments"]) for e in elements.values()),
+                   "surveyed": sum(1 for h in H if h.get("path") is not None),
                    "blocks": (elements[primary].get("blocks") or {}).get("n_total", 0),
                    "reports": sum(1 for s in ds["sources"] if s["kind"].startswith("NI")),
                    "releases": sum(1 for s in ds["sources"] if s["kind"] == "news release")},
     }
+
+
+def hole_xyz(h, md):
+    """3D positions at measured depths along a hole (min-curvature path when the
+    hole has a downhole survey, else straight on collar azimuth/dip)."""
+    md = np.asarray(md, float)
+    p = h.get("path")
+    if p is not None:
+        pm, px, py, pz = p
+        if md.size and md.max() > pm[-1]:
+            # extend on the last leg direction
+            v = np.array([px[-1] - px[-2], py[-1] - py[-2], pz[-1] - pz[-2]]) / max(pm[-1] - pm[-2], 1e-6)
+            pm = np.append(pm, md.max()); ext = md.max() - p[0][-1]
+            px = np.append(px, px[-1] + v[0] * ext); py = np.append(py, py[-1] + v[1] * ext); pz = np.append(pz, pz[-1] + v[2] * ext)
+        return np.stack([h["x"] + np.interp(md, pm, px), h["y"] + np.interp(md, pm, py), h["z"] + np.interp(md, pm, pz)], 1)
+    d = _dir(h["az"], h["dip"])
+    return np.stack([h["x"] + md * d[0], h["y"] + md * d[1], h["z"] + md * d[2]], 1)
 
 
 def write_viewer(model, out_html):
