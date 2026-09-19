@@ -133,5 +133,20 @@
   "size_kb": 17049,
   "collected": "2026-09-17T22:09:12Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_PUMA-2026-09-17-technical-report-ni-43-101-english-e60e.pdf"
+ },
+ {
+  "file": "ceo_LGD-2026-09-18-technical-report-ni-43-101-english-6c3c.pdf",
+  "filing_ref": "LGD-2026-09-18-technical-report-ni-43-101-english-6c3c.pdf",
+  "company": "LGD",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-09-18",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/LGD-2026-09-18-technical-report-ni-43-101-english-6c3c.pdf",
+  "source": "ceo.ca",
+  "size_kb": 57391,
+  "collected": "2026-09-19T00:20:55Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_LGD-2026-09-18-technical-report-ni-43-101-english-6c3c.pdf"
  }
 ]
