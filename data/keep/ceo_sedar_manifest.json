@@ -148,5 +148,20 @@
   "size_kb": 57391,
   "collected": "2026-09-19T00:20:55Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_LGD-2026-09-18-technical-report-ni-43-101-english-6c3c.pdf"
+ },
+ {
+  "file": "ceo_NCX-2026-09-20-technical-report-ni-43-101-english-7131.pdf",
+  "filing_ref": "NCX-2026-09-20-technical-report-ni-43-101-english-7131.pdf",
+  "company": "NCX",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-09-20",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/NCX-2026-09-20-technical-report-ni-43-101-english-7131.pdf",
+  "source": "ceo.ca",
+  "size_kb": 16852,
+  "collected": "2026-09-21T00:16:47Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_NCX-2026-09-20-technical-report-ni-43-101-english-7131.pdf"
  }
 ]
