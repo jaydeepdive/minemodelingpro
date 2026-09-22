@@ -178,5 +178,35 @@
   "size_kb": 37776,
   "collected": "2026-09-22T04:54:44Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_IAU-2026-09-21-technical-report-ni-43-101-english-34e3.pdf"
+ },
+ {
+  "file": "ceo_CRTL-2026-09-22-technical-report-ni-43-101-english-8341.pdf",
+  "filing_ref": "CRTL-2026-09-22-technical-report-ni-43-101-english-8341.pdf",
+  "company": "CRTL",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-09-22",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/CRTL-2026-09-22-technical-report-ni-43-101-english-8341.pdf",
+  "source": "ceo.ca",
+  "size_kb": 5320,
+  "collected": "2026-09-22T14:53:11Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_CRTL-2026-09-22-technical-report-ni-43-101-english-8341.pdf"
+ },
+ {
+  "file": "ceo_AVL-2026-09-22-technical-report-ni-43-101-english-03f8.pdf",
+  "filing_ref": "AVL-2026-09-22-technical-report-ni-43-101-english-03f8.pdf",
+  "company": "AVL",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-09-22",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/AVL-2026-09-22-technical-report-ni-43-101-english-03f8.pdf",
+  "source": "ceo.ca",
+  "size_kb": 3733,
+  "collected": "2026-09-22T14:53:16Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_AVL-2026-09-22-technical-report-ni-43-101-english-03f8.pdf"
  }
 ]
