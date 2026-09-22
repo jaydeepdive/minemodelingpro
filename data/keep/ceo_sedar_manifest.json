@@ -163,5 +163,20 @@
   "size_kb": 16852,
   "collected": "2026-09-21T00:16:47Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_NCX-2026-09-20-technical-report-ni-43-101-english-7131.pdf"
+ },
+ {
+  "file": "ceo_IAU-2026-09-21-technical-report-ni-43-101-english-34e3.pdf",
+  "filing_ref": "IAU-2026-09-21-technical-report-ni-43-101-english-34e3.pdf",
+  "company": "IAU",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-09-21",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/IAU-2026-09-21-technical-report-ni-43-101-english-34e3.pdf",
+  "source": "ceo.ca",
+  "size_kb": 37776,
+  "collected": "2026-09-22T04:54:44Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_IAU-2026-09-21-technical-report-ni-43-101-english-34e3.pdf"
  }
 ]
