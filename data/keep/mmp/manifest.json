@@ -1,5 +1,5 @@
 {
-  "generated": "2026-09-21T16:20:59Z",
+  "generated": "2026-09-22T10:18:58Z",
   "max_bytes": 94371840,
   "tables": {
     "collars": [
@@ -36,8 +36,8 @@
       {
         "file": "mmp/collars/news__accesswire.parquet",
         "source": "news:accesswire",
-        "rows": 560,
-        "bytes": 38373
+        "rows": 594,
+        "bytes": 40483
       },
       {
         "file": "mmp/collars/news__businesswire.parquet",
@@ -54,8 +54,8 @@
       {
         "file": "mmp/collars/news__globenewswire.parquet",
         "source": "news:globenewswire",
-        "rows": 1110,
-        "bytes": 59573
+        "rows": 1133,
+        "bytes": 60579
       },
       {
         "file": "mmp/collars/news__juniorminingnetwork.parquet",
@@ -224,8 +224,8 @@
       {
         "file": "mmp/assays/news__accesswire.parquet",
         "source": "news:accesswire",
-        "rows": 5803,
-        "bytes": 71069
+        "rows": 6133,
+        "bytes": 74863
       },
       {
         "file": "mmp/assays/news__businesswire.parquet",
@@ -236,14 +236,14 @@
       {
         "file": "mmp/assays/news__cision.parquet",
         "source": "news:cision",
-        "rows": 3110,
-        "bytes": 44938
+        "rows": 3210,
+        "bytes": 46187
       },
       {
         "file": "mmp/assays/news__globenewswire.parquet",
         "source": "news:globenewswire",
-        "rows": 6447,
-        "bytes": 88165
+        "rows": 6515,
+        "bytes": 89542
       },
       {
         "file": "mmp/assays/news__juniorminingnetwork.parquet",
@@ -254,8 +254,8 @@
       {
         "file": "mmp/assays/news__miningnewsterminal.parquet",
         "source": "news:miningnewsterminal",
-        "rows": 48424,
-        "bytes": 362210
+        "rows": 48624,
+        "bytes": 363479
       },
       {
         "file": "mmp/assays/news__newsfilecorp.parquet",
@@ -266,8 +266,8 @@
       {
         "file": "mmp/assays/news__thenewswire.parquet",
         "source": "news:thenewswire",
-        "rows": 1575,
-        "bytes": 26875
+        "rows": 1598,
+        "bytes": 27003
       },
       {
         "file": "mmp/assays/ni43101__0163af7e6ebd0418.parquet",
@@ -2802,9 +2802,9 @@
     ]
   },
   "totals": {
-    "collars": 422059,
+    "collars": 422116,
     "survey": 0,
-    "assays": 82456,
+    "assays": 83177,
     "lithology": 759931,
     "deposit_model": 2643,
     "model_method": 105,
