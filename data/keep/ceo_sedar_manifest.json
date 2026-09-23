@@ -223,5 +223,20 @@
   "size_kb": 28944,
   "collected": "2026-09-22T22:09:02Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_FFM-2026-09-22-technical-report-ni-43-101-english-a96c.pdf"
+ },
+ {
+  "file": "ceo_ABA-2026-09-23-technical-report-ni-43-101-english-4686.pdf",
+  "filing_ref": "ABA-2026-09-23-technical-report-ni-43-101-english-4686.pdf",
+  "company": "ABA",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-09-23",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/ABA-2026-09-23-technical-report-ni-43-101-english-4686.pdf",
+  "source": "ceo.ca",
+  "size_kb": 14886,
+  "collected": "2026-09-23T11:34:48Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_ABA-2026-09-23-technical-report-ni-43-101-english-4686.pdf"
  }
 ]
