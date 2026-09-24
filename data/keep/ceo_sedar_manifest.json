@@ -253,5 +253,35 @@
   "size_kb": 9561,
   "collected": "2026-09-24T15:05:49Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_ZEN-2026-09-24-technical-report-ni-43-101-english-0d4f.pdf"
+ },
+ {
+  "file": "ceo_GLDR-2023-12-08-amended-restated-technical-report-ni-43-101-english-af26.pdf",
+  "filing_ref": "GLDR-2023-12-08-amended-restated-technical-report-ni-43-101-english-af26.pdf",
+  "company": "GLDR",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2023-12-08",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/GLDR-2023-12-08-amended-restated-technical-report-ni-43-101-english-af26.pdf",
+  "source": "ceo.ca",
+  "size_kb": 7090,
+  "collected": "2026-09-24T19:09:54Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_GLDR-2023-12-08-amended-restated-technical-report-ni-43-101-english-af26.pdf"
+ },
+ {
+  "file": "ceo_GLDR-2023-12-08-amended-restated-technical-report-ni-43-101-english-5a63.pdf",
+  "filing_ref": "GLDR-2023-12-08-amended-restated-technical-report-ni-43-101-english-5a63.pdf",
+  "company": "GLDR",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2023-12-08",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/GLDR-2023-12-08-amended-restated-technical-report-ni-43-101-english-5a63.pdf",
+  "source": "ceo.ca",
+  "size_kb": 7090,
+  "collected": "2026-09-24T19:10:00Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_GLDR-2023-12-08-amended-restated-technical-report-ni-43-101-english-5a63.pdf"
  }
 ]
