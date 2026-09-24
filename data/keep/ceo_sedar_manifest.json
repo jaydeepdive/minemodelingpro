@@ -283,5 +283,20 @@
   "size_kb": 7090,
   "collected": "2026-09-24T19:10:00Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_GLDR-2023-12-08-amended-restated-technical-report-ni-43-101-english-5a63.pdf"
+ },
+ {
+  "file": "ceo_BMT-2026-09-24-technical-report-ni-43-101-english-baa2.pdf",
+  "filing_ref": "BMT-2026-09-24-technical-report-ni-43-101-english-baa2.pdf",
+  "company": "BMT",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-09-24",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/BMT-2026-09-24-technical-report-ni-43-101-english-baa2.pdf",
+  "source": "ceo.ca",
+  "size_kb": 11097,
+  "collected": "2026-09-24T22:24:10Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_BMT-2026-09-24-technical-report-ni-43-101-english-baa2.pdf"
  }
 ]
