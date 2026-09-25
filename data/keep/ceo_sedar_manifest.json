@@ -298,5 +298,20 @@
   "size_kb": 11097,
   "collected": "2026-09-24T22:24:10Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_BMT-2026-09-24-technical-report-ni-43-101-english-baa2.pdf"
+ },
+ {
+  "file": "ceo_WGO-2026-09-24-technical-report-ni-43-101-english-57f9.pdf",
+  "filing_ref": "WGO-2026-09-24-technical-report-ni-43-101-english-57f9.pdf",
+  "company": "WGO",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-09-24",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/WGO-2026-09-24-technical-report-ni-43-101-english-57f9.pdf",
+  "source": "ceo.ca",
+  "size_kb": 19513,
+  "collected": "2026-09-25T01:30:28Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_WGO-2026-09-24-technical-report-ni-43-101-english-57f9.pdf"
  }
 ]
