@@ -343,5 +343,35 @@
   "size_kb": 72709,
   "collected": "2026-09-25T18:36:51Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_ERD-2026-09-25-technical-report-ni-43-101-english-b655.pdf"
+ },
+ {
+  "file": "ceo_LAF-2026-09-25-technical-report-ni-43-101-english-7350.pdf",
+  "filing_ref": "LAF-2026-09-25-technical-report-ni-43-101-english-7350.pdf",
+  "company": "LAF",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-09-25",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/LAF-2026-09-25-technical-report-ni-43-101-english-7350.pdf",
+  "source": "ceo.ca",
+  "size_kb": 5151,
+  "collected": "2026-09-26T01:33:14Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_LAF-2026-09-25-technical-report-ni-43-101-english-7350.pdf"
+ },
+ {
+  "file": "ceo_LAF-2026-09-25-technical-report-ni-43-101-english-97a6.pdf",
+  "filing_ref": "LAF-2026-09-25-technical-report-ni-43-101-english-97a6.pdf",
+  "company": "LAF",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-09-25",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/LAF-2026-09-25-technical-report-ni-43-101-english-97a6.pdf",
+  "source": "ceo.ca",
+  "size_kb": 6178,
+  "collected": "2026-09-26T01:33:18Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_LAF-2026-09-25-technical-report-ni-43-101-english-97a6.pdf"
  }
 ]
