@@ -1,5 +1,5 @@
 {
-  "generated": "2026-10-01T10:57:17Z",
+  "generated": "2026-10-01T11:50:25Z",
   "max_bytes": 94371840,
   "tables": {
     "collars": [
@@ -54,8 +54,8 @@
       {
         "file": "mmp/collars/news__accesswire.parquet",
         "source": "news:accesswire",
-        "rows": 773,
-        "bytes": 45204
+        "rows": 774,
+        "bytes": 45348
       },
       {
         "file": "mmp/collars/news__businesswire.parquet",
@@ -254,8 +254,8 @@
       {
         "file": "mmp/assays/news__accesswire.parquet",
         "source": "news:accesswire",
-        "rows": 7023,
-        "bytes": 84413
+        "rows": 7039,
+        "bytes": 84107
       },
       {
         "file": "mmp/assays/news__businesswire.parquet",
@@ -272,8 +272,8 @@
       {
         "file": "mmp/assays/news__globenewswire.parquet",
         "source": "news:globenewswire",
-        "rows": 14599,
-        "bytes": 139321
+        "rows": 14617,
+        "bytes": 139465
       },
       {
         "file": "mmp/assays/news__juniorminingnetwork.parquet",
@@ -284,8 +284,8 @@
       {
         "file": "mmp/assays/news__miningnewsterminal.parquet",
         "source": "news:miningnewsterminal",
-        "rows": 49660,
-        "bytes": 370549
+        "rows": 49787,
+        "bytes": 371512
       },
       {
         "file": "mmp/assays/news__newsfilecorp.parquet",
@@ -296,8 +296,8 @@
       {
         "file": "mmp/assays/news__thenewswire.parquet",
         "source": "news:thenewswire",
-        "rows": 2054,
-        "bytes": 31565
+        "rows": 2104,
+        "bytes": 32394
       },
       {
         "file": "mmp/assays/ni43101__0163af7e6ebd0418.parquet",
@@ -2832,9 +2832,9 @@
     ]
   },
   "totals": {
-    "collars": 811820,
+    "collars": 811821,
     "survey": 0,
-    "assays": 14201475,
+    "assays": 14201686,
     "lithology": 759931,
     "deposit_model": 2643,
     "model_method": 105,
