@@ -463,5 +463,20 @@
   "size_kb": 77282,
   "collected": "2026-10-02T09:45:19Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_NCF-2026-10-01-technical-report-ni-43-101-english-e6cd.pdf"
+ },
+ {
+  "file": "ceo_PMET-2026-10-02-amended-restated-technical-report-ni-43-101-english-08da.pdf",
+  "filing_ref": "PMET-2026-10-02-amended-restated-technical-report-ni-43-101-english-08da.pdf",
+  "company": "PMET",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-10-02",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/PMET-2026-10-02-amended-restated-technical-report-ni-43-101-english-08da.pdf",
+  "source": "ceo.ca",
+  "size_kb": 55510,
+  "collected": "2026-10-02T21:20:59Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_PMET-2026-10-02-amended-restated-technical-report-ni-43-101-english-08da.pdf"
  }
 ]
