@@ -478,5 +478,35 @@
   "size_kb": 55510,
   "collected": "2026-10-02T21:20:59Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_PMET-2026-10-02-amended-restated-technical-report-ni-43-101-english-08da.pdf"
+ },
+ {
+  "file": "ceo_NGEX-2026-10-02-technical-report-ni-43-101-english-46fc.pdf",
+  "filing_ref": "NGEX-2026-10-02-technical-report-ni-43-101-english-46fc.pdf",
+  "company": "NGEX",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-10-02",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/NGEX-2026-10-02-technical-report-ni-43-101-english-46fc.pdf",
+  "source": "ceo.ca",
+  "size_kb": 9469,
+  "collected": "2026-10-03T01:12:36Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_NGEX-2026-10-02-technical-report-ni-43-101-english-46fc.pdf"
+ },
+ {
+  "file": "ceo_KLDC-2026-10-02-technical-report-ni-43-101-english-f495.pdf",
+  "filing_ref": "KLDC-2026-10-02-technical-report-ni-43-101-english-f495.pdf",
+  "company": "KLDC",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-10-02",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/KLDC-2026-10-02-technical-report-ni-43-101-english-f495.pdf",
+  "source": "ceo.ca",
+  "size_kb": 4463,
+  "collected": "2026-10-03T01:12:41Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_KLDC-2026-10-02-technical-report-ni-43-101-english-f495.pdf"
  }
 ]
