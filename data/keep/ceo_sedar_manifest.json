@@ -523,5 +523,35 @@
   "size_kb": 6560,
   "collected": "2026-10-04T05:51:23Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_OMG-2026-10-04-technical-report-ni-43-101-english-3629.pdf"
+ },
+ {
+  "file": "ceo_MLM-2026-10-04-technical-report-ni-43-101-english-d439.pdf",
+  "filing_ref": "MLM-2026-10-04-technical-report-ni-43-101-english-d439.pdf",
+  "company": "MLM",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-10-04",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/MLM-2026-10-04-technical-report-ni-43-101-english-d439.pdf",
+  "source": "ceo.ca",
+  "size_kb": 9561,
+  "collected": "2026-10-05T16:00:36Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_MLM-2026-10-04-technical-report-ni-43-101-english-d439.pdf"
+ },
+ {
+  "file": "ceo_TUNG-2026-10-05-technical-report-ni-43-101-english-e12c.pdf",
+  "filing_ref": "TUNG-2026-10-05-technical-report-ni-43-101-english-e12c.pdf",
+  "company": "TUNG",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-10-05",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/TUNG-2026-10-05-technical-report-ni-43-101-english-e12c.pdf",
+  "source": "ceo.ca",
+  "size_kb": 9078,
+  "collected": "2026-10-05T16:00:41Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_TUNG-2026-10-05-technical-report-ni-43-101-english-e12c.pdf"
  }
 ]
