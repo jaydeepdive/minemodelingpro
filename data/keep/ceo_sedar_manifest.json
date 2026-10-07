@@ -568,5 +568,20 @@
   "size_kb": 14441,
   "collected": "2026-10-05T22:37:56Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_LG-2026-10-05-technical-report-ni-43-101-english-6c77.pdf"
+ },
+ {
+  "file": "ceo_FRED-2026-10-07-technical-report-ni-43-101-english-7f02.pdf",
+  "filing_ref": "FRED-2026-10-07-technical-report-ni-43-101-english-7f02.pdf",
+  "company": "FRED",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-10-07",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/FRED-2026-10-07-technical-report-ni-43-101-english-7f02.pdf",
+  "source": "ceo.ca",
+  "size_kb": 6656,
+  "collected": "2026-10-07T22:00:03Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_FRED-2026-10-07-technical-report-ni-43-101-english-7f02.pdf"
  }
 ]
