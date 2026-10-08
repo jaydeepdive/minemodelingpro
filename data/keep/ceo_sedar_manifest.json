@@ -613,5 +613,20 @@
   "size_kb": 4547,
   "collected": "2026-10-08T16:28:42Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_NATO-2026-10-08-technical-report-ni-43-101-english-93a0.pdf"
+ },
+ {
+  "file": "ceo_LAR-2026-10-08-technical-report-ni-43-101-english-ec6c.pdf",
+  "filing_ref": "LAR-2026-10-08-technical-report-ni-43-101-english-ec6c.pdf",
+  "company": "LAR",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-10-08",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/LAR-2026-10-08-technical-report-ni-43-101-english-ec6c.pdf",
+  "source": "ceo.ca",
+  "size_kb": 31075,
+  "collected": "2026-10-08T22:05:58Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_LAR-2026-10-08-technical-report-ni-43-101-english-ec6c.pdf"
  }
 ]
