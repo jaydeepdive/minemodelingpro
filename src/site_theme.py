@@ -48,6 +48,7 @@ def header(active=""):
         '</a>'
         '<nav class="menu">'
         f'<a href="index.html" class="{("active" if home_active else "").strip()}">3D Models</a>'
+        f'<a href="app/index.html" class="{("active" if active == "app" else "")}">Studio &mdash; model your own data</a>'
         f'<a class="ext" href="{CLOSEOLOGY_URL}" target="_blank" rel="noopener">Closeology radar &#8599;</a>'
         '</nav>'
         '</div></div>')

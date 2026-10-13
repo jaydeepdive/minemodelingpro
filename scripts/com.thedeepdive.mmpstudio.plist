@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- MMP Studio worker: parses uploaded drill data and builds models for Studio
+     accounts. Fill in the two Supabase values, copy to ~/Library/LaunchAgents/,
+     then: launchctl load ~/Library/LaunchAgents/com.thedeepdive.mmpstudio.plist -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.thedeepdive.mmpstudio</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>/Users/jordanlutz/minemodelingpro/studio/worker.py</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/jordanlutz/minemodelingpro</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PYTHONPATH</key><string>/Users/jordanlutz/minemodelingpro/src</string>
+    <key>SUPABASE_URL</key><string>https://REPLACE.supabase.co</string>
+    <key>SUPABASE_SERVICE_KEY</key><string>REPLACE_WITH_SERVICE_ROLE_KEY</string>
+    <key>MMP_POLL_SECONDS</key><string>5</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>/Users/jordanlutz/minemodelingpro/data/keep/mmp_studio.log</string>
+  <key>StandardErrorPath</key><string>/Users/jordanlutz/minemodelingpro/data/keep/mmp_studio.err</string>
+</dict>
+</plist>

@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sign in · MineModelingPro Studio</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bitter:wght@500;700;800&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+<script src="config.js"></script>
+</head>
+<body>
+<div class="topbar" id="topbar"></div>
+<div class="wrap">
+  <div class="grid c2" style="align-items:start">
+    <div>
+      <h1>Model your own drill data</h1>
+      <div class="rule"></div>
+      <p class="lead">Upload collar, survey and assay files — CSV, Excel, Access or a zip of them — and MineModelingPro
+        builds the same 3D model it builds from technical reports: desurveyed holes coloured by grade, an inverse-distance
+        block model on the block size you choose, grade-tonnage and contained metal, on real terrain.</p>
+      <p class="lead"><b>Your data stays private.</b> Projects are visible only to your account until you choose to share one.
+        You can keep adding data to a project over time, or merge your drilling with a project already in the public gallery.</p>
+      <div class="sec">
+        <h3>What to upload</h3>
+        <table>
+          <tr><th>Table</th><th>Needs</th><th>Also understood</th></tr>
+          <tr><td><b>Collars</b></td><td>hole id, easting/northing (or lat/long)</td><td>elevation, azimuth, dip, total depth, feet or metres</td></tr>
+          <tr><td><b>Assays</b></td><td>hole id, from, to (or length), one grade column per element</td><td>long format (element + value), ppm/ppb/%/g/t/oz-t</td></tr>
+          <tr><td><b>Surveys</b></td><td>hole id, depth, azimuth, dip</td><td>used for minimum-curvature hole paths</td></tr>
+        </table>
+        <p class="note">Column names are matched by meaning — <code>HOLEID</code>, <code>Hole_No</code>, <code>BHID</code>, <code>DDH</code> all work.
+          Tell us the EPSG code or UTM zone and your grid is placed on the map; without one the model still builds in its own local grid.</p>
+      </div>
+    </div>
+    <div class="card" id="authcard">
+      <h2 id="authtitle">Sign in</h2>
+      <p class="note" id="authnote">New here? Create an account — it takes a second and your projects stay private.</p>
+      <div id="msg"></div>
+      <form id="authform" style="margin-top:12px">
+        <div id="namewrap" style="display:none"><label>Name</label><input type="text" name="name" autocomplete="name"></div>
+        <label>Email</label><input type="email" name="email" required autocomplete="email">
+        <label style="margin-top:10px">Password</label><input type="password" name="password" required minlength="8" autocomplete="current-password">
+        <button class="btn" style="width:100%;margin-top:14px" id="submit">Sign in</button>
+      </form>
+      <p class="note" style="margin-top:12px"><a href="#" id="toggle">Create an account instead</a> · <a href="#" id="forgot">Forgot password</a></p>
+      <p class="note" id="cfgwarn" style="display:none;margin-top:12px"></p>
+    </div>
+  </div>
+</div>
+<footer class="site"><b>MineModelingPro Studio</b> — grades are inverse-distance estimates for visualisation, not a mineral resource estimate.</footer>
+<script type="module">
+import { sb, configured, chrome, $, banner, session } from "./app.js";
+await chrome("");
+if (!configured) {
+  document.getElementById("authform").style.display = "none";
+  const w = document.getElementById("cfgwarn"); w.style.display = "block";
+  w.innerHTML = "Studio isn't connected to its Supabase project yet — set SUPABASE_URL and SUPABASE_ANON_KEY in <code>app/config.js</code> (see <code>studio/README.md</code>).";
+} else if (await session()) {
+  location.href = "dashboard.html";
+}
+let mode = "signin";
+const next = new URLSearchParams(location.search).get("next") || "dashboard.html";
+$("#toggle").onclick = e => { e.preventDefault(); mode = mode === "signin" ? "signup" : "signin";
+  $("#authtitle").textContent = mode === "signin" ? "Sign in" : "Create your account";
+  $("#submit").textContent = mode === "signin" ? "Sign in" : "Create account";
+  $("#namewrap").style.display = mode === "signup" ? "block" : "none";
+  $("#toggle").textContent = mode === "signin" ? "Create an account instead" : "I already have an account";
+  $("#authnote").textContent = mode === "signin" ? "New here? Create an account — it takes a second and your projects stay private."
+    : "Projects are private to your account. You choose if and when to share one.";
+  banner(""); };
+$("#forgot").onclick = async e => { e.preventDefault();
+  const email = $("[name=email]").value.trim();
+  if (!email) return banner("Enter your email address first, then click Forgot password.");
+  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.href });
+  banner(error ? error.message : "Check your email for a reset link.", error ? "err" : "ok"); };
+$("#authform").onsubmit = async e => {
+  e.preventDefault(); banner(""); $("#submit").disabled = true;
+  const f = new FormData(e.target), email = f.get("email").trim(), password = f.get("password");
+  try {
+    if (mode === "signup") {
+      const { error } = await sb.auth.signUp({ email, password, options: { data: { name: f.get("name") || "" } } });
+      if (error) throw error;
+      const s = await session();
+      if (!s) return banner("Account created — check your email to confirm it, then sign in.", "ok");
+    } else {
+      const { error } = await sb.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+    }
+    location.href = next;
+  } catch (err) { banner(err.message || String(err)); }
+  finally { $("#submit").disabled = false; }
+};
+</script>
+</body>
+</html>

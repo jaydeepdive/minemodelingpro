@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>My projects · MineModelingPro Studio</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bitter:wght@500;700;800&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+<script src="config.js"></script>
+</head>
+<body>
+<div class="topbar" id="topbar"></div>
+<div class="wrap">
+  <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap">
+    <div><h1>My projects</h1><div class="rule"></div>
+      <p class="lead">Each project holds the drill data you upload and the model built from it. Private to your account unless you share it.</p></div>
+    <button class="btn" id="newbtn">+ New project</button>
+  </div>
+  <div id="msg"></div>
+
+  <div class="card" id="newcard" style="display:none;margin-top:16px">
+    <h3>New project</h3>
+    <form id="newform" style="margin-top:10px">
+      <div class="row">
+        <div><label>Project name</label><input type="text" name="name" required placeholder="e.g. North Ridge"></div>
+        <div><label>Company (optional)</label><input type="text" name="company" placeholder="e.g. Example Mining"></div>
+      </div>
+      <div style="margin-top:10px">
+        <label>Build on top of a public model (optional)</label>
+        <select name="attach_to"><option value="">No — this project stands alone</option></select>
+        <div class="note">Merges your holes with the drilling MineModelingPro already holds for that project, joined by hole id.</div>
+      </div>
+      <div class="row" style="margin-top:14px"><button class="btn" type="submit">Create project</button>
+        <button class="btn ghost" type="button" id="cancelnew">Cancel</button></div>
+    </form>
+  </div>
+
+  <div id="list" style="margin-top:18px"><p class="muted"><span class="spin"></span> Loading…</p></div>
+</div>
+<footer class="site"><b>MineModelingPro Studio</b> — your uploads and models are private to your account. Grades are inverse-distance estimates for visualisation, not a mineral resource estimate.</footer>
+<script type="module">
+import { sb, chrome, requireUser, listProjects, createProject, statusChip, $, esc, fmt, fmtC, banner } from "./app.js";
+await chrome("dashboard");
+const user = await requireUser(); if (!user) throw new Error("redirecting");
+
+// public projects you can build on top of
+try {
+  const r = await fetch("../models_index.json"); const idx = await r.json();
+  const sel = $("[name=attach_to]");
+  (idx.models || []).sort((a,b)=>(a.project||"").localeCompare(b.project||""))
+    .forEach(m => sel.insertAdjacentHTML("beforeend", `<option value="${esc(m.slug)}">${esc(m.project)}${m.company ? " — " + esc(m.company) : ""}</option>`));
+} catch (e) { /* gallery index not reachable — fine */ }
+
+$("#newbtn").onclick = () => { $("#newcard").style.display = "block"; $("[name=name]").focus(); };
+$("#cancelnew").onclick = () => { $("#newcard").style.display = "none"; };
+$("#newform").onsubmit = async e => {
+  e.preventDefault(); banner("");
+  const f = new FormData(e.target);
+  try {
+    const p = await createProject({ name: f.get("name").trim(), company: f.get("company").trim(), attach_to: f.get("attach_to") });
+    location.href = "project.html?id=" + p.id;
+  } catch (err) { banner(err.message || String(err)); }
+};
+
+function card(p) {
+  const s = p.stats || {};
+  return `<a class="card" href="project.html?id=${p.id}" style="display:block;color:inherit">
+    <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
+      <div><h3>${esc(p.name)}</h3>${p.company ? `<div class="note">${esc(p.company)}</div>` : ""}</div>
+      <div style="text-align:right">${statusChip(p)}</div>
+    </div>
+    ${s.holes ? `<div class="stats" style="margin-top:12px">
+      <div class="stat"><b>${fmt(s.holes)}</b><span>Holes</span></div>
+      <div class="stat"><b>${fmt(s.intervals)}</b><span>Intervals</span></div>
+      <div class="stat"><b>${fmt(s.blocks)}</b><span>Blocks</span></div>
+      <div class="stat"><b>${fmtC(s.contained, s.contained_unit)}</b><span>${esc(s.element || "")} above ${s.cutoff ?? ""}</span></div>
+    </div>` : `<p class="note" style="margin-top:10px">${p.status === "error" ? esc(p.error || "Build failed") : "No data uploaded yet — open the project to add files."}</p>`}
+    <div class="note" style="margin-top:10px">Updated ${new Date(p.updated_at).toLocaleString()}</div>
+  </a>`;
+}
+async function render() {
+  try {
+    const ps = await listProjects();
+    $("#list").innerHTML = ps.length
+      ? `<div class="grid c3">${ps.map(card).join("")}</div>`
+      : `<div class="card"><h3>Nothing here yet</h3><p class="note">Create a project, then drop your collar / assay / survey files into it.</p></div>`;
+  } catch (e) { banner(e.message || String(e)); }
+}
+await render();
+setInterval(render, 8000);
+</script>
+</body>
+</html>

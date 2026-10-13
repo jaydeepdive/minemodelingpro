@@ -1,0 +1,4 @@
+# MMP Studio worker — on top of the repo's requirements.txt
+supabase>=2.4          # Supabase client (auth-free service-role access)
+# Access (.mdb/.accdb) imports additionally need the mdbtools binaries:
+#   macOS: brew install mdbtools      Debian/Ubuntu: apt-get install mdbtools

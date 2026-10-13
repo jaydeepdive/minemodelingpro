@@ -34,6 +34,7 @@ from collections import Counter, defaultdict
 import numpy as np
 
 from minemodelingpro import holeid
+from minemodelingpro import imports as IMP
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DRILLBANK = os.path.join(_ROOT, "data", "keep", "drillbank.sqlite")
@@ -321,9 +322,14 @@ def _overrides():
 
 
 # ---------------------------------------------------------------- assembly
-def assemble(min_holes=3, min_intervals=8, verbose=False):
+def assemble(min_holes=3, min_intervals=8, verbose=False, include_imports=True):
+    """Datasets for every project. Imported datasets (minemodelingpro.imports) are
+    treated as another source alongside technical reports — attached to the project
+    named by their `attach_to` slug, or standing on their own."""
     news_holes, news_ivs = load_news()
-    reports = load_reports()
+    # Imported datasets marked private live in data/private/ and are never part of
+    # the public build — the Studio worker feeds those straight to build_project.
+    reports = load_reports() + (IMP.load_all(include_private=False) if include_imports else [])
     ov = _overrides()
 
     # ---- 1. spatial clusters of news holes
@@ -422,6 +428,15 @@ def assemble(min_holes=3, min_intervals=8, verbose=False):
                     s -= 20
             if s > best_s:
                 best, best_s = p, s
+        forced = r.get("attach_to")
+        if forced:
+            tgt = next((p for p in projs if _auto_names(p)[2] == forced
+                        or name_key(p.get("project") or "") == name_key(forced)), None)
+            if tgt is not None:
+                tgt["reports"].append(r); tgt["keys"] |= ikeys
+                continue
+            if verbose:
+                print(f"[projects] {r['id']}: attach_to '{forced}' not found — standing alone")
         if best is not None and best_s >= 6:
             best["reports"].append(r)
             best["keys"] |= ikeys
@@ -568,7 +583,8 @@ def _materialise(p, news_holes, news_ivs, ov):
                               "el": x["el"], "grade": x["grade"], "unit": x.get("unit"), "sub": x.get("sub", 0),
                               "src": sid})
         res = r.get("resource")
-        sources.append({"kind": "NI 43-101 technical report", "id": sid,
+        sources.append({"kind": ("imported data" if r.get("source") == "import"
+                                 else "NI 43-101 technical report"), "id": sid,
                         "title": _report_title(r),
                         "url": r.get("report_url") or r.get("archive_url"), "archive": r.get("archive_url"),
                         "date": r.get("date"), "collars": len(r.get("collars") or []),
@@ -684,20 +700,35 @@ def _materialise(p, news_holes, news_ivs, ov):
             res.append({"source": r["id"], "date": r.get("date"), "url": r.get("report_url") or r.get("archive_url"),
                         "title": sources[[s.get("id") for s in sources].index(r["id"])]["title"] if r["id"] in [s.get("id") for s in sources] else r["id"],
                         **r["resource"]})
+    imported = [r for r in reports if r.get("source") == "import"]
+    ds_params = {}
+    for r in imported:
+        ds_params.update(r.get("params") or {})
     blocks = [r.get("block_size") for r in reports if r.get("block_size")]
     dens = [r.get("density") for r in reports if r.get("density")]
     return {"slug": slug, "name": name, "company": company, "region": region,
+            "params": ds_params or None,
+            "private": any(r.get("private") for r in imported) or None,
+            "owners": sorted({r["owner"] for r in imported if r.get("owner")}) or None,
             "frame": frame, "holes": holes, "intervals": intervals, "sources": sources,
             "resources": res, "report_block": blocks[0] if blocks else None,
             "commodities": [c for c in (str(r.get("commodity") or "").split("-")[0] for r in reports) if c],
             "report_density": dens[0] if dens else None,
             "updated": max(dates) if dates else None,
-            "kinds": sorted({("report" if s["kind"].startswith("NI") else "news") for s in sources})}
+            "kinds": sorted({("report" if s["kind"].startswith("NI") else
+                              "import" if s["kind"] == "imported data" else "news") for s in sources})}
 
 
 def _report_title(r):
     nm = clean_project(r.get("project")) or clean_project(r.get("title_project"))
     co = clean_company(r.get("company"))
+    if r.get("source") == "import":
+        t = "Imported data"
+        if r.get("source_name"):
+            t += " — " + str(r["source_name"])[:80]
+        if r.get("date"):
+            t += ", " + str(r["date"])[:10]
+        return t
     t = "NI 43-101 technical report"
     if nm:
         t += " — " + nm

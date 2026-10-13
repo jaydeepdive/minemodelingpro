@@ -35,6 +35,7 @@ import numpy as np
 
 from minemodelingpro import projects as P
 from minemodelingpro import holeid
+from minemodelingpro import params as PARAMS
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(os.path.dirname(_HERE))
@@ -183,16 +184,25 @@ def _spacing(hole_centroids):
 
 
 # ------------------------------------------------------------- block estimate
-def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000):
-    """IDW² on a regular grid of `block` (bx,by,bz) cells, only within max_gap of
-    real composites and informed by >=2 holes. Returns (origin, block, ijk, grade,
-    params)."""
+def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None):
+    """Grade estimate on a regular grid of `block` (bx,by,bz) cells, only within
+    max_gap of real composites and informed by >= min_holes holes. Returns
+    (origin, block, ijk, grade, params).
+
+    `opts` (per-project settings) can set radius_m, max_gap_m, min_holes,
+    min_samples, power and method ("idw" | "nn" | "mean"); anything absent is
+    derived from the drill spacing as before."""
     from scipy.spatial import cKDTree
     from scipy import ndimage
+    o = opts or {}
     bx, by, bz = [float(v) for v in block]
     bmax = max(bx, by, bz)
-    radius = float(np.clip(spacing * 1.6, 4 * bmax, 160.0))
-    max_gap = float(np.clip(spacing * 0.75, 1.6 * bmax, 70.0))
+    radius = float(o.get("radius_m") or np.clip(spacing * 1.6, 4 * bmax, 160.0))
+    max_gap = float(o.get("max_gap_m") or np.clip(spacing * 0.75, 1.6 * bmax, 70.0))
+    min_holes = int(o.get("min_holes") or 2)
+    min_samples = int(o.get("min_samples") or 3)
+    power = float(o.get("power") if o.get("power") is not None else 2.0)
+    method = o.get("method") or "idw"
     lo = pts.min(0) - max_gap
     hi = pts.max(0) + max_gap
     dims = np.ceil((hi - lo) / [bx, by, bz]).astype(int) + 1
@@ -225,7 +235,7 @@ def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000):
         ctr = lo + (fine + 0.5) * [bx, by, bz]
         dd, ii = tree.query(ctr, k=16, distance_upper_bound=radius)
         near = np.isfinite(dd)
-        keep = near[:, 0] & (dd[:, 0] <= max_gap) & (near.sum(1) >= 3)
+        keep = near[:, 0] & (dd[:, 0] <= max_gap) & (near.sum(1) >= min_samples)
         if not keep.any():
             continue
         dd, ii, fine = dd[keep], ii[keep], fine[keep]
@@ -235,20 +245,26 @@ def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000):
         # >= 2 distinct holes
         hs = np.sort(hh, axis=1)
         nuniq = (np.diff(hs, axis=1) != 0).sum(1) + 1 - (hs[:, 0] == -1)
-        k2 = nuniq >= 2
+        k2 = nuniq >= min_holes
         if not k2.any():
             continue
         dd, iis, nearm, fine = dd[k2], iis[k2], nearm[k2], fine[k2]
-        w = np.where(nearm, 1.0 / np.maximum(dd, 0.5) ** 2, 0.0)
-        est = (w * g[iis]).sum(1) / w.sum(1)
+        if method == "nn":
+            est = g[iis[:, 0]]
+        elif method == "mean":
+            w = nearm.astype(float)
+            est = (w * g[iis]).sum(1) / w.sum(1)
+        else:
+            w = np.where(nearm, 1.0 / np.maximum(dd, 0.5) ** power, 0.0)
+            est = (w * g[iis]).sum(1) / w.sum(1)
         ijk_out.append(fine.astype(np.int32)); g_out.append(est.astype(np.float32))
     if ijk_out:
         ijk = np.concatenate(ijk_out); gr = np.concatenate(g_out)
     else:
         ijk = np.zeros((0, 3), np.int32); gr = np.zeros(0, np.float32)
     params = {"block": [bx, by, bz], "radius_m": round(radius, 1), "max_gap_m": round(max_gap, 1),
-              "spacing_m": round(spacing, 1), "power": 2, "min_holes": 2, "min_samples": 3,
-              "coarsened": coarsened}
+              "spacing_m": round(spacing, 1), "power": power, "min_holes": min_holes,
+              "min_samples": min_samples, "method": method, "coarsened": coarsened}
     return lo, (bx, by, bz), ijk, gr, params
 
 
@@ -281,7 +297,12 @@ def _snap(v):
     return min(std, key=lambda s: abs(s - v))
 
 
-def build_project(ds, max_elements=3, verbose=False):
+def build_project(ds, max_elements=3, verbose=False, settings=None):
+    """Build one project model. `settings` (or data/keep/mmp_model_params.json via
+    the project slug, or ds["params"] from an imported dataset) overrides any of
+    the data-driven defaults — see minemodelingpro.params."""
+    PS = PARAMS.for_project(ds.get("slug"), extra={**(ds.get("params") or {}), **(settings or {})})
+    max_elements = int(PS.get("max_elements") or max_elements)
     fr = ds["frame"]
     holes = [h for h in ds["holes"].values() if h.get("_ok")]
     if not holes:
@@ -318,6 +339,10 @@ def build_project(ds, max_elements=3, verbose=False):
     els = sorted([e for e in by_el if len(by_el[e]) >= 4], key=score, reverse=True)[:max_elements]
     if not els:
         els = sorted(by_el, key=score, reverse=True)[:1]
+    if PS.get("elements"):                      # explicit element list from project settings
+        want = [e for e in PS["elements"] if e in by_el]
+        if want:
+            els = want[:max_elements]
 
     # --- collar elevations / depths
     geo = fr["kind"] == "geo"
@@ -387,10 +412,11 @@ def build_project(ds, max_elements=3, verbose=False):
             per_hole[key2i[x["key"]]].append(x)
         segs_out = []          # [hole_idx, from, to, grade]
         comp_p, comp_g, comp_h = [], [], []
-        # block size: the report's parent block, else the commodity median
-        blk = report_block or med_blocks.get(el) or DEFAULT_BLOCK.get(el) or [10, 10, 5]
+        # block size: project settings, else the report's parent block, else the
+        # median 43-101 block for the commodity
+        blk = PS.get("block") or report_block or med_blocks.get(el) or DEFAULT_BLOCK.get(el) or [10, 10, 5]
         blk = [float(v) for v in blk]
-        clen = max(1.0, min(blk[2], 5.0))
+        clen = float(PS.get("composite_m") or max(1.0, min(blk[2], 5.0)))
         cent = []
         for hi, ivs in per_hole.items():
             segs = _segments(ivs)
@@ -407,6 +433,12 @@ def build_project(ds, max_elements=3, verbose=False):
             if len(mids) == 0:
                 mids = np.array([depth / 2.0])
             gg = np.zeros(len(mids))
+            if PS.get("gap_fill") is False:      # only composite the reported intervals
+                keep_m = np.zeros(len(mids), bool)
+                for s in segs:
+                    keep_m |= (mids >= s[0]) & (mids < s[1])
+                mids = mids[keep_m] if keep_m.any() else mids[:1]
+                gg = np.zeros(len(mids))
             for s in segs:
                 m = (mids >= s[0]) & (mids < s[1])
                 gg[m] = s[2]
@@ -422,7 +454,7 @@ def build_project(ds, max_elements=3, verbose=False):
         if not segs_out:
             continue
         grades = [s[3] for s in segs_out]
-        bins = bins_for(el, grades)
+        bins = [float(b) for b in PS["bins"]] if (PS.get("bins") and el == els[0]) else bins_for(el, grades)
         el_out = {"unit": unit, "bins": bins, "colors": PALETTE[:len(bins) + 1][-(len(bins) + 1):]
                   if len(bins) + 1 <= len(PALETTE) else PALETTE,
                   "segments": segs_out, "n_holes": len(per_hole),
@@ -436,16 +468,21 @@ def build_project(ds, max_elements=3, verbose=False):
         n_assayed_holes = len([c for c in comp_p if len(c)])
         if n_assayed_holes >= 4 and len(cent) >= 3:
             pts = np.concatenate(comp_p); g = np.concatenate(comp_g); hid = np.concatenate(comp_h)
-            top = float(np.percentile(g[g > 0], 99.5)) if (g > 0).sum() > 20 else float(g.max())
+            tcp = float(PS.get("top_cut_pct") or 99.5)
+            top = float(PS.get("top_cut") or (float(np.percentile(g[g > 0], tcp))
+                                              if (g > 0).sum() > 20 else float(g.max())))
             g = np.minimum(g, top)
-            spacing = _spacing(cent)
-            lo, bsz, ijk, gr, params = estimate_blocks(pts, g, hid, blk, spacing)
+            spacing = float(PS.get("spacing_m") or _spacing(cent))
+            lo, bsz, ijk, gr, params = estimate_blocks(pts, g, hid, blk, spacing, opts=PS)
             params["top_cut"] = round(top, 3)
             params["composite_m"] = clen
-            params["block_source"] = ("technical report" if report_block else
+            params["block_source"] = ("project settings" if PS.get("block") else
+                                      "technical report" if report_block else
                                       "median 43-101 block for " + el if med_blocks.get(el) else "default")
-            dens = ds.get("report_density")
-            if not dens or not (2.3 <= dens <= 3.6):
+            params["gap_fill"] = PS.get("gap_fill") is not False
+            params["custom"] = sorted(k for k in PS if k in PARAMS.ALL)
+            dens = PS.get("density") or ds.get("report_density")
+            if not dens or not (1.0 <= dens <= 8.0):
                 dens = DENSITY.get(el, 2.7)
             bt = bsz[0] * bsz[1] * bsz[2] * dens
             # grade-tonnage curve over all estimated blocks
@@ -470,6 +507,8 @@ def build_project(ds, max_elements=3, verbose=False):
                                 "n": int(keep.sum()), "n_total": int(len(gr)), "shown_from": round(show, 4),
                                 "tonnes_per_block": round(bt, 1), "density": dens, "params": params}
             el_out["gt"] = gt
+            if PS.get("default_cutoff") is not None:
+                el_out["default_cutoff"] = float(PS["default_cutoff"])
             el_out["contained_unit"] = contained_unit(el, unit)
         elements[el] = el_out
     if not elements:
@@ -513,6 +552,7 @@ def build_project(ds, max_elements=3, verbose=False):
         "frame": {"kind": fr["kind"], "lat0": round(lat0, 6) if geo else None, "lon0": round(lon0, 6) if geo else None,
                   "grid": fr.get("grid")},
         "holes": hole_rows, "elements": elements, "primary": primary,
+        "settings": {k: v for k, v in PS.items() if k in PARAMS.ALL},
         "terrain": terr, "sources": ds["sources"], "resources": ds.get("resources") or [],
         "counts": {"holes": len(H), "assayed_holes": len({s[0] for e in elements.values() for s in e["segments"]}),
                    "intervals": sum(len(e["segments"]) for e in elements.values()),
@@ -540,8 +580,26 @@ def hole_xyz(h, md):
     return np.stack([h["x"] + md * d[0], h["y"] + md * d[1], h["z"] + md * d[2]], 1)
 
 
+VIEWER_JS = os.path.join(_HERE, "viewer.js")
+
+
 def write_viewer(model, out_html):
+    """Write a model page. The renderer lives in a shared viewer.js next to the
+    pages (and is copied there when missing or stale), so each model page carries
+    only its own data."""
     tmpl = open(_VIEWER_TMPL).read()
+    try:
+        dest = os.path.join(os.path.dirname(out_html) or ".", "viewer.js")
+        os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
+        import shutil as _sh
+        if (not os.path.exists(dest)) or os.path.getmtime(VIEWER_JS) > os.path.getmtime(dest):
+            _sh.copyfile(VIEWER_JS, dest)
+        # the Studio app renders private models with this same shell + viewer.js
+        shell = os.path.join(os.path.dirname(dest), "_shell.html")
+        if (not os.path.exists(shell)) or os.path.getmtime(_VIEWER_TMPL) > os.path.getmtime(shell):
+            _sh.copyfile(_VIEWER_TMPL, shell)
+    except Exception:
+        pass
     title = model["project"] + (" — " + model["company"] if model.get("company") else "")
     html = (tmpl.replace("__TITLE__", _esc(title))
                 .replace("__PROJECT__", _esc(model["project"]))
@@ -604,8 +662,8 @@ def build_all(site_dir="site", only=None, verbose=True):
     # remove stale model pages (old per-source pages) — keep the three.js runtime
     if not only:
         for f in os.listdir(out_dir):
-            if f.endswith(".html") and f not in built:
-                os.remove(os.path.join(out_dir, f))
+            if f.endswith(".html") and f not in built and not f.startswith("_"):
+                os.remove(os.path.join(out_dir, f))      # stale model pages (keep _shell.html)
     _write_gallery(cards, os.path.join(site_dir, "models.html"))
     by_release = {}
     for e in index:

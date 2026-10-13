@@ -31,3 +31,6 @@ data/closeology/
 
 # DEM tile cache (re-downloadable; cached in CI via actions/cache)
 data/cache/
+
+# Studio: uploaded files and private imported datasets never go in the repo
+data/private/

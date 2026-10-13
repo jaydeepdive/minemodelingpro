@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>3D model · MineModelingPro Studio</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bitter:wght@600;700;800&family=Roboto:wght@400;500;700&display=swap">
+<style>
+  html,body{height:100%;margin:0;background:#e9edf2;font-family:'Roboto',sans-serif}
+  #boot{position:fixed;inset:0;display:grid;place-items:center;color:#5f6670;font-size:14px;text-align:center;padding:24px}
+  #boot a{color:#D71920}
+</style>
+<script src="config.js"></script>
+</head>
+<body>
+<div id="boot">Loading the model…</div>
+<script type="module">
+import { sb, requireUser, getProject, modelUrl, publicModelUrl } from "./app.js";
+const q = new URLSearchParams(location.search);
+const id = q.get("id"), pub = q.get("public");
+const boot = document.getElementById("boot");
+try {
+  let url, project;
+  if (pub) {                                   // a shared model, no sign-in needed
+    const { data } = await sb.from("projects").select("*").eq("id", pub).eq("is_public", true).single();
+    if (!data) throw new Error("That shared model is not available.");
+    project = data; url = publicModelUrl(data);
+  } else {
+    const user = await requireUser(); if (!user) throw new Error("redirecting");
+    project = await getProject(id);
+    url = await modelUrl(project);
+    if (!url) throw new Error("This project has no model yet — upload drill data first.");
+  }
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("The model file could not be loaded (" + res.status + ").");
+  window.MMP_MODEL = await res.json();
+  // the viewer template, with this model injected instead of the embedded JSON
+  const shell = await (await fetch("../models/_shell.html")).text();
+  const body = shell.slice(shell.indexOf("<body>") + 6, shell.lastIndexOf("</body>"));
+  const head = shell.slice(shell.indexOf("<style>"), shell.indexOf("</style>") + 8);
+  document.head.insertAdjacentHTML("beforeend", head);
+  document.body.innerHTML = body.replace(/<script id="model"[\s\S]*?<\/script>/, "")
+                                .replace(/__PROJECT__/g, (window.MMP_MODEL.project || "Model"))
+                                .replace('href="../models.html"', 'href="dashboard.html"')
+                                .replace('>← Models<', '>← My projects<');
+  for (const src of ["../models/three.min.js", "../models/viewer.js"]) {
+    await new Promise((ok, bad) => { const s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = bad; document.body.appendChild(s); });
+  }
+} catch (e) {
+  boot.innerHTML = `<div><p>${(e && e.message) || e}</p><p><a href="dashboard.html">Back to my projects</a></p></div>`;
+}
+</script>
+</body>
+</html>

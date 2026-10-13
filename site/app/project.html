@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Project · MineModelingPro Studio</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bitter:wght@500;700;800&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+<script src="config.js"></script>
+</head>
+<body>
+<div class="topbar" id="topbar"></div>
+<div class="wrap">
+  <p class="note"><a href="dashboard.html">← My projects</a></p>
+  <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap">
+    <div><h1 id="pname">…</h1><div class="rule"></div><p class="note" id="psub"></p></div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <span id="pstatus"></span>
+      <a class="btn ghost sm" id="openmodel" href="#" style="display:none">Open 3D model</a>
+    </div>
+  </div>
+  <div id="msg"></div>
+
+  <div class="grid c2" style="margin-top:18px;align-items:start">
+    <div class="card">
+      <h3>Add drill data</h3>
+      <p class="note">CSV, Excel, Access or a zip. Collars, assays and surveys can be separate files or sheets in one workbook —
+        they're recognised by their columns.</p>
+      <div class="drop" id="drop">Drop files here, or <b>choose files</b>
+        <input type="file" id="files" multiple style="display:none">
+      </div>
+      <div class="row" style="margin-top:12px">
+        <div><label>Coordinate system</label>
+          <select id="crsmode">
+            <option value="utm">UTM zone</option>
+            <option value="epsg">EPSG code</option>
+            <option value="latlon">Latitude / longitude columns</option>
+            <option value="local">Local mine grid (no map position)</option>
+          </select></div>
+        <div id="zonewrap"><label>Zone</label><input type="number" id="zone" placeholder="e.g. 11" min="1" max="60"></div>
+        <div id="hemiwrap"><label>Hemisphere</label><select id="hemi"><option value="N">North</option><option value="S">South</option></select></div>
+        <div id="datumwrap"><label>Datum</label><select id="datum"><option>WGS84</option><option>NAD83</option><option>NAD27</option></select></div>
+        <div id="epsgwrap" style="display:none"><label>EPSG</label><input type="number" id="epsg" placeholder="e.g. 26911"></div>
+      </div>
+      <div id="uplog" class="note" style="margin-top:10px"></div>
+      <button class="btn" id="upload" style="margin-top:12px" disabled>Upload and build</button>
+    </div>
+
+    <div class="card">
+      <h3>Model</h3>
+      <div id="stats"></div>
+      <div id="joblog" style="margin-top:12px"></div>
+      <div class="sec" style="margin-top:14px">
+        <label class="switch"><input type="checkbox" id="pub"> Share this model publicly</label>
+        <div class="note">Off: only you can open it. On: anyone with the link can view the model (not your source files).</div>
+      </div>
+      <div class="sec">
+        <button class="btn ghost sm" id="rebuild">Rebuild model</button>
+        <button class="btn ghost sm" id="del" style="color:var(--red)">Delete project</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:18px">
+    <h3>Uploaded data</h3>
+    <div id="datasets"><p class="muted small">Nothing uploaded yet.</p></div>
+  </div>
+
+  <div class="card" style="margin-top:18px">
+    <h3>Modelling parameters</h3>
+    <p class="note">Blank means “work it out from the data”. Changing anything here rebuilds the model.</p>
+    <form id="params"><div class="grid c3" id="paramgrid"></div>
+      <div class="row" style="margin-top:14px"><button class="btn" type="submit">Save and rebuild</button>
+        <button class="btn ghost" type="button" id="reset">Reset to automatic</button></div>
+    </form>
+  </div>
+</div>
+<footer class="site"><b>MineModelingPro Studio</b> — grades are inverse-distance estimates for visualisation, not a mineral resource estimate.</footer>
+<script type="module">
+import { sb, chrome, requireUser, getProject, listDatasets, uploadDataset, saveParams, setPublic,
+         deleteProject, enqueue, watchProject, paramForm, readParams, statusChip, modelUrl,
+         $, $$, esc, fmt, fmtT, fmtC, banner } from "./app.js";
+await chrome("dashboard");
+const user = await requireUser(); if (!user) throw new Error("redirecting");
+const id = new URLSearchParams(location.search).get("id");
+let project = await getProject(id);
+
+function paint(p, job) {
+  project = p;
+  $("#pname").textContent = p.name;
+  $("#psub").innerHTML = [p.company && esc(p.company), p.region && esc(p.region),
+    p.attach_to && `built on <b>${esc(p.attach_to)}</b>`].filter(Boolean).join(" · ");
+  $("#pstatus").innerHTML = statusChip(p);
+  $("#pub").checked = !!p.is_public;
+  const s = p.stats || {};
+  $("#stats").innerHTML = s.holes ? `<div class="stats">
+      <div class="stat"><b>${fmt(s.holes)}</b><span>Holes</span></div>
+      <div class="stat"><b>${fmt(s.intervals)}</b><span>Intervals</span></div>
+      <div class="stat"><b>${fmt(s.blocks)}</b><span>Blocks</span></div>
+      <div class="stat"><b>${fmtT(s.tonnes)}</b><span>Tonnes ≥ ${s.cutoff ?? ""}</span></div>
+      <div class="stat"><b>${s.grade ?? "–"} ${esc(s.unit || "")}</b><span>Grade</span></div>
+      <div class="stat"><b>${fmtC(s.contained, s.contained_unit)}</b><span>Contained ${esc(s.element || "")}</span></div>
+    </div>` : `<p class="note">${p.status === "error" ? esc(p.error || "The last build failed.") : "Upload drill data to build the model."}</p>`;
+  const open = $("#openmodel");
+  if (p.model_path && p.status === "ready") { open.style.display = ""; open.href = "model.html?id=" + p.id; }
+  else open.style.display = "none";
+  if (job) {
+    const spin = ["queued", "running"].includes(job.status) ? `<span class="spin"></span> ` : "";
+    $("#joblog").innerHTML = `<div class="note">${spin}${esc(job.kind)} · ${esc(job.status)}</div>` +
+      (job.log ? `<div class="log" style="margin-top:6px">${esc(job.log)}</div>` : "");
+  }
+}
+paint(project, null);
+paramForm($("#paramgrid"), project.params || {});
+watchProject(id, paint);
+
+// ---- datasets
+async function paintDatasets() {
+  const ds = await listDatasets(id);
+  $("#datasets").innerHTML = ds.length ? `<table><tr><th>Files</th><th>Status</th><th class="num">Collars</th><th class="num">Intervals</th><th>Notes</th></tr>
+    ${ds.map(d => { const c = d.summary?.counts || {};
+      const notes = [...(d.summary?.notes || []), ...(d.error ? [d.error] : [])];
+      return `<tr><td>${esc(d.name || "—")}<div class="note">${new Date(d.created_at).toLocaleString()}</div></td>
+        <td><span class="chip ${d.status === "ready" ? "ok" : d.status === "error" ? "err" : "info"}">${esc(d.status)}</span></td>
+        <td class="num">${fmt(c.collars)}</td><td class="num">${fmt(c.intervals)}</td>
+        <td class="small">${notes.length ? notes.map(esc).join("<br>") : "—"}
+          ${d.summary?.tables ? `<div class="note">${d.summary.tables.map(t => `${esc(t.table)} → ${esc(t.kind || "not recognised")} (${fmt(t.rows)} rows)`).join("<br>")}</div>` : ""}</td></tr>`;
+    }).join("")}</table>` : `<p class="muted small">Nothing uploaded yet.</p>`;
+}
+await paintDatasets(); setInterval(paintDatasets, 8000);
+
+// ---- upload
+const drop = $("#drop"), filesInput = $("#files");
+let chosen = [];
+drop.onclick = () => filesInput.click();
+drop.ondragover = e => { e.preventDefault(); drop.classList.add("over"); };
+drop.ondragleave = () => drop.classList.remove("over");
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove("over"); setFiles(e.dataTransfer.files); };
+filesInput.onchange = () => setFiles(filesInput.files);
+function setFiles(list) {
+  chosen = [...list];
+  drop.innerHTML = chosen.length ? `<b>${chosen.length} file(s)</b><div class="note">${chosen.map(f => esc(f.name)).join(", ")}</div>`
+    : "Drop files here, or <b>choose files</b>";
+  drop.appendChild(filesInput);
+  $("#upload").disabled = !chosen.length;
+}
+$("#crsmode").onchange = () => {
+  const m = $("#crsmode").value;
+  $("#zonewrap").style.display = m === "utm" ? "" : "none";
+  $("#hemiwrap").style.display = m === "utm" ? "" : "none";
+  $("#datumwrap").style.display = m === "utm" ? "" : "none";
+  $("#epsgwrap").style.display = m === "epsg" ? "" : "none";
+};
+$("#upload").onclick = async () => {
+  banner(""); $("#upload").disabled = true;
+  const m = $("#crsmode").value;
+  const options = m === "utm" ? { utm_zone: Number($("#zone").value) || null, hemisphere: $("#hemi").value, datum: $("#datum").value }
+    : m === "epsg" ? { epsg: Number($("#epsg").value) || null } : {};
+  if (m === "utm" && !options.utm_zone) { $("#upload").disabled = false; return banner("Enter the UTM zone (1–60), or pick another coordinate option."); }
+  if (m === "epsg" && !options.epsg) { $("#upload").disabled = false; return banner("Enter the EPSG code, or pick another coordinate option."); }
+  try {
+    await uploadDataset(project, chosen, options, (done, total, name) => {
+      $("#uplog").textContent = `Uploading ${done}/${total} — ${name}`;
+    });
+    $("#uplog").textContent = "Uploaded. Parsing and building…";
+    setFiles([]);
+    watchProject(id, paint);
+    paintDatasets();
+  } catch (e) { banner(e.message || String(e)); }
+  finally { $("#upload").disabled = !chosen.length; }
+};
+
+// ---- parameters / publish / rebuild / delete
+$("#params").onsubmit = async e => {
+  e.preventDefault(); banner("");
+  try { await saveParams(id, readParams($("#paramgrid"))); banner("Saved — rebuilding the model.", "ok"); watchProject(id, paint); }
+  catch (err) { banner(err.message || String(err)); }
+};
+$("#reset").onclick = async () => { paramForm($("#paramgrid"), {}); await saveParams(id, {}); banner("Back to automatic settings — rebuilding.", "ok"); watchProject(id, paint); };
+$("#rebuild").onclick = async () => { await enqueue("build", { project_id: id }); banner("Rebuild queued.", "ok"); watchProject(id, paint); };
+$("#pub").onchange = async e => { try { await setPublic(id, e.target.checked); banner(e.target.checked ? "Sharing — the model will be public once the job finishes." : "No longer shared.", "ok"); } catch (err) { banner(err.message); } };
+$("#del").onclick = async () => {
+  if (!confirm("Delete this project, its uploads and its model? This cannot be undone.")) return;
+  await deleteProject(id); location.href = "dashboard.html";
+};
+</script>
+</body>
+</html>

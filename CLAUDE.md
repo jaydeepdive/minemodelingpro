@@ -108,10 +108,44 @@ PYTHONPATH=src python3 -c "from minemodelingpro import model3d; model3d.build_al
 - `drill_tables` extracted all 201 archived reports (both the ni43101 queue archive and the SEDAR/ceo.ca archive); ~98 SEDAR PDFs had been archived but never ingested before.
 - Region labels come from the model's coordinates (not the SEDAR filing province).
 
+## MMP Studio — accounts, uploads, private models (added 2026-10-13)
+
+Studio lets anyone sign up, upload their own drill data and model it privately,
+beside the public gallery. Static front end on the same GitHub Pages site; Supabase
+for auth / Postgres / storage / job queue; a Python worker does the modelling.
+
+- `site/app/` — the app: `index.html` (sign in / sign up), `dashboard.html` (projects),
+  `project.html` (upload, parameters, publish), `model.html` (private 3D viewer),
+  `public.html` (shared models), `app.js` (client), `config.js` (**set SUPABASE_URL +
+  SUPABASE_ANON_KEY here**; both are public values).
+- `studio/schema.sql` — tables (profiles, projects, datasets, jobs), row-level security,
+  storage buckets (`uploads`, `models` private; `public-models` public). Run once.
+- `studio/worker.py` — polls `jobs`: `import` (parse files → dataset JSON → build),
+  `build`, `publish`, `delete`. Needs `SUPABASE_URL` + `SUPABASE_SERVICE_KEY`
+  (service-role; **never** in the browser). launchd plist: `scripts/com.thedeepdive.mmpstudio.plist`.
+- `studio/README.md` — the setup walkthrough, column reference and limits.
+- `src/minemodelingpro/imports.py` — the importer: CSV/TSV/Excel/Access/zip/Parquet →
+  collars, surveys, intervals; headers matched by meaning; ft→m; %/g/t/ppm/ppb/oz-t →
+  standard units; EPSG/UTM/lat-long or a local grid; writes a dataset JSON in the same
+  shape as a report, so `projects.assemble` merges it like any other source.
+  Private imports live in `data/private/imports/` (gitignored) and never reach the
+  public build; `data/keep/mmp_imports/` is the public-facing equivalent.
+- `src/minemodelingpro/params.py` — per-project modelling parameters
+  (`data/keep/mmp_model_params.json`, or `projects.params` in Supabase): block size,
+  composite length, search radius, max distance to data, min holes/samples, estimator
+  (idw/nn/mean) and power, top-cut, density, opening cut-off, elements, gap-fill.
+  CLI: `python -m minemodelingpro.params <slug> block=5,5,5 radius_m=60`.
+- Viewer split: `src/minemodelingpro/viewer.js` is the renderer, `model3d_viewer.html`
+  the shell. `write_viewer` copies both next to the pages (`site/models/viewer.js`,
+  `_shell.html`), so public pages and Studio's private viewer share one renderer.
+  **Never delete `site/models/_shell.html`** — `build_all` keeps files starting with `_`.
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.
 - Coordinate systems: drill_tables searches every EPSG projected CRS for the report's stated location (UTM, MTM, US state plane in ft, national grids), confirmed by collar-elevation↔DEM fit. Reports in a pure mine grid (e.g. Goldboro, Island Gold) stay local-frame.
+- Navigation (2026-10-13): Orbit/Pan buttons bottom-centre, hold space or right-drag to pan,
+  grab-the-ground panning, arrow keys/WASD (Q/E up-down), +/- zoom, R reset, flick-to-glide.
 - Names: automatic from report covers / release headlines; fix the rest in `data/keep/mmp_project_overrides.json` (`{slug: {name, company}}`, `_merge` to join projects).
 - News holes with easting/northing but no zone (~1,900 in the bank) could be placed by borrowing the zone of a report/release for the same project.
 - Optionally consume MiningNewsTerminal's pre-parsed intervals to fill releases where geolocation succeeds but assay extraction was thin.

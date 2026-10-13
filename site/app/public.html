@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Shared models · MineModelingPro Studio</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bitter:wght@500;700;800&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+<script src="config.js"></script>
+</head>
+<body>
+<div class="topbar" id="topbar"></div>
+<div class="wrap">
+  <h1>Shared models</h1><div class="rule"></div>
+  <p class="lead">Models other people have chosen to share. The underlying files stay private to whoever uploaded them.</p>
+  <div id="list" style="margin-top:18px"><p class="muted"><span class="spin"></span> Loading…</p></div>
+</div>
+<footer class="site"><b>MineModelingPro Studio</b> — grades are inverse-distance estimates for visualisation, not a mineral resource estimate.</footer>
+<script type="module">
+import { sb, chrome, $, esc, fmt, fmtC } from "./app.js";
+await chrome("public");
+const { data, error } = await sb.from("projects").select("id,slug,name,company,region,stats,updated_at")
+  .eq("is_public", true).order("updated_at", { ascending: false });
+$("#list").innerHTML = error ? `<div class="err">${esc(error.message)}</div>`
+  : (data || []).length ? `<div class="grid c3">${data.map(p => { const s = p.stats || {};
+      return `<a class="card" href="model.html?public=${p.id}" style="display:block;color:inherit">
+        <h3>${esc(p.name)}</h3>${p.company ? `<div class="note">${esc(p.company)}</div>` : ""}
+        ${p.region ? `<div style="margin-top:8px"><span class="chip">${esc(p.region)}</span></div>` : ""}
+        <div class="stats" style="margin-top:12px">
+          <div class="stat"><b>${fmt(s.holes)}</b><span>Holes</span></div>
+          <div class="stat"><b>${fmt(s.intervals)}</b><span>Intervals</span></div>
+          <div class="stat"><b>${fmtC(s.contained, s.contained_unit)}</b><span>${esc(s.element || "")}</span></div>
+        </div></a>`; }).join("")}</div>`
+  : `<div class="card"><p class="note">No shared models yet.</p></div>`;
+</script>
+</body>
+</html>
