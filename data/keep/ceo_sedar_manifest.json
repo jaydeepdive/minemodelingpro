@@ -628,5 +628,35 @@
   "size_kb": 31075,
   "collected": "2026-10-08T22:05:58Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_LAR-2026-10-08-technical-report-ni-43-101-english-ec6c.pdf"
+ },
+ {
+  "file": "ceo_XTG-2026-10-13-technical-report-ni-43-101-english-b3dc.pdf",
+  "filing_ref": "XTG-2026-10-13-technical-report-ni-43-101-english-b3dc.pdf",
+  "company": "XTG",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-10-13",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/XTG-2026-10-13-technical-report-ni-43-101-english-b3dc.pdf",
+  "source": "ceo.ca",
+  "size_kb": 4928,
+  "collected": "2026-10-13T19:16:27Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_XTG-2026-10-13-technical-report-ni-43-101-english-b3dc.pdf"
+ },
+ {
+  "file": "ceo_FNI-2026-10-13-technical-report-ni-43-101-english-6e9b.pdf",
+  "filing_ref": "FNI-2026-10-13-technical-report-ni-43-101-english-6e9b.pdf",
+  "company": "FNI",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-10-13",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/FNI-2026-10-13-technical-report-ni-43-101-english-6e9b.pdf",
+  "source": "ceo.ca",
+  "size_kb": 7817,
+  "collected": "2026-10-13T19:16:32Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_FNI-2026-10-13-technical-report-ni-43-101-english-6e9b.pdf"
  }
 ]
