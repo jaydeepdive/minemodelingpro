@@ -617,7 +617,14 @@ def write_viewer(model, out_html):
     except Exception:
         pass
     title = model["project"] + (" — " + model["company"] if model.get("company") else "")
+    # stamp the renderer's own mtime into its URL: a browser holding an old viewer.js
+    # must not be able to shadow a new one
+    try:
+        stamp = str(int(os.path.getmtime(VIEWER_JS)))
+    except Exception:
+        stamp = datetime.datetime.utcnow().strftime("%Y%m%d%H%M")
     html = (tmpl.replace("__TITLE__", _esc(title))
+                .replace("__BUILD__", stamp)
                 .replace("__PROJECT__", _esc(model["project"]))
                 .replace("__MODEL_JSON__", json.dumps(model, separators=(",", ":")).replace("</", "<\\/")))
     os.makedirs(os.path.dirname(out_html) or ".", exist_ok=True)

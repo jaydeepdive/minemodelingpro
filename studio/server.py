@@ -656,10 +656,12 @@ class SiteFiles(StaticFiles):
 
     async def get_response(self, path, scope):
         r = await super().get_response(path, scope)
-        if path.endswith((".html", "/")) or path in ("", "."):
-            r.headers["Cache-Control"] = "no-cache"
-        elif path.endswith((".js", ".css", ".json")):
-            r.headers["Cache-Control"] = "public, max-age=600"
+        # the renderer and the gallery data change with every build and are small —
+        # caching them is how a fix ends up invisible in someone's browser
+        if path.endswith((".html", "/", ".js", ".css", ".json")) or path in ("", "."):
+            r.headers["Cache-Control"] = "no-cache, must-revalidate"
+        elif path.endswith((".svg", ".png", ".jpg", ".webp")):
+            r.headers["Cache-Control"] = "public, max-age=3600"
         return r
 
 
