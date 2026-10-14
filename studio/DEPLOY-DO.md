@@ -44,7 +44,10 @@ APP=<app-id>
 curl -s -H "$A" https://api.digitalocean.com/v2/apps/$APP | jq '.app.live_url, .app.active_deployment.phase'
 curl -s -H "$A" "https://api.digitalocean.com/v2/apps/$APP/deployments?per_page=5" | jq '.deployments[] | {id, phase, created_at}'
 
-# deploy the current main (the app also deploys on push)
+# deploy the current main. The app is wired to the PUBLIC git url, which DigitalOcean
+# cannot receive webhooks for, so a deployment is triggered explicitly — including
+# after the daily GitHub Actions gallery rebuild. (Connecting the repo through DO's
+# GitHub integration in the console would make deploys automatic on push.)
 curl -s -X POST -H "$A" https://api.digitalocean.com/v2/apps/$APP/deployments -d '{"force_build":true}'
 
 # logs
@@ -87,5 +90,9 @@ update users set quota_bytes = 10 * 1024^3 where email = 'client@example.com';
   a 1 GB worker. If a build dies with no error in the log, raise the `modeler`
   instance size (`apps-s-1vcpu-2gb`) — that is almost always what happened.
 * **The public gallery is still built in GitHub Actions** (`mmp-daily-build`), which
-  commits `site/`. The app redeploys from `main`, so a gallery rebuild reaches
-  minemodelingpro.com on the next deployment.
+  commits `site/` to `main`. Because the app builds from the public git url rather than
+  a connected GitHub account, that commit does **not** deploy itself — trigger a
+  deployment (above), or connect the repo through DO's GitHub integration once and
+  deploys become automatic.
+* **The landing page is `site/index.html` and is hand-written** — the daily build no
+  longer copies the gallery over it (`models.html` is the gallery).

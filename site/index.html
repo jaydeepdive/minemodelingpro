@@ -2,117 +2,278 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>3D deposit models · MineModelingPro</title>
+<title>MineModelingPro — 3D deposit models from drill data and NI 43-101 reports</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Bitter:wght@500;700;800&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<meta name="description" content="MineModelingPro turns drill-hole assays and NI 43-101 technical reports into interactive 3D deposit models — block grades, tonnes and contained metal, cross-checked against the published resource. Upload your own drilling and model it privately.">
+<meta property="og:title" content="MineModelingPro">
+<meta property="og:description" content="Interactive 3D deposit models from drill-hole assays and NI 43-101 technical reports.">
+<meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bitter:wght@500;700;800&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
+:root{--red:#D71920;--ink:#111418;--mut:#636363;--line:#e6e8eb;--panel:#f5f7fa;--bg:#fff;--chip:#EDF2F7;--deep:#15181d}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:'Roboto',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:16px;line-height:1.6}
+h1,h2,h3{font-family:'Bitter',Georgia,serif;font-weight:700;margin:0;letter-spacing:-.2px}
+a{color:var(--red);text-decoration:none}a:hover{text-decoration:underline}
+.wrap{max-width:1120px;margin:0 auto;padding:0 22px}
 
-:root{ --red:#D71920; --ink:#111418; --mut:#636363; --line:#e6e8eb; --panel:#f5f7fa; --bg:#ffffff; --chip:#EDF2F7; }
-*{box-sizing:border-box;}
-html,body{margin:0;background:var(--bg);color:var(--ink);font-family:'Roboto',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:15px;line-height:1.55;}
-h1,h2,h3,h4{font-family:'Bitter',Georgia,serif;font-weight:700;color:var(--ink);margin:0;}
-a{color:var(--red);text-decoration:none;} a:hover{text-decoration:underline;}
-.topbar{border-bottom:1px solid var(--line);background:#fff;position:sticky;top:0;z-index:50;}
-.topwrap{max-width:1180px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;padding:12px 22px;gap:20px;flex-wrap:wrap;}
-.brand{display:flex;flex-direction:column;gap:3px;text-decoration:none;}
-.brand .name{font-family:'Bitter',serif;font-weight:800;font-size:20px;color:var(--ink);letter-spacing:-.2px;}
-.brand .name b{color:var(--red);}
-.brand .sub{font-family:'Bitter',serif;font-weight:700;font-size:10.5px;letter-spacing:2.5px;color:var(--mut);text-transform:uppercase;}
-nav.menu{display:flex;align-items:center;gap:22px;flex-wrap:wrap;}
-nav.menu a{display:inline-flex;align-items:center;height:32px;color:var(--ink);font-size:14px;font-weight:500;line-height:1;border-bottom:2px solid transparent;text-decoration:none;}
-nav.menu a:hover{color:var(--red);text-decoration:none;}
-nav.menu a.active{color:var(--red);border-bottom-color:var(--red);}
-nav.menu a.ext{color:var(--mut);font-size:13px;}
-.wrap{max-width:1180px;margin:0 auto;padding:26px 22px 60px;}
-.hero h1{font-size:30px;letter-spacing:-.3px;} .hero p{color:var(--mut);max-width:760px;}
-.rule{height:3px;width:52px;background:var(--red);margin:10px 0 0;border-radius:2px;}
-footer.site{border-top:1px solid var(--line);color:var(--mut);font-size:12px;line-height:1.6;padding:22px;max-width:1180px;margin:0 auto;}
-footer.site b{color:var(--ink);}
+/* nav */
+.topbar{border-bottom:1px solid var(--line);background:#fff;position:sticky;top:0;z-index:50}
+.topwrap{max-width:1120px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;padding:12px 22px;gap:18px;flex-wrap:wrap}
+.brand{display:flex;flex-direction:column;gap:3px}
+.brand .name{font-family:'Bitter',serif;font-weight:800;font-size:20px;color:var(--ink)}
+.brand .name b{color:var(--red)}
+.brand .sub{font-family:'Bitter',serif;font-weight:700;font-size:10.5px;letter-spacing:2.5px;color:var(--mut);text-transform:uppercase}
+nav.menu{display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+nav.menu a{display:inline-flex;align-items:center;height:34px;color:var(--ink);font-size:14.5px;font-weight:500;border-bottom:2px solid transparent}
+nav.menu a:hover{color:var(--red);text-decoration:none}
+nav.menu a.cta{background:var(--red);color:#fff;border-radius:7px;padding:0 16px;font-weight:700}
+nav.menu a.cta:hover{background:#b3141a;color:#fff}
 
-.hero h1{font-size:30px;letter-spacing:-.3px}
-.hero p{color:var(--mut);max-width:820px;margin:12px 0 0}
-.tools{position:sticky;top:0;z-index:20;background:#fff;padding:14px 0 12px;margin-top:18px;border-bottom:1px solid var(--line);
-  display:flex;flex-wrap:wrap;gap:10px;align-items:center}
-.tools input[type=search]{flex:1 1 260px;min-width:200px;border:1px solid var(--line);border-radius:9px;padding:9px 12px;font-size:14px;font-family:inherit}
-.tools input[type=search]:focus{outline:2px solid var(--red);outline-offset:1px}
-.tools select{border:1px solid var(--line);border-radius:9px;padding:8px 10px;font-size:13.5px;font-family:inherit;background:#fff;color:var(--ink)}
-.count{font-size:13px;color:var(--mut);margin:14px 0 0}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:14px;margin-top:12px}
-.card{display:flex;flex-direction:column;gap:10px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;color:var(--ink);
-  text-decoration:none;transition:border-color .15s,box-shadow .15s,transform .15s}
-.card:hover{border-color:var(--red);box-shadow:0 8px 22px rgba(0,0,0,.07);transform:translateY(-2px);text-decoration:none}
-.card h3{font-size:18px;line-height:1.2;margin:0}
-.co{font-size:12.5px;color:var(--mut);margin-top:3px;font-weight:500}
-.chips{display:flex;flex-wrap:wrap;gap:5px}
-.c{font-size:10.5px;font-weight:700;letter-spacing:.04em;padding:2px 7px;border-radius:5px;background:#eef1f6;color:#4a525c}
-.c.el{background:#fdecec;color:var(--red)}
-.c.rep{background:#eaf0fb;color:#274b8f}
-.c.news{background:#fff4e0;color:#8a5a00}
-.st{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:auto}
-.st div{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
-.st b{display:block;font-family:'Bitter',serif;font-size:15.5px;font-variant-numeric:tabular-nums;line-height:1.15}
-.st span{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut)}
-.meta{font-size:11.5px;color:var(--mut)}
-.empty{color:var(--mut);padding:30px 0}
-.note{margin-top:40px;color:var(--mut);font-size:12.5px;line-height:1.6;border-top:1px solid var(--line);padding-top:16px}
-@media (max-width:640px){.hero h1{font-size:24px}.tools{position:static;display:grid;grid-template-columns:1fr 1fr;gap:8px}.tools input[type=search]{grid-column:1/-1;min-width:0}.tools select{min-width:0;width:100%;font-size:13px;padding:8px 6px}.grid{grid-template-columns:1fr}}
+/* hero */
+.hero{background:linear-gradient(180deg,#fbfcfd 0%,#fff 100%);border-bottom:1px solid var(--line)}
+.hero .wrap{padding:62px 22px 54px;display:grid;grid-template-columns:1.15fr .85fr;gap:46px;align-items:center}
+.kicker{font-family:'Bitter',serif;font-weight:700;font-size:11.5px;letter-spacing:2.4px;text-transform:uppercase;color:var(--red)}
+h1{font-size:44px;line-height:1.12;margin:12px 0 0}
+.lead{font-size:18px;color:#333;margin-top:16px;max-width:38em}
+.btns{display:flex;gap:12px;flex-wrap:wrap;margin-top:26px}
+.btn{display:inline-flex;align-items:center;height:46px;padding:0 22px;border-radius:9px;background:var(--red);color:#fff;font-weight:700;font-size:15px;border:1px solid var(--red)}
+.btn:hover{background:#b3141a;color:#fff;text-decoration:none}
+.btn.ghost{background:#fff;color:var(--ink);border-color:var(--line)}
+.btn.ghost:hover{background:var(--panel);color:var(--ink);border-color:#cfd6de}
+.shot{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--deep);box-shadow:0 18px 44px rgba(17,20,24,.14)}
+.shot .bar{height:30px;background:#1e232a;display:flex;align-items:center;gap:6px;padding:0 11px}
+.shot .bar i{width:9px;height:9px;border-radius:50%;background:#394049;display:block}
+.shot canvas{display:block;width:100%;height:280px}
+
+/* numbers */
+.nums{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-bottom:1px solid var(--line)}
+.num{padding:26px 22px;text-align:center;border-right:1px solid var(--line)}
+.num:last-child{border-right:0}
+.num b{display:block;font-family:'Bitter',serif;font-size:30px;line-height:1.1;font-variant-numeric:tabular-nums}
+.num span{font-size:12.5px;color:var(--mut);letter-spacing:.3px}
+
+/* sections */
+section{padding:64px 0}
+section.alt{background:var(--panel);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+h2{font-size:30px}
+.rule{width:62px;height:3px;background:var(--red);margin:14px 0 20px;border-radius:2px}
+.sub{color:var(--mut);max-width:44em;font-size:16.5px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;margin-top:34px}
+.card{background:#fff;border:1px solid var(--line);border-radius:13px;padding:24px}
+.card h3{font-size:18.5px;margin-bottom:8px}
+.card p{margin:0;color:#444;font-size:14.8px}
+.card .ic{width:38px;height:38px;border-radius:9px;background:var(--chip);display:grid;place-items:center;margin-bottom:14px}
+.card .ic svg{width:20px;height:20px;stroke:var(--red);fill:none;stroke-width:1.8}
+.steps{counter-reset:s;margin-top:34px;display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+.step{position:relative;padding-left:52px}
+.step:before{counter-increment:s;content:counter(s);position:absolute;left:0;top:0;width:36px;height:36px;border-radius:50%;background:var(--red);color:#fff;font-family:'Bitter',serif;font-weight:700;display:grid;place-items:center}
+.step h3{font-size:17px;margin-bottom:6px}
+.step p{margin:0;color:#444;font-size:14.8px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:start}
+ul.ticks{list-style:none;padding:0;margin:18px 0 0}
+ul.ticks li{padding-left:28px;position:relative;margin-bottom:11px;color:#333}
+ul.ticks li:before{content:"";position:absolute;left:3px;top:7px;width:7px;height:12px;border:solid var(--red);border-width:0 2.4px 2.4px 0;transform:rotate(45deg)}
+.cta{background:var(--deep);color:#fff;text-align:center;padding:62px 22px}
+.cta h2{color:#fff;font-size:30px}
+.cta p{color:#b9c0c9;max-width:40em;margin:14px auto 0}
+.cta .btns{justify-content:center}
+.cta .btn.ghost{background:transparent;color:#fff;border-color:#3a414a}
+.cta .btn.ghost:hover{background:#222830;color:#fff}
+footer.site{border-top:1px solid var(--line);color:var(--mut);font-size:13px;padding:30px 22px;text-align:center;line-height:1.7}
+@media (max-width:900px){
+  .num b{font-size:23px}
+  .hero .wrap{grid-template-columns:1fr;padding:44px 22px 40px;gap:30px}
+  h1{font-size:33px}
+  .grid3,.steps,.two{grid-template-columns:1fr}
+  .nums{grid-template-columns:1fr 1fr}
+  .num:nth-child(2){border-right:0}
+  .num:nth-child(1),.num:nth-child(2){border-bottom:1px solid var(--line)}
+}
 </style>
 </head>
 <body>
-<div class="topbar"><div class="topwrap"><a class="brand" href="index.html"><span class="name">Mine<b>Modeling</b>Pro</span><span class="sub">Drillhole &amp; 43-101 Modelling</span></a><nav class="menu"><a href="index.html" class="active">3D Models</a><a href="app/index.html" class="">Studio &mdash; model your own data</a><a class="ext" href="https://jaydeepdive.github.io/closeology/" target="_blank" rel="noopener">Closeology radar &#8599;</a></nav></div></div>
-<div class="wrap">
-  <div class="hero">
-    <h1>3D deposit models</h1>
-    <div class="rule"></div>
-    <p>One model per project, built from every NI 43-101 technical report and drill-result release we hold for it — collars and intercepts in 3D on real terrain, drill intervals coloured by grade, an inverse-distance block model on the report's own block size, and contained metal checked against the published resource.</p>
+
+<div class="topbar"><div class="topwrap">
+  <a class="brand" href="index.html">
+    <span class="name">Mine<b>Modeling</b>Pro</span>
+    <span class="sub">Drillhole &amp; 43-101 Modelling</span>
+  </a>
+  <nav class="menu">
+    <a href="#what">What it does</a>
+    <a href="#how">How it works</a>
+    <a href="models.html">3D models</a>
+    <a class="cta" href="app/index.html">Sign in</a>
+  </nav>
+</div></div>
+
+<div class="hero"><div class="wrap">
+  <div>
+    <div class="kicker">Deposit modelling, without the software licence</div>
+    <h1>Every drill hole you can get your hands on, in one 3D model.</h1>
+    <p class="lead">MineModelingPro reads drill tables straight out of NI 43-101 technical reports and
+      assay news releases, places the holes in real terrain, and estimates a block model you can
+      orbit, slice and interrogate — tonnes, grade and <b>contained metal</b>, cross-checked against
+      the published resource. Upload your own drilling and it stays private to your account.</p>
+    <div class="btns">
+      <a class="btn" href="models.html">Explore the public models</a>
+      <a class="btn ghost" href="app/index.html">Sign in to Studio</a>
+    </div>
   </div>
-  <div class="tools">
-    <input type="search" id="q" placeholder="Search project, company, commodity, region…" aria-label="Search models">
-    <select id="fel" aria-label="Commodity"><option value="">All commodities</option></select>
-    <select id="freg" aria-label="Region"><option value="">All regions</option></select>
-    <select id="fsrc" aria-label="Data source"><option value="">All data sources</option><option value="report">Has 43-101 data</option><option value="news">Has news releases</option><option value="both">43-101 + news</option></select>
-    <select id="sort" aria-label="Sort"><option value="name">Sort: Project A–Z</option><option value="company">Sort: Company A–Z</option><option value="holes">Sort: Most holes</option><option value="updated">Sort: Recently updated</option><option value="resource">Sort: Largest published resource</option></select>
+  <div class="shot">
+    <div class="bar"><i></i><i></i><i></i></div>
+    <canvas id="demo" width="640" height="280"></canvas>
   </div>
-  <p class="count" id="count"></p>
-  <div class="grid" id="grid"></div>
-  <p class="note">Grades are inverse-distance estimates for <b>visualisation</b>, not a mineral resource estimate. Every model page lists the exact reports and releases it was built from — verify figures against those filings before relying on them.</p>
+</div></div>
+
+<div class="nums" id="nums">
+  <div class="num"><b id="n-models">—</b><span>Deposits modelled</span></div>
+  <div class="num"><b id="n-holes">—</b><span>Drill holes placed</span></div>
+  <div class="num"><b id="n-reports">—</b><span>Built from 43-101 reports</span></div>
+  <div class="num"><b id="n-updated">—</b><span>Last rebuilt</span></div>
 </div>
-<footer class="site"><b>MineModelingPro</b> — interactive 3D deposit models built from drill-hole assays and NI 43-101 technical reports. Grades are inverse-distance estimates for visualization only, not a mineral resource estimate. Verify every figure against the source filing before relying on it.</footer>
-<script id="cards" type="application/json">[{"slug":"ana-paula-heliostar-metals","project":"Ana Paula","company":"Heliostar Metals","region":"Mexico","element":"Au","elements":["Au"],"unit":"g/t","counts":{"holes":7,"assayed_holes":7,"intervals":33,"surveyed":0,"blocks":86745,"reports":0,"releases":1},"updated":"2026-06-25","kinds":["news"],"max":79.36,"terrain":true,"resource":null},{"slug":"antino-founders-metals","project":"Antino","company":"Founders Metals","region":"Suriname","element":"Au","elements":["Au"],"unit":"g/t","counts":{"holes":59,"assayed_holes":38,"intervals":93,"surveyed":0,"blocks":163710,"reports":0,"releases":4},"updated":"2026-10-07","kinds":["news"],"max":43.26,"terrain":true,"resource":null},{"slug":"aurmac-banyan-gold","project":"AurMac","company":"Banyan Gold","region":"Yukon","element":"Au","elements":["Au"],"unit":"g/t","counts":{"holes":908,"assayed_holes":236,"intervals":1534,"surveyed":0,"blocks":323913,"reports":1,"releases":9},"updated":"2026-10-06","kinds":["news","report"],"max":290.1,"terrain":true,"resource":{"contained":8624000,"unit":"oz"}},{"slug":"b26-abitibi-metals","project":"B26","company":"Abitibi Metals","region":"Qu\u00e9bec","element":"Au","elements":["Au","Cu","Ag"],"unit":"g/t","counts":{"holes":11,"assayed_holes":11,"intervals":93,"surveyed":0,"blocks":87339,"reports":0,"releases":1},"updated":"2026-09-17","kinds":["news"],"max":8.1,"terrain":true,"resource":null},{"slug":"bellechasse-timmins-auq-gold-mining","project":"Bellechasse Timmins","company":"AuQ Gold Mining","region":"Qu\u00e9bec","element":"Au","elements":["Au"],"unit":"g/t","counts":{"holes":262,"assayed_holes":15,"intervals":17,"surveyed":0,"blocks":60908,"reports":1,"releases":0},"updated":"2026-06-29","kinds":["report"],"max":6140.0,"terrain":true,"resource":{"contained":388000,"unit":"oz"}},{"slug":"bend-greenlight-metals","project":"Bend","company":"GreenLight Metals","region":"Ontario","element":"Au","elements":["Au","Cu","Ag"],"unit":"g/t","counts":{"holes":10,"assayed_holes":5,"intervals":45,"surveyed":0,"blocks":20014,"reports":0,"releases":2},"updated":"2026-07-22","kinds":["news"],"max":2.49,"terrain":true,"resource":null},{"slug":"juggernaut","project":"Big One","company":"Juggernaut Exploration","region":"British Columbia","element":"Au","elements":["Au"],"unit":"g/t","counts":{"holes":15,"assayed_holes":13,"intervals":13,"surveyed":0,"blocks":7651,"reports":0,"releases":3},"updated":"2026-09-10","kinds":["news"],"max":3.2,"terrain":true,"resource":null},{"slug":"blue-lake-cupani","project":"Blue Lake","company":"Cupani","region":"Qu\u00e9bec","element":"Cu","elements":["Cu"],"unit":"%","counts":{"holes":6,"assayed_holes":1,"intervals":2,"surveyed":0,"blocks":0,"reports":0,"releases":2},"updated":"2026-10-01","kinds":["news"],"max":0.83,"terrain":true,"resource":null},{"slug":"canterra-minerals","project":"Buchans","company":"Canterra Minerals","region":"Newfoundland and Labrador","element":"Au","elements":["Au","Ag"],"unit":"g/t","counts":{"holes":5,"assayed_holes":3,"intervals":14,"surveyed":0,"blocks":0,"reports":0,"releases":1},"updated":"2026-09-09","kinds":["news"],"max":0.159,"terrain":true,"resource":null},{"slug":"b-gin-lamarche-first-phosphate","project":"B\u00e9gin Lamarche","company":"First Phosphate","region":"Qu\u00e9bec","element":"P2O5","elements":["P2O5","TiO2"],"unit":"%","counts":{"holes":303,"assayed_holes":137,"intervals":308,"surveyed":0,"blocks":175076,"reports":1,"releases":0},"updated":"2026-08-24","kinds":["report"],"max":15.01,"terrain":true,"resource":null},{"slug":"cadillac-mines","project":"Cadillac Mines","company":null,"region":"Ontario","element":"Au","elements":["Au"],"unit":"g/t","counts":{"holes":49,"assayed_holes":48,"intervals":50,"surveyed":0,"blocks":186514,"reports":0,"releases":3},"updated":"2026-09-21","kinds":["news"],"max":3.1,"terrain":true,"resource":null},{"slug":"cahuilla-natbridge-resources","project":"Cahuilla","company":"NatBridge Resources","region":"California","element":"Au","elements":["Au"],"unit":"g/t","counts":{"holes":220,"assayed_holes":36,"intervals":48,"surveyed":0,"blocks":80686,"reports":1,"releases":0},"updated":"2026-06-26","kinds":["report"],"max":64.457,"terrain":true,"resource":{"contained":143250,"unit":"oz"}},{"slug":"cambria-gold-mines","project":"Cambria Gold Mines","company":null,"region":"Manitoba","element":"Au","elements":["Au","Ag","Zn"],"unit":"ppm","counts":{"holes":70,"assayed_holes":43,"intervals":156,"surveyed":0,"blocks":4731,"reports":0,"releases":1},"updated":"2026-09-22","kinds":["news"],"max":166.22,"terrain":true,"resource":null},{"slug":"candelaria-silver-one-resources","project":"Candelaria","company":"Silver One Resources","region":"Nevada","element":"Ag","elements":["Ag","Au","Cu"],"unit":"g/t","counts":{"holes":171,"assayed_holes":135,"intervals":634,"surveyed":0,"blocks":546278,"reports":1,"releases":0},"updated":"2026-08-27","kinds":["report"],"max":1776.0,"terrain":true,"resource":null},{"slug":"carlang-a","project":"CarLang A","company":null,"region":"Ontario","element":"Ni","elements":["Ni","Cu","Co"],"unit":"%","counts":{"holes":17,"assayed_holes":4,"intervals":15,"surveyed":0,"blocks":9,"reports":1,"releases":0},"updated":"2026-09-19","kinds":["report"],"max":0.26,"terrain":true,"resource":{"contained":71253738,"unit":"lb"}},{"slug":"changshanhao-csh","project":"ChangShanHao","company":null,"region":"China","element":"Au","elements":["Au"],"unit":"g/t","counts":{"holes":49,"assayed_holes":1,"intervals":2,"surveyed":0,"blocks":0,"reports":1,"releases":0},"updated":"2026-09-19","kinds":["report"],"max":55.7,"terrain":false,"resource":{"contained":6220000,"unit":"oz"}},{"slug":"cisco-q2-metals","project":"Cisco","company":"Q2 Metals","region":"Qu\u00e9bec","element":"Li2O","elements":["Li2O","Ta2O5"],"unit":"%","counts":{"holes":94,"assayed_holes":24,"intervals":509,"surveyed":0,"blocks":43063,"reports":1,"releases":0},"updated":"2026-06-04","kinds":["report"],"max":4.171,"terrain":true,"resource":{"contained":4333000,"unit":"t"}},{"slug":"copper-bmt","project":"Copper","company":"BMT","region":"Brazil","element":"Cu","elements":["Cu","Co"],"unit":"%","counts":{"holes":87,"assayed_holes":43,"intervals":182,"surveyed":0,"blocks":17310,"reports":1,"releases":0},"updated":"2026-09-24","kinds":["report"],"max":0.373,"terrain":true,"resource":null},{"slug":"copper-creek-faraday-copper","project":"Copper Creek","company":"Faraday Copper","region":"Arizona","element":"Cu","elements":["Cu","Ag","Mo"],"unit":"%","counts":{"holes":29,"assayed_holes":17,"intervals":103,"surveyed":0,"blocks":2870,"reports":1,"releases":2},"updated":"2026-09-19","kinds":["news","report"],"max":0.96,"terrain":true,"resource":null},{"slug":"copperstone","project":"Copperstone","company":null,"region":"Arizona","element":"Au","elements":["Au","Ni"],"unit":"g/t","counts":{"holes":1287,"assayed_holes":158,"intervals":445,"surveyed":0,"blocks":21372,"reports":2,"releases":0},"updated":"2026-09-19","kinds":["report"],"max":102.788,"terrain":true,"resource":{"contained":682000,"unit":"oz"}},{"slug":"el-cubo","project":"El Cubo","company":null,"region":"Mexico","element":"Ag","elements":["Ag","Au"],"unit":"g/t","counts":{"holes":84,"assayed_holes":9,"intervals":86,"surveyed":0,"blocks":27192,"reports":1,"releases":0},"updated":"2026-09-19","kinds":["report"],"max":773.0,"terrain":true,"resource":null},{"slug":"el-pantano-orosur-mining","project":"El Pantano","company":"Orosur Mining","region":"Argentina","element":"Au","elements":["Au","Cu"],"unit":"g/t","counts":{"holes":25,"assayed_holes":11,"intervals":70,"surveyed":0,"blocks":76060,"reports":1,"releases":0},"updated":"2026-07-22","kinds":["report"],"max":1.3,"terrain":true,"resource":null},{"slug":"empire","project":"Empire","company":"Phoenix Copper","region":"Idaho","element":"Ag","elements":["Ag","Au","Cu"],"unit":"g/t","counts":{"holes":416,"assayed_holes":81,"intervals":347,"surveyed":0,"blocks":104929,"reports":1,"releases":0},"updated":"2026-09-19","kinds":["report"],"max":444.4,"terrain":true,"resource":{"contained":174832,"unit":"oz"}},{"slug":"errington-errington-metals","project":"Errington","company":"Errington Metals","region":"Ontario","element":"Au","elements":["Au","Cu","Ag"],"unit":"g/t","counts":{"holes":27,"assayed_holes":25,"intervals":93,"surveyed":0,"blocks":203678,"reports":0,"releases":2},"updated":"2026-08-18","kinds":["news"],"max":2.04,"terrain":true,"resource":null},{"slug":"chicken-mountain-tectonic-metals","project":"Flat (Chicken Mountain)","company":"Tectonic Metals","region":"Alaska","element":"Au","elements":["Au"],"unit":"g/t","counts":{"holes":15,"assayed_holes":15,"intervals":15,"surveyed":0,"blocks":1735,"reports":0,"releases":2},"updated":"2026-09-12","kinds":["news"],"max":1.35,"terrain":true,"resource":null},{"slug":"fondaway-canyon-getchell-gold","project":"Fondaway Canyon","company":"Getchell Gold","region":"Nevada","element":"Au","elements":["Au"],"unit":"g/t","counts":{"holes":39,"assayed_holes":23,"intervals":109,"surveyed":0,"blocks":4051,"reports":1,"releases":0},"updated":"2026-09-03","kinds":["report"],"max":9.3,"terrain":true,"resource":{"contained":544000,"unit":"oz"}},{"slug":"freeze-idex-metals","project":"Freeze","company":"IDEX Metals","region":"Idaho","element":"Ag","elements":["Ag","Cu","Mo"],"unit":"g/t","counts":{"holes":6,"assayed_holes":6,"intervals":234,"surveyed":0,"blocks":42633,"reports":1,"releases":0},"updated":"2026-06-01","kinds":["report"],"max":25.5,"terrain":true,"resource":null},{"slug":"goldboro","project":"Goldboro","company":"NexGold Mining","region":"Nova Scotia","element":"Au","elements":["Au"],"unit":"g/t","counts":{"holes":85,"assayed_holes":49,"intervals":84,"surveyed":0,"blocks":74408,"reports":2,"releases":5},"updated":"2026-09-23","kinds":["news","report"],"max":31.29,"terrain":true,"resource":{"contained":2744200,"unit":"oz"}},{"slug":"goliath-resources","project":"Golddigger","company":"Goliath Resources","region":"British Columbia","element":"Au","elements":["Au","Ag","AuEq"],"unit":"g/t","counts":{"holes":76,"assayed_holes":51,"intervals":222,"surveyed":0,"blocks":270730,"reports":0,"releases":9},"updated":"2026-10-07","kinds":["news"],"max":14.28,"terrain":true,"resource":null},{"slug":"golden-lion-evergold","project":"Golden Lion","company":"Evergold","region":"British Columbia","element":"Au","elements":["Au","Ag"],"unit":"g/t","counts":{"holes":6,"assayed_holes":6,"intervals":34,"surveyed":0,"blocks":28398,"reports":0,"releases":2},"updated":"2026-10-02","kinds":["news"],"max":7.7,"terrain":true,"resource":null},{"slug":"guardian-metal-resources","project":"Guardian Metal Resources","company":null,"region":"Nevada","element":"Cu","elements":["Cu","Ag","Zn"],"unit":"%","counts":{"holes":24,"assayed_holes":24,"intervals":174,"surveyed":0,"blocks":7885,"reports":0,"releases":1},"updated":"2026-09-21","kinds":["news"],"max":0.26,"terrain":true,"resource":null},{"slug":"guardian-metal-resources-2","project":"Guardian Metal Resources","company":null,"region":"Nevada","element":"Cu","elements":["Cu","Ag","Zn"],"unit":"%","counts":{"holes":10,"assayed_holes":9,"intervals":54,"surveyed":0,"blocks":1452,"reports":0,"releases":1},"updated":"2026-09-14","kinds":["news"],"max":0.79,"terrain":true,"resource":null},{"slug":"doubleview-gold","project":"Hat","company":"Doubleview Gold","region":"British Columbia","element":"Au","elements":["Au","Cu","Ag"],"unit":"g/t","counts":{"holes":7,"assayed_holes":7,"intervals":147,"surveyed":0,"blocks":81671,"reports":0,"releases":1},"updated":"2026-06-09","kinds":["news"],"max":4.04,"terrain":true,"resource":null},{"slug":"heliostar-metals","project":"Heliostar Metals","company":null,"region":"Mexico","element":"Au","elements":["Au","Ag"],"unit":"g/t","counts":{"holes":12,"assayed_holes":12,"intervals":84,"surveyed":0,"blocks":18949,"reports":0,"releases":1},"updated":"2026-06-18","kinds":["news"],"max":173.5,"terrain":true,"resource":null},{"slug":"hercules-strikepoint-gold","project":"Hercules","company":"StrikePoint Gold","region":"Nevada","element":"Au","elements":["Au","Ag"],"unit":"g/t","counts":{"holes":335,"assayed_holes":66,"intervals":304,"surveyed":0,"blocks":170711,"reports":1,"releases":0},"updated":"2026-07-13","kinds":["report"],"max":24.88,"terrain":true,"resource":null},{"slug":"hot-breccia-blade-resources","project":"Hot Breccia","company":"Blade Resources","region":"Arizona","element":"Cu","elements":["Cu","Zn"],"unit":"%","counts":{"holes":7,"assayed_holes":3,"intervals":8,"surveyed":0,"blocks":0,"reports":1,"releases":0},"updated":"2026-09-09","kinds":["report"],"max":1.73,"terrain":true,"resource":null},{"slug":"iron-range-earthwise-and-eagle-plains","project":"Iron Range","company":"Earthwise and Eagle Plains","region":"British Columbia","element":"Au","elements":["Au"],"unit":"g/t","counts":{"holes":3,"assayed_holes":3,"intervals":3,"surveyed":0,"blocks":0,"reports":0,"releases":4},"updated":"2026-09-08","kinds":["news"],"max":11.75,"terrain":true,"resource":null},{"slug":"ishk-day-laurion-mineral-exploration","project":"Ishk\u014dday","company":"LAURION Mineral Exploration","region":"Ontario","element":"Au","elements":["Au","Cu","Ag"],"unit":"g/t","counts":{"holes":6,"assayed_holes":6,"intervals":262,"surveyed":0,"blocks":24050,"reports":0,"releases":3},"updated":"2026-09-28","kinds":["news"],"max":6.58,"terrain":true,"resource":null},{"slug":"jd-sun-summit-minerals","project":"JD","company":"Sun Summit Minerals","region":"British Columbia","element":"Ag","elements":["Ag","Au"],"unit":"g/t","counts":{"holes":13,"assayed_holes":4,"intervals":19,"surveyed":0,"blocks":9308,"reports":0,"releases":1},"updated":"2026-10-06","kinds":["news"],"max":173.0,"terrain":true,"resource":null},{"slug":"joy-amarc","project":"Joy","company":"Amarc","region":"British Columbia","element":"Au","elements":["Au","Cu","Ag"],"unit":"g/t","counts":{"holes":7,"assayed_holes":7,"intervals":87,"surveyed":0,"blocks":48846,"reports":0,"releases":1},"updated":"2025-01-17","kinds":["news"],"max":4.54,"terrain":true,"resource":null},{"slug":"juby-mlm","project":"Juby","company":"MLM","region":"Ontario","element":"Au","elements":["Au"],"unit":"g/t","counts":{"holes":45,"assayed_holes":21,"intervals":25,"surveyed":0,"blocks":23884,"reports":1,"releases":0},"updated":"2026-10-04","kinds":["report"],"max":130.0,"terrain":true,"resource":{"contained":6160000,"unit":"oz"}},{"slug":"kalzas-rio2","project":"Kalzas","company":"Rio2","region":"Yukon","element":"WO3","elements":["WO3"],"unit":"%","counts":{"holes":11,"assayed_holes":9,"intervals":34,"surveyed":0,"blocks":16176,"reports":1,"releases":0},"updated":"2026-07-13","kinds":["report"],"max":1.39,"terrain":true,"resource":null},{"slug":"kap-integral-metals","project":"KAP","company":"Integral Metals","region":"Northwest Territories","element":"Zn","elements":["Zn"],"unit":"%","counts":{"holes":7,"assayed_holes":7,"intervals":118,"surveyed":0,"blocks":399,"reports":0,"releases":1},"updated":"2025-12-04","kinds":["news"],"max":43.28,"terrain":true,"resource":null},{"slug":"kinsley-copaur-minerals","project":"Kinsley","company":"CopAur Minerals","region":"Nevada","element":"Au","elements":["Au"],"unit":"g/t","counts":{"holes":59,"assayed_holes":28,"intervals":63,"surveyed":0,"blocks":90656,"reports":1,"releases":0},"updated":"2026-07-13","kinds":["report"],"max":45.19,"terrain":true,"resource":{"contained":202000,"unit":"oz"}},{"slug":"knife-lake-apogee-minerals","project":"Knife Lake","company":"Apogee Minerals","region":"Saskatchewan","element":"Cu","elements":["Cu","Co","Au"],"unit":"%","counts":{"holes":126,"assayed_holes":14,"intervals":57,"surveyed":0,"blocks":464,"reports":1,"releases":0},"updated":"2026-09-16","kinds":["report"],"max":6.36,"terrain":true,"resource":{"contained":2830000,"unit":"lb"}},{"slug":"la-cigarra-kootenay-silver","project":"La Cigarra","company":"Kootenay Silver","region":"Mexico","element":"Ag","elements":["Ag","Pb","Cu"],"unit":"g/t","counts":{"holes":224,"assayed_holes":160,"intervals":511,"surveyed":0,"blocks":672284,"reports":1,"releases":0},"updated":"2026-07-23","kinds":["report"],"max":25400.0,"terrain":true,"resource":null},{"slug":"la-cumbre","project":"La Cumbre","company":null,"region":"Colombia","element":"Au","elements":["Au","Ag"],"unit":"g/t","counts":{"holes":67,"assayed_holes":13,"intervals":36,"surveyed":0,"blocks":21737,"reports":1,"releases":0},"updated":"2026-09-19","kinds":["report"],"max":4.98,"terrain":true,"resource":{"contained":683590,"unit":"oz"}},{"slug":"langis-brixton-metals","project":"Langis","company":"Brixton Metals","region":"Ontario","element":"Ag","elements":["Ag"],"unit":"g/t","counts":{"holes":104,"assayed_holes":76,"intervals":180,"surveyed":0,"blocks":84980,"reports":0,"releases":3},"updated":"2026-10-06","kinds":["news"],"max":12386.0,"terrain":true,"resource":null},{"slug":"legacy-puma","project":"Legacy","company":"PUMA","region":"New Brunswick","element":"Ag","elements":["Ag","Cu"],"unit":"g/t","counts":{"holes":24,"assayed_holes":7,"intervals":81,"surveyed":0,"blocks":11940,"reports":2,"releases":0},"updated":"2026-09-17","kinds":["report"],"max":62.9,"terrain":true,"resource":null},{"slug":"levack-magna-mining","project":"Levack","company":"Magna Mining","region":"Ontario","element":"CuEq","elements":["CuEq","NiEq"],"unit":"g/t","counts":{"holes":24,"assayed_holes":13,"intervals":86,"surveyed":0,"blocks":1332,"reports":0,"releases":4},"updated":"2026-09-18","kinds":["news"],"max":40.7,"terrain":true,"resource":null},{"slug":"tom-south-fireweed","project":"Macpass","company":"Fireweed Metals","region":"Yukon","element":"Ag","elements":["Ag","Zn","Pb"],"unit":"g/t","counts":{"holes":4,"assayed_holes":3,"intervals":51,"surveyed":0,"blocks":0,"reports":0,"releases":2},"updated":"2026-09-15","kinds":["news"],"max":30.27,"terrain":true,"resource":null},{"slug":"canstar-resources","project":"Mary March","company":"Canstar Resources","region":"Newfoundland and Labrador","element":"Au","elements":["Au","Cu","Ag"],"unit":"g/t","counts":{"holes":4,"assayed_holes":1,"intervals":42,"surveyed":0,"blocks":0,"reports":0,"releases":1},"updated":"2026-08-14","kinds":["news"],"max":1.61,"terrain":true,"resource":null},{"slug":"mercator-canadian-goldcamps","project":"Mercator","company":"Canadian Goldcamps","region":"Qu\u00e9bec","element":"Au","elements":["Au"],"unit":"g/t","counts":{"holes":13,"assayed_holes":8,"intervals":134,"surveyed":0,"blocks":2558,"reports":1,"releases":0},"updated":"2026-09-08","kinds":["report"],"max":17.97,"terrain":true,"resource":null},{"slug":"mirado-kldc","project":"Mirado","company":"KLDC","region":"Ontario","element":"Au","elements":["Au"],"unit":"g/t","counts":{"holes":84,"assayed_holes":30,"intervals":128,"surveyed":0,"blocks":75011,"reports":1,"releases":0},"updated":"2026-10-02","kinds":["report"],"max":31.1,"terrain":true,"resource":{"contained":488900,"unit":"oz"}},{"slug":"moby-dick-pirate-gold","project":"Moby Dick","company":"Pirate Gold","region":"Ontario","element":"Au","elements":["Au","Cu","Ag"],"unit":"g/t","counts":{"holes":17,"assayed_holes":3,"intervals":45,"surveyed":0,"blocks":0,"reports":0,"releases":1},"updated":"2026-09-03","kinds":["news"],"max":0.316,"terrain":true,"resource":null},{"slug":"mont-sorcier","project":"Mont Sorcier","company":"Voyager Metals","region":"Qu\u00e9bec","element":"Fe","elements":["Fe"],"unit":"%","counts":{"holes":24,"assayed_holes":5,"intervals":5,"surveyed":0,"blocks":3121,"reports":1,"releases":0},"updated":"2026-09-19","kinds":["report"],"max":27.5,"terrain":true,"resource":null},{"slug":"montauban","project":"Montauban","company":null,"region":"Qu\u00e9bec","element":"Au","elements":["Au","Zn","Pb"],"unit":"g/t","counts":{"holes":303,"assayed_holes":33,"intervals":100,"surveyed":0,"blocks":1084,"reports":1,"releases":0},"updated":"2026-09-19","kinds":["report"],"max":3.67,"terrain":true,"resource":null},{"slug":"moore-lake-skyharbour-resources","project":"Moore Lake","company":"Skyharbour Resources","region":"Saskatchewan","element":"Cu","elements":["Cu","Co"],"unit":"%","counts":{"holes":128,"assayed_holes":3,"intervals":10,"surveyed":0,"blocks":0,"reports":1,"releases":0},"updated":"2026-09-03","kinds":["report"],"max":0.058,"terrain":true,"resource":null},{"slug":"moss-mako-mining","project":"Moss","company":"Mako Mining","region":"Arizona","element":"Au","elements":["Au","Ag"],"unit":"g/t","counts":{"holes":130,"assayed_holes":85,"intervals":250,"surveyed":0,"blocks":63316,"reports":1,"releases":0},"updated":"2026-08-21","kinds":["report"],"max":1.289,"terrain":true,"resource":null},{"slug":"murray-brook","project":"Murray Brook","company":"Canadian Copper","region":"New Brunswick","element":"Cu","elements":["Cu","Zn","Pb"],"unit":"%","counts":{"holes":189,"assayed_holes":158,"intervals":840,"surveyed":0,"blocks":640549,"reports":1,"releases":0},"updated":"2026-09-19","kinds":["report"],"max":5.26,"terrain":true,"resource":{"contained":46900000,"unit":"lb"}},{"slug":"nesbitt-canada-nickel","project":"Nesbitt","company":"Canada Nickel","region":"Ontario","element":"Ni","elements":["Ni","Co","Pt"],"unit":"%","counts":{"holes":3,"assayed_holes":2,"intervals":24,"surveyed":0,"blocks":0,"reports":1,"releases":0},"updated":"2026-09-08","kinds":["report"],"max":0.28,"terrain":true,"resource":null},{"slug":"odienn-awale-resources","project":"Odienn\u00e9","company":"Awale Resources","region":"Ivory Coast","element":"Au","elements":["Au","Cu","Ag"],"unit":"g/t","counts":{"holes":313,"assayed_holes":154,"intervals":2043,"surveyed":0,"blocks":321322,"reports":1,"releases":0},"updated":"2026-07-03","kinds":["report"],"max":78.9,"terrain":true,"resource":null},{"slug":"ongwe-ongwe-minerals","project":"Ongwe","company":"Ongwe Minerals","region":null,"element":"Au","elements":["Au"],"unit":"g/t","counts":{"holes":49,"assayed_holes":19,"intervals":43,"surveyed":0,"blocks":340,"reports":1,"releases":0},"updated":"2026-09-03","kinds":["report"],"max":7.39,"terrain":false,"resource":null},{"slug":"osisko-development","project":"Osisko Development","company":null,"region":"Ontario","element":"Au","elements":["Au"],"unit":"g/t","counts":{"holes":55,"assayed_holes":50,"intervals":407,"surveyed":0,"blocks":3204,"reports":0,"releases":1},"updated":"2026-06-09","kinds":["news"],"max":133.62,"terrain":true,"resource":null},{"slug":"pak","project":"PAK","company":"Frontier Lithium","region":"Ontario","element":"Li2O","elements":["Li2O","Ta2O5","Nb2O5"],"unit":"%","counts":{"holes":179,"assayed_holes":22,"intervals":99,"surveyed":0,"blocks":8094,"reports":1,"releases":0},"updated":"2026-09-19","kinds":["report"],"max":4.5,"terrain":true,"resource":null},{"slug":"palmer-vizsla-copper","project":"Palmer","company":"Vizsla Copper","region":"Alaska","element":"Au","elements":["Au","Cu","Ag"],"unit":"g/t","counts":{"holes":5,"assayed_holes":5,"intervals":72,"surveyed":0,"blocks":25957,"reports":0,"releases":4},"updated":"2026-10-07","kinds":["news"],"max":4.77,"terrain":true,"resource":null},{"slug":"perron-amex-gold-mining","project":"Perron","company":"AMEX Gold Mining","region":"Qu\u00e9bec","element":"Au","elements":["Au","Ag","Cu"],"unit":"g/t","counts":{"holes":32,"assayed_holes":26,"intervals":233,"surveyed":0,"blocks":118937,"reports":1,"releases":1},"updated":"2026-09-19","kinds":["news","report"],"max":82.7,"terrain":true,"resource":{"contained":1744210,"unit":"oz"}},{"slug":"pipy-nican","project":"Pipy","company":"NICAN","region":"Manitoba","element":"Au","elements":["Au","Ag","Pb"],"unit":"g/t","counts":{"holes":16,"assayed_holes":15,"intervals":95,"surveyed":0,"blocks":24915,"reports":0,"releases":2},"updated":"2026-10-13","kinds":["news"],"max":8.01,"terrain":true,"resource":null},{"slug":"prince","project":"Prince","company":"Prince Silver","region":"Nevada","element":"Au","elements":["Au","Ag","Zn"],"unit":"g/t","counts":{"holes":5,"assayed_holes":4,"intervals":114,"surveyed":0,"blocks":0,"reports":0,"releases":1},"updated":"2026-06-24","kinds":["news"],"max":5.69,"terrain":true,"resource":null},{"slug":"rc-sitka-gold","project":"RC Gold","company":"Sitka Gold","region":"Yukon","element":"Au","elements":["Au"],"unit":"g/t","counts":{"holes":209,"assayed_holes":26,"intervals":47,"surveyed":0,"blocks":179198,"reports":1,"releases":0},"updated":"2026-07-10","kinds":["report"],"max":7.887,"terrain":true,"resource":{"contained":5120000,"unit":"oz"}},{"slug":"reid","project":"Reid","company":"Canada Nickel","region":"Ontario","element":"Ni","elements":["Ni","Co","Pt"],"unit":"%","counts":{"holes":16,"assayed_holes":12,"intervals":94,"surveyed":0,"blocks":5264,"reports":1,"releases":0},"updated":"2026-09-19","kinds":["report"],"max":0.53,"terrain":true,"resource":null},{"slug":"rio-grande-centauri-minerals","project":"Rio Grande","company":"Centauri Minerals","region":"Argentina","element":"Au","elements":["Au"],"unit":"g/t","counts":{"holes":52,"assayed_holes":1,"intervals":3,"surveyed":0,"blocks":0,"reports":1,"releases":0},"updated":"2026-08-24","kinds":["report"],"max":1.713,"terrain":true,"resource":null},{"slug":"roland-talon-metals","project":"Roland","company":"Talon Metals","region":"Ontario","element":"CuEq","elements":["CuEq","NiEq"],"unit":"%","counts":{"holes":12,"assayed_holes":3,"intervals":10,"surveyed":0,"blocks":0,"reports":0,"releases":1},"updated":"2026-10-06","kinds":["news"],"max":17.32,"terrain":true,"resource":null},{"slug":"san-agustin","project":"San Agustin","company":null,"region":"Mexico","element":"Ni","elements":["Ni"],"unit":"%","counts":{"holes":21,"assayed_holes":4,"intervals":4,"surveyed":0,"blocks":7390,"reports":1,"releases":0},"updated":"2026-09-19","kinds":["report"],"max":2022.0,"terrain":true,"resource":null},{"slug":"las-maras-outcrop-silver-gold","project":"Santa Ana","company":"Outcrop Silver & Gold","region":"Colombia","element":"Au","elements":["Au","Ag","AgEq"],"unit":"g/t","counts":{"holes":82,"assayed_holes":24,"intervals":150,"surveyed":0,"blocks":74805,"reports":0,"releases":5},"updated":"2026-09-03","kinds":["news"],"max":18.69,"terrain":true,"resource":null},{"slug":"santa-fe-lg","project":"Santa Fe","company":"LG","region":"Nevada","element":"Au","elements":["Au","Ag"],"unit":"g/t","counts":{"holes":102,"assayed_holes":21,"intervals":140,"surveyed":0,"blocks":84498,"reports":2,"releases":0},"updated":"2026-10-07","kinds":["report"],"max":4.43,"terrain":true,"resource":{"contained":2386000,"unit":"oz"}},{"slug":"seagull-anteros-metals","project":"Seagull","company":"Anteros Metals","region":"Ontario","element":"Pt","elements":["Pt","Pd","Au"],"unit":"g/t","counts":{"holes":15,"assayed_holes":11,"intervals":85,"surveyed":0,"blocks":23179,"reports":1,"releases":0},"updated":"2026-07-30","kinds":["report"],"max":1.71,"terrain":true,"resource":null},{"slug":"kuya-silver","project":"Silver Kings","company":"Kuya Silver","region":"Ontario","element":"Ag","elements":["Ag","Co"],"unit":"g/t","counts":{"holes":13,"assayed_holes":4,"intervals":18,"surveyed":0,"blocks":1081,"reports":0,"releases":1},"updated":"2025-01-30","kinds":["news"],"max":1372.0,"terrain":true,"resource":null},{"slug":"silver-range","project":"Silver Range","company":null,"region":"Nevada","element":"Au","elements":["Au"],"unit":"g/t","counts":{"holes":15,"assayed_holes":15,"intervals":20,"surveyed":0,"blocks":201,"reports":0,"releases":1},"updated":"2026-07-21","kinds":["news"],"max":3.29,"terrain":true,"resource":null},{"slug":"meps-sterling-metals","project":"Soo Copper (MEPS)","company":"Sterling Metals","region":"Ontario","element":"Au","elements":["Au","Ag"],"unit":"g/t","counts":{"holes":4,"assayed_holes":4,"intervals":60,"surveyed":0,"blocks":13553,"reports":0,"releases":1},"updated":"2026-09-03","kinds":["news"],"max":0.26,"terrain":true,"resource":null},{"slug":"south-uchi-kenorland-and-auranova","project":"South Uchi","company":"Kenorland and Auranova","region":"Ontario","element":"Au","elements":["Au"],"unit":"g/t","counts":{"holes":19,"assayed_holes":9,"intervals":24,"surveyed":0,"blocks":14100,"reports":0,"releases":3},"updated":"2026-06-17","kinds":["news"],"max":12.7,"terrain":true,"resource":null},{"slug":"springer-volta-metals","project":"Springer","company":"Volta Metals","region":"Ontario","element":"TREO","elements":["TREO"],"unit":"%","counts":{"holes":15,"assayed_holes":11,"intervals":103,"surveyed":0,"blocks":24672,"reports":0,"releases":7},"updated":"2026-10-01","kinds":["news"],"max":7.54,"terrain":true,"resource":null},{"slug":"springpole","project":"Springpole","company":"First Mining Gold","region":"Ontario","element":"Au","elements":["Au","Ag"],"unit":"g/t","counts":{"holes":311,"assayed_holes":109,"intervals":487,"surveyed":0,"blocks":142846,"reports":2,"releases":0},"updated":"2026-09-19","kinds":["report"],"max":122.79,"terrain":true,"resource":{"contained":5600000,"unit":"oz"}},{"slug":"star-copper","project":"Star","company":"Star Copper","region":"British Columbia","element":"Au","elements":["Au","Cu","CuEq"],"unit":"g/t","counts":{"holes":5,"assayed_holes":2,"intervals":27,"surveyed":0,"blocks":0,"reports":0,"releases":2},"updated":"2026-01-13","kinds":["news"],"max":0.21,"terrain":true,"resource":null},{"slug":"starratt-olsen-west-red-lake-gold","project":"Starratt Olsen","company":"West Red Lake Gold","region":"Ontario","element":"Au","elements":["Au"],"unit":"g/t","counts":{"holes":17,"assayed_holes":9,"intervals":41,"surveyed":0,"blocks":31019,"reports":0,"releases":4},"updated":"2026-09-12","kinds":["news"],"max":78.97,"terrain":true,"resource":null},{"slug":"sunnyside-great-basin-metals","project":"Sunnyside","company":"Great Basin Metals","region":"Arizona","element":"Cu","elements":["Cu","Zn","Pb"],"unit":"%","counts":{"holes":17,"assayed_holes":10,"intervals":280,"surveyed":0,"blocks":216,"reports":1,"releases":0},"updated":"2026-06-03","kinds":["report"],"max":8.18,"terrain":true,"resource":null},{"slug":"swanson-lafleur-minerals","project":"Swanson","company":"LaFleur Minerals","region":"Qu\u00e9bec","element":"Au","elements":["Au"],"unit":"g/t","counts":{"holes":59,"assayed_holes":10,"intervals":18,"surveyed":0,"blocks":30812,"reports":0,"releases":2},"updated":"2026-10-05","kinds":["news"],"max":27.8,"terrain":true,"resource":null},{"slug":"talamore-mining","project":"Talamore Mining","company":null,"region":"Yukon","element":"Au","elements":["Au"],"unit":"ppm","counts":{"holes":37,"assayed_holes":13,"intervals":24,"surveyed":0,"blocks":40533,"reports":0,"releases":1},"updated":"2026-10-07","kinds":["news"],"max":6.92,"terrain":true,"resource":null},{"slug":"tamarack-talon-metals","project":"Tamarack","company":"Talon Metals","region":"Ontario","element":"CuEq","elements":["CuEq","NiEq"],"unit":"%","counts":{"holes":11,"assayed_holes":9,"intervals":68,"surveyed":0,"blocks":30458,"reports":0,"releases":4},"updated":"2026-09-12","kinds":["news"],"max":9.756,"terrain":true,"resource":null},{"slug":"tombstone-aztec","project":"Tombstone","company":"Aztec","region":"Arizona","element":"Au","elements":["Au","Ag","AuEq"],"unit":"g/t","counts":{"holes":10,"assayed_holes":5,"intervals":129,"surveyed":0,"blocks":16933,"reports":0,"releases":3},"updated":"2026-09-03","kinds":["news"],"max":6.97,"terrain":true,"resource":null},{"slug":"tonopah","project":"Tonopah","company":null,"region":"Nevada","element":"Au","elements":["Au"],"unit":"g/t","counts":{"holes":566,"assayed_holes":1,"intervals":1,"surveyed":0,"blocks":0,"reports":1,"releases":0},"updated":"2026-09-19","kinds":["report"],"max":0.4,"terrain":true,"resource":{"contained":162800000,"unit":"oz"}},{"slug":"troilus-troilus-mining","project":"Troilus","company":"Troilus Mining","region":null,"element":"Au","elements":["Au","Cu"],"unit":"g/t","counts":{"holes":48,"assayed_holes":1,"intervals":14,"surveyed":0,"blocks":0,"reports":1,"releases":0},"updated":"2026-09-09","kinds":["report"],"max":1.08,"terrain":false,"resource":{"contained":520350,"unit":"oz"}},{"slug":"true-north-1911-gold","project":"True North","company":"1911 Gold","region":"Manitoba","element":"Au","elements":["Au"],"unit":"g/t","counts":{"holes":26,"assayed_holes":7,"intervals":47,"surveyed":0,"blocks":32337,"reports":0,"releases":4},"updated":"2026-10-06","kinds":["news"],"max":65.8,"terrain":true,"resource":null},{"slug":"tuscarora-icg-silver-gold","project":"Tuscarora","company":"ICG Silver & Gold","region":"Nevada","element":"Au","elements":["Au","Ag"],"unit":"g/t","counts":{"holes":12,"assayed_holes":5,"intervals":64,"surveyed":0,"blocks":33409,"reports":0,"releases":1},"updated":"2026-10-06","kinds":["news"],"max":137.0,"terrain":true,"resource":null},{"slug":"unnamed-project","project":"Unnamed project","company":null,"region":"Manitoba","element":"Li2O","elements":["Li2O"],"unit":"%","counts":{"holes":17,"assayed_holes":16,"intervals":24,"surveyed":0,"blocks":700,"reports":0,"releases":1},"updated":"2026-08-06","kinds":["news"],"max":4.06,"terrain":true,"resource":null},{"slug":"valle-ancho-ngex","project":"Valle Ancho","company":"NGEX","region":"Argentina","element":"Au","elements":["Au","Ag","Cu"],"unit":"g/t","counts":{"holes":11,"assayed_holes":7,"intervals":65,"surveyed":0,"blocks":7700,"reports":1,"releases":0},"updated":"2026-10-02","kinds":["report"],"max":2.12,"terrain":true,"resource":null},{"slug":"district-metals","project":"Viken","company":"District Metals","region":"Sweden","element":"Zn","elements":["Zn","Ni","U3O8"],"unit":"%","counts":{"holes":139,"assayed_holes":81,"intervals":237,"surveyed":0,"blocks":2416,"reports":1,"releases":0},"updated":"2026-07-17","kinds":["report"],"max":0.056,"terrain":true,"resource":{"contained":180000000,"unit":"lb"}},{"slug":"viridian-metals","project":"Viridian Metals","company":null,"region":"Newfoundland and Labrador","element":"Cu","elements":["Cu","Ni","Co"],"unit":"%","counts":{"holes":6,"assayed_holes":3,"intervals":27,"surveyed":0,"blocks":0,"reports":0,"releases":3},"updated":"2026-10-02","kinds":["news"],"max":0.65,"terrain":true,"resource":null},{"slug":"west-red-lake-gold","project":"West Red Lake Gold","company":null,"region":"British Columbia","element":"Au","elements":["Au"],"unit":"g/t","counts":{"holes":24,"assayed_holes":24,"intervals":25,"surveyed":0,"blocks":3345,"reports":0,"releases":1},"updated":"2026-09-22","kinds":["news"],"max":176.04,"terrain":true,"resource":null},{"slug":"western-wabigoon-kenorland-minerals","project":"Western Wabigoon","company":"Kenorland Minerals","region":"Ontario","element":"Au","elements":["Au"],"unit":"g/t","counts":{"holes":9,"assayed_holes":8,"intervals":18,"surveyed":0,"blocks":0,"reports":0,"releases":2},"updated":"2026-09-03","kinds":["news"],"max":428.5,"terrain":true,"resource":null},{"slug":"regionally-the-white-gold","project":"White Gold","company":"White Gold Corp","region":"Yukon","element":"Mo","elements":["Mo","Cu"],"unit":"%","counts":{"holes":10,"assayed_holes":7,"intervals":34,"surveyed":0,"blocks":26304,"reports":1,"releases":0},"updated":"2026-07-20","kinds":["report"],"max":0.063,"terrain":false,"resource":null}]</script>
+
+<section id="what"><div class="wrap">
+  <h2>What it does</h2><div class="rule"></div>
+  <p class="sub">The work an analyst would otherwise do by hand — pulling collar and assay tables out of a
+    400-page PDF, working out the coordinate system, desurveying, compositing, estimating — done
+    automatically, for every deposit in the database.</p>
+  <div class="grid3">
+    <div class="card">
+      <div class="ic"><svg viewBox="0 0 24 24"><path d="M4 19V5m0 14h16M8 15l4-6 3 4 4-7"/></svg></div>
+      <h3>Full models from technical reports</h3>
+      <p>Collar, survey and assay tables are extracted by word position from the filed PDF — multi-page
+        tables, "including" intervals, feet, ppm, oz/t and all. The published resource statement comes
+        with them, so the model's contained metal can be checked against the real one.</p>
+    </div>
+    <div class="card">
+      <div class="ic"><svg viewBox="0 0 24 24"><path d="M12 3v18M3 7.5l9-4.5 9 4.5-9 4.5zM3 16.5l9 4.5 9-4.5"/></svg></div>
+      <h3>Parameters that come from the report</h3>
+      <p>Block size, bulk density, composite length, search range, capping grade and the reporting
+        cut-off are taken from the project's most recent technical report. Where no report exists, from
+        what is typical for that region and commodity. Every number says where it came from — and you
+        can change any of them.</p>
+    </div>
+    <div class="card">
+      <div class="ic"><svg viewBox="0 0 24 24"><path d="M5 11V8a7 7 0 0114 0v3M4 11h16v10H4z"/></svg></div>
+      <h3>Your own data, private</h3>
+      <p>Upload collars, assays and surveys as CSV, Excel or an Access database. Headers are matched by
+        meaning, units converted, holes desurveyed. Your files are yours: nothing is shared unless you
+        choose to share a model, and the source files are never shared at all.</p>
+    </div>
+  </div>
+</div></section>
+
+<section class="alt" id="how"><div class="wrap">
+  <h2>How it works</h2><div class="rule"></div>
+  <div class="steps">
+    <div class="step"><h3>Load the drilling</h3>
+      <p>Pick a public deposit, or drop in your own files and say which coordinate system they use.
+        Your holes can be modelled together with the drilling MineModelingPro already holds.</p></div>
+    <div class="step"><h3>Set the parameters</h3>
+      <p>Start from the report's own estimation recipe, then adjust block size, search radius,
+        estimator, top-cut, density or cut-off. Saving rebuilds the model in a minute or two.</p></div>
+    <div class="step"><h3>Read the deposit</h3>
+      <p>Orbit the model, colour the holes by grade, slice to a section, move the cut-off and watch
+        tonnes, grade and contained metal move with it.</p></div>
+  </div>
+</div></section>
+
+<section><div class="wrap two">
+  <div>
+    <h2>Who it's for</h2><div class="rule"></div>
+    <ul class="ticks">
+      <li><b>Analysts and funds</b> sizing a deposit before the market does, and sanity-checking what a
+        company's release implies.</li>
+      <li><b>Explorers</b> who want their own holes in 3D without a seat of mining software or a
+        consultant's turnaround time.</li>
+      <li><b>Corporate development</b> comparing targets on the same basis — same estimator, same
+        parameters, same units.</li>
+    </ul>
+  </div>
+  <div>
+    <h2>What it is not</h2><div class="rule"></div>
+    <p class="sub">Grades here are inverse-distance estimates built for visualisation and comparison.
+      They are not a mineral resource estimate, they are not classified, and they are not signed by a
+      qualified person. Every model page shows the published resource beside the estimate precisely so
+      the difference is visible. Verify against the source filing before relying on any figure.</p>
+  </div>
+</div></section>
+
+<div class="cta">
+  <h2>Model your own drilling</h2>
+  <p>MineModelingPro Studio is available to clients by invitation. If you have drill data you want in
+    3D — or a portfolio you want modelled on a consistent basis — get in touch.</p>
+  <div class="btns">
+    <a class="btn" href="mailto:jay@thedeepdive.ca?subject=MineModelingPro%20Studio%20access">Request access</a>
+    <a class="btn ghost" href="app/index.html">Sign in</a>
+  </div>
+</div>
+
+<footer class="site">
+  <b>MineModelingPro</b> — interactive 3D deposit models built from drill-hole assays and NI 43-101
+  technical reports. Grades are inverse-distance estimates for visualisation only, not a mineral
+  resource estimate. Verify every figure against the source filing before relying on it.
+</footer>
+
 <script>
-"use strict";
-const C=JSON.parse(document.getElementById("cards").textContent);
-const $=id=>document.getElementById(id);
-const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-function fmtC(v,u){if(!v)return"–";if(u==="oz")return v>=1e6?(v/1e6).toFixed(2)+" Moz":(v/1e3).toFixed(0)+" koz";
-  if(u==="lb")return v>=1e9?(v/1e9).toFixed(2)+" Blb":(v/1e6).toFixed(0)+" Mlb";return v>=1e6?(v/1e6).toFixed(1)+" Mt":(v/1e3).toFixed(0)+" kt";}
-const els=[...new Set(C.map(c=>c.element))].sort(),regs=[...new Set(C.map(c=>c.region).filter(Boolean))].sort();
-els.forEach(e=>$("fel").insertAdjacentHTML("beforeend",`<option>${esc(e)}</option>`));
-regs.forEach(r=>$("freg").insertAdjacentHTML("beforeend",`<option>${esc(r)}</option>`));
-const st={};try{Object.assign(st,JSON.parse(sessionStorage.getItem("mmp-gallery")||"{}"));}catch(e){}
-["q","fel","freg","fsrc","sort"].forEach(k=>{if(st[k]!=null)$(k).value=st[k];$(k).addEventListener("input",render);});
-function card(c){const k=c.kinds||[];const src=(k.includes("report")?'<span class="c rep">43-101</span>':"")+(k.includes("news")?'<span class="c news">News</span>':"");
-  const els=(c.elements||[c.element]).map(e=>`<span class="c el">${esc(e)}</span>`).join("");
-  const res=c.resource&&c.resource.contained?fmtC(c.resource.contained,c.resource.unit):"–";
-  return `<a class="card" href="models/${esc(c.slug)}.html"><div><h3>${esc(c.project)}</h3>${c.company?`<div class="co">${esc(c.company)}</div>`:""}</div>
-   <div class="chips">${els}${src}${c.region?`<span class="c">${esc(c.region)}</span>`:""}</div>
-   <div class="st"><div><b>${c.counts.holes.toLocaleString()}</b><span>Holes</span></div><div><b>${c.counts.intervals.toLocaleString()}</b><span>Intervals</span></div>
-   <div><b>${res}</b><span>Published</span></div></div>
-   <div class="meta">${c.counts.reports?c.counts.reports+" report"+(c.counts.reports>1?"s":""):""}${c.counts.reports&&c.counts.releases?" · ":""}${c.counts.releases?c.counts.releases+" release"+(c.counts.releases>1?"s":""):""}${c.updated?" · to "+esc(String(c.updated).slice(0,10)):""}</div></a>`;}
-function render(){const q=$("q").value.trim().toLowerCase(),fe=$("fel").value,fr=$("freg").value,fs=$("fsrc").value,so=$("sort").value;
-  try{sessionStorage.setItem("mmp-gallery",JSON.stringify({q:$("q").value,fel:fe,freg:fr,fsrc:fs,sort:so}));}catch(e){}
-  let L=C.filter(c=>{const k=c.kinds||[];
-    if(fe&&c.element!==fe&&!(c.elements||[]).includes(fe))return false;if(fr&&c.region!==fr)return false;
-    if(fs==="report"&&!k.includes("report"))return false;if(fs==="news"&&!k.includes("news"))return false;if(fs==="both"&&!(k.includes("report")&&k.includes("news")))return false;
-    if(q){const hay=[c.project,c.company,c.region,c.element,...(c.elements||[])].join(" ").toLowerCase();return q.split(/\s+/).every(t=>hay.includes(t));}return true;});
-  const nm=c=>(c.project||"").toLowerCase();
-  const S={name:(a,b)=>nm(a).localeCompare(nm(b)),company:(a,b)=>(a.company||a.project||"").toLowerCase().localeCompare((b.company||b.project||"").toLowerCase())||nm(a).localeCompare(nm(b)),
-    holes:(a,b)=>b.counts.holes-a.counts.holes,updated:(a,b)=>String(b.updated||"").localeCompare(String(a.updated||"")),
-    resource:(a,b)=>((b.resource||{}).contained||0)-((a.resource||{}).contained||0)};
-  L.sort(S[so]||S.name);
-  $("count").textContent=L.length+" of "+C.length+" project models";
-  $("grid").innerHTML=L.length?L.map(card).join(""):'<p class="empty">No models match these filters.</p>';}
-render();
+/* live counts from the gallery index */
+fetch("models_index.json").then(r => r.json()).then(d => {
+  const models = d.models || [];
+  const n = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  const sum = k => models.reduce((a, m) => a + (Number(m[k]) || 0), 0);
+  n("n-models", models.length.toLocaleString());
+  n("n-holes", sum("holes").toLocaleString());
+  n("n-reports", models.filter(m => String(m.source || "").includes("report")).length.toLocaleString());
+  n("n-updated", (d.generated || "").slice(0, 10) || "—");
+}).catch(() => {});
+
+/* a small, honest stand-in for the viewer: drill traces coloured by grade */
+(function () {
+  const c = document.getElementById("demo"); if (!c) return;
+  const x = c.getContext("2d"), W = c.width, H = c.height;
+  const cols = ["#2b6cb0", "#38a169", "#d69e2e", "#dd6b20", "#D71920"];
+  let t = 0;
+  const holes = [];
+  for (let i = 0; i < 26; i++) {
+    const u = (i % 7) / 6 - .5, v = Math.floor(i / 7) / 3 - .5;
+    holes.push({ u, v, seg: Array.from({ length: 11 }, (_, k) => Math.max(0, Math.min(4,
+      Math.round(4 * Math.exp(-Math.pow((k - (5 + 3 * u)) / 2.1, 2)) - 0.35 + Math.random() * .4))) ) });
+  }
+  function draw() {
+    t += 0.0045;
+    x.fillStyle = "#15181d"; x.fillRect(0, 0, W, H);
+    const cx = W / 2, cy = H / 2 - 6, s = Math.min(W, H) * 0.95;
+    const ca = Math.cos(t), sa = Math.sin(t);
+    // ground plane
+    x.strokeStyle = "rgba(255,255,255,.08)"; x.lineWidth = 1;
+    for (let g = -3; g <= 3; g++) {
+      const a = [-3, g], b = [3, g], c2 = [g, -3], d2 = [g, 3];
+      line(a, b); line(c2, d2);
+    }
+    function proj(u, v, w) {
+      const X = u * ca - v * sa, Y = u * sa + v * ca;
+      return [cx + X * s * 0.78, cy + Y * s * 0.34 + w * s * 0.30];
+    }
+    function line(a, b) {
+      const p = proj(a[0] * .22, a[1] * .22, 0.95), q = proj(b[0] * .22, b[1] * .22, 0.95);
+      x.beginPath(); x.moveTo(p[0], p[1]); x.lineTo(q[0], q[1]); x.stroke();
+    }
+    for (const h of holes) {
+      for (let k = 0; k < h.seg.length; k++) {
+        const w0 = -0.9 + k * 0.17, w1 = w0 + 0.17;
+        const p = proj(h.u + k * 0.012, h.v + k * 0.012, w0), q = proj(h.u + (k + 1) * 0.012, h.v + (k + 1) * 0.012, w1);
+        const g = h.seg[k];
+        x.strokeStyle = g ? cols[g] : "rgba(255,255,255,.22)";
+        x.lineWidth = g ? 4.2 : 1.8;
+        x.beginPath(); x.moveTo(p[0], p[1]); x.lineTo(q[0], q[1]); x.stroke();
+      }
+    }
+    requestAnimationFrame(draw);
+  }
+  draw();
+})();
 </script>
 </body>
 </html>

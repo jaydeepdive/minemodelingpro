@@ -53,8 +53,6 @@ jobs:
           restore-keys: dem-
       - name: Render 3D model gallery + viewers
         run: PYTHONPATH=src python -c "from minemodelingpro import model3d; model3d.build_all('site')"
-      - name: Root index = gallery
-        run: cp site/models.html site/index.html
       - name: Commit site + shard store
         run: |
           git config user.name "mmp-bot"

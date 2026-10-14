@@ -21,6 +21,8 @@ nav.menu{display:flex;align-items:center;gap:22px;flex-wrap:wrap;}
 nav.menu a{display:inline-flex;align-items:center;height:32px;color:var(--ink);font-size:14px;font-weight:500;line-height:1;border-bottom:2px solid transparent;text-decoration:none;}
 nav.menu a:hover{color:var(--red);text-decoration:none;}
 nav.menu a.active{color:var(--red);border-bottom-color:var(--red);}
+nav.menu a.signin{background:var(--red);color:#fff;border-radius:7px;padding:0 14px;font-weight:700;}
+nav.menu a.signin:hover{background:#b3141a;color:#fff;}
 nav.menu a.ext{color:var(--mut);font-size:13px;}
 .wrap{max-width:1180px;margin:0 auto;padding:26px 22px 60px;}
 .hero h1{font-size:30px;letter-spacing:-.3px;} .hero p{color:var(--mut);max-width:760px;}
@@ -39,7 +41,7 @@ CLOSEOLOGY_URL = "https://jaydeepdive.github.io/closeology/"
 
 
 def header(active=""):
-    home_active = " active" if active in ("index.html", "models.html", "") else ""
+    home_active = " active" if active in ("models.html", "") else ""
     return (
         '<div class="topbar"><div class="topwrap">'
         '<a class="brand" href="index.html">'
@@ -47,9 +49,10 @@ def header(active=""):
         '<span class="sub">Drillhole &amp; 43-101 Modelling</span>'
         '</a>'
         '<nav class="menu">'
-        f'<a href="index.html" class="{("active" if home_active else "").strip()}">3D Models</a>'
+        f'<a href="models.html" class="{("active" if home_active else "").strip()}">3D Models</a>'
         f'<a href="app/index.html" class="{("active" if active == "app" else "")}">Studio &mdash; model your own data</a>'
         f'<a class="ext" href="{CLOSEOLOGY_URL}" target="_blank" rel="noopener">Closeology radar &#8599;</a>'
+        '<a class="signin" href="app/index.html">Sign in</a>'
         '</nav>'
         '</div></div>')
 
