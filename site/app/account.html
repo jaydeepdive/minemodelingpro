@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Your account · MineModelingPro Studio</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Bitter:wght@500;700;800&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+<script src="config.js"></script>
+</head>
+<body>
+<div class="topbar" id="topbar"></div>
+<div class="wrap" style="max-width:640px">
+  <h1>Your account</h1><div class="rule"></div>
+  <div id="msg"></div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Details</h3>
+    <div id="who" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Change password</h3>
+    <form id="pwform" style="margin-top:10px">
+      <div><label>Current password</label><input type="password" name="current" required autocomplete="current-password"></div>
+      <div style="margin-top:10px"><label>New password</label>
+        <input type="password" name="password" required minlength="10" autocomplete="new-password">
+        <div class="note">At least 10 characters.</div></div>
+      <div style="margin-top:10px"><label>New password again</label>
+        <input type="password" name="confirm" required minlength="10" autocomplete="new-password"></div>
+      <div class="row" style="margin-top:14px"><button class="btn" type="submit" id="save">Change password</button></div>
+      <p class="note" style="margin-top:8px">Changing it signs you out everywhere, including this browser.</p>
+    </form>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Storage</h3>
+    <div id="use" style="margin-top:8px"></div>
+  </div>
+</div>
+<footer class="site"><b>MineModelingPro Studio</b> — your uploads and models are private to your account.</footer>
+<script type="module">
+import { chrome, requireUser, api, $, esc, fmt, banner, session, changePassword } from "./app.js";
+await chrome("account");
+const u = await requireUser(); if (!u) throw new Error("redirecting");
+const s = await session(true);
+$("#who").innerHTML = [["Email", u.email], ["Name", u.name || "—"],
+  ["Role", u.role === "admin" ? "Administrator" : "Client"]]
+  .map(([k, v]) => `<div class="kv"><span>${k}</span><b>${esc(v)}</b></div>`).join("");
+const used = (s && s.used_bytes) || 0, quota = u.quota_bytes || 0;
+$("#use").innerHTML = `<div class="kv"><span>Used</span><b>${(used / 1e6).toFixed(1)} MB of ${(quota / 1e9).toFixed(1)} GB</b></div>
+  <div class="cmpbar"><i style="width:${Math.min(100, quota ? used / quota * 100 : 0).toFixed(1)}%"></i></div>
+  <p class="note">Uploaded drill files and built models. Deleting a project frees its space.</p>`;
+$("#pwform").onsubmit = async e => {
+  e.preventDefault(); banner("");
+  const f = new FormData(e.target);
+  if (f.get("password") !== f.get("confirm")) return banner("The two new passwords do not match.");
+  $("#save").disabled = true;
+  try {
+    await changePassword(f.get("current"), f.get("password"));
+    banner("Password changed — signing you in again.", "ok");
+    setTimeout(() => location.href = "index.html", 1200);
+  } catch (err) { banner(err.message || String(err)); $("#save").disabled = false; }
+};
+</script>
+</body>
+</html>

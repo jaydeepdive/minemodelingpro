@@ -210,7 +210,23 @@ def startup():
             d.run("insert into users (email, pw, role, name, quota_bytes) "
                   "values (%s,%s,'admin',%s,%s)", em, hash_pw(pw), "Administrator", 21474836480)
             print(f"[server] created admin {em}", flush=True)
-    print(f"[server] ready; site={SITE_DIR}", flush=True)
+    # the published gallery comes from object storage when it is there, so a new
+    # build reaches the site without a deployment
+    try:
+        from studio import sitesync
+
+        def _ready(path, commit):
+            LIVE["dir"] = path
+            LIVE["commit"] = commit
+            print(f"[server] serving mirrored site {str(commit)[:7]} from {path}", flush=True)
+
+        c = sitesync.pull()
+        if c:
+            _ready(sitesync.LOCAL, c)
+        sitesync.start_server(_ready)
+    except Exception as e:
+        print(f"[server] sitesync unavailable: {str(e)[:140]}", flush=True)
+    print(f"[server] ready; site={LIVE['dir']}", flush=True)
 
 
 @app.get("/api/health")
@@ -573,7 +589,7 @@ def stats():
     the gallery itself can stay behind the sign-in."""
     out = {"models": 0, "holes": 0, "reports": 0, "generated": None, "public_gallery": PUBLIC_GALLERY}
     try:
-        idx = json.load(open(os.path.join(SITE_DIR, "models_index.json")))
+        idx = json.load(open(os.path.join(LIVE["dir"], "models_index.json")))
         ms = idx.get("models") or []
         out.update({"models": len(ms),
                     "holes": sum(int(m.get("holes") or 0) for m in ms),
@@ -642,8 +658,25 @@ class SiteFiles(StaticFiles):
         return r
 
 
+LIVE = {"dir": SITE_DIR, "commit": None}
+
+
+class LiveSite(SiteFiles):
+    """Serve the mirrored site from object storage when it is present, else the
+    copy baked into the image. Swapping the directory needs no deployment."""
+
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+
+    async def get_response(self, path, scope):
+        d = LIVE["dir"]
+        if d != self.directory:
+            self.directory = d
+        return await super().get_response(path, scope)
+
+
 if os.path.isdir(SITE_DIR):
-    app.mount("/", SiteFiles(directory=SITE_DIR, html=True), name="site")
+    app.mount("/", LiveSite(directory=SITE_DIR, html=True), name="site")
 else:                                            # a bare API deployment
     @app.get("/")
     def root():

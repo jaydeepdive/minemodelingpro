@@ -41,10 +41,20 @@ def _get(url, token=None, timeout=25):
         return json.loads(r.read().decode())
 
 
+# content-only paths: the gallery is mirrored to object storage by studio.sitesync,
+# so a commit that only touches these does not need the app rebuilt
+CONTENT = ("site/", "data/")
+
+
 def head_commit():
-    """The tip of the watched branch, from the public GitHub API (no auth needed)."""
+    """The tip of the watched branch: (sha, subject, needs_deploy)."""
     d = _get(f"https://api.github.com/repos/{REPO}/commits/{BRANCH}")
-    return d.get("sha"), ((d.get("commit") or {}).get("message") or "").split("\n")[0][:120]
+    sha = d.get("sha")
+    msg = ((d.get("commit") or {}).get("message") or "").split("\n")[0][:120]
+    files = [f.get("filename", "") for f in d.get("files") or []]
+    code = [f for f in files if not f.startswith(CONTENT)]
+    # no file list (very large commits) -> deploy, rather than miss a code change
+    return sha, msg, (bool(code) or not files)
 
 
 def app_state():
@@ -84,12 +94,16 @@ def loop(db):
     while True:
         time.sleep(EVERY)
         try:
-            sha, msg = head_commit()
+            sha, msg, needs = head_commit()
             if not sha:
                 continue
             busy, live = app_state()
             asked = _last_mark(db)
             if busy or sha in (live, asked):
+                continue
+            if not needs:
+                _mark(db, sha)            # content only — sitesync carries it
+                print(f"[autodeploy] {sha[:7]} touches only published content — no deploy", flush=True)
                 continue
             if time.time() - last_try < MIN_GAP:
                 continue

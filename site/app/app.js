@@ -70,7 +70,7 @@ export async function chrome(active) {
     <nav class="menu">
       <a href="dashboard.html" class="${active === "dashboard" ? "active" : ""}">My projects</a>
       <a href="../models.html">Model library</a>
-      ${user ? `<span class="who">${esc(user.email)}</span>${user.role === "admin" ? `<a href="admin.html" class="${active === "admin" ? "active" : ""}">Accounts</a>` : ""}<a href="#" id="signout">Sign out</a>`
+      ${user ? `${user.role === "admin" ? `<a href="admin.html" class="${active === "admin" ? "active" : ""}">Accounts</a>` : ""}<a href="account.html" class="${active === "account" ? "active" : ""}">${esc(user.email)}</a><a href="#" id="signout">Sign out</a>`
              : `<a href="index.html">Sign in</a>`}
     </nav></div>`;
   const so = $("#signout"); if (so) so.onclick = e => { e.preventDefault(); signOut(); };

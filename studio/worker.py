@@ -300,6 +300,11 @@ def main():
         autodeploy.start(d)
     except Exception as e:
         print(f"[worker] autodeploy unavailable: {str(e)[:120]}", flush=True)
+    try:                                   # publish the nightly gallery without a deploy
+        from studio import sitesync
+        sitesync.start_worker()
+    except Exception as e:
+        print(f"[worker] sitesync unavailable: {str(e)[:120]}", flush=True)
     try:
         store.db().init_schema()
     except Exception as e:
