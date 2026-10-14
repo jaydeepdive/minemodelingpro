@@ -22,8 +22,8 @@ plus per-deposit viewers.
    (`mmp-backbone`, `mmp-geochem` workflows) → size-capped parquet shards under
    `data/keep/mmp/` (committed).
 2. **NI 43-101 technical reports** — resource/economics/methodology extracted
-   from SEDAR PDFs (`mmp-reports` workflow; `ceo_sedar` collects the manifest,
-   the Mac launchd job downloads the PDFs).
+   from SEDAR PDFs (`mmp-reports` workflow; `ceo_sedar` collects the manifest and
+   the PDFs hourly from ceo.ca's public feed — the SEDAR+ scraper is retired).
 3. **Drill-result news** — recent full-assay releases from Closeology's drill
    bank, synced in at build time (see below), rendered as live, densifying models.
 
@@ -71,9 +71,17 @@ MMP is **downstream** of Closeology. They are separate repos, sites, and chats.
 - Closeology's **drill radar deep-links to MMP models** via the `models_index.json` MMP publishes (release_url → model_url map). Keep that file's shape stable (`by_release` object) or those links break.
 - The **MiningNewsTerminal API integration lives in Closeology's crawler**, not here — because the API has no coordinates and Closeology already geolocates. MMP just inherits the geolocated bank.
 
-## The Mac SEDAR job
+## No machine of Jordan's is in the loop (2026-10-14)
 
-`~/Library/LaunchAgents/com.thedeepdive.sedar.plist` runs `~/minemodelingpro/scripts/sedar_batch.sh` several times a day: it opens a real residential-IP Chrome session, downloads new NI 43-101 PDFs, keeps each in the report-archive GitHub *release*, and commits the manifest. Runs on the Mac because ceo.ca/SEDAR rate-limit datacenter IPs. The cloud `mmp-reports` job then extracts them.
+Everything runs in the cloud: GitHub Actions collects and extracts, DigitalOcean
+serves, and the app deploys itself. The **SEDAR+ direct scraper is retired** —
+it drove a real Chrome session on the Mac for NI 43-101 PDFs, SEDAR+ changed its
+search form in July 2026, and every run after that collected nothing.
+`scripts/sedar_batch.sh` is now a stub that exits quietly (so a leftover launchd
+job does no harm) and `sedar_collect.py` refuses to run as a script. New technical
+reports come from the **ceo.ca public feed**, collected hourly by `ceo_sedar.py` in
+CI. To remove the old agent from the Mac entirely:
+`launchctl unload ~/Library/LaunchAgents/com.thedeepdive.sedar.plist && rm ~/Library/LaunchAgents/com.thedeepdive.sedar.plist`
 
 ## Local how-tos (on the Mac, via device_bash)
 

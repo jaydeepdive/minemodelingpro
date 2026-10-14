@@ -1,3 +1,22 @@
+"""RETIRED 2026-10-14 — the SEDAR+ direct collector.
+
+This drove a real Chrome session to search SEDAR+ and download NI 43-101 PDFs.
+SEDAR+ changed its search form in July 2026 and every run since collected
+nothing; it was also the last part of MMP that needed a particular machine.
+Technical reports now arrive through the ceo.ca public feed (ceo_sedar.py,
+hourly in GitHub Actions) and are extracted by drill_tables.
+
+The module is kept for its parsing helpers and for history. Running it as a
+script exits immediately.
+"""
+import sys
+
+if __name__ == "__main__":
+    sys.exit("sedar_collect is retired — technical reports come from the ceo.ca feed "
+             "(minemodelingpro.ceo_sedar, hourly in CI).")
+
+_RETIRED = True
+
 """Headless SEDAR+ collector — the DOWNLOAD half, without Claude-in-Chrome.
 
 SEDAR+ is Akamai-protected: a plain HTTP request from a datacenter IP is 403'd,

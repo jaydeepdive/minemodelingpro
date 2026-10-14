@@ -701,7 +701,8 @@ def _materialise(p, news_holes, news_ivs, ov):
         sources.append({"kind": ("imported data" if r.get("source") == "import"
                                  else "NI 43-101 technical report"), "id": sid,
                         "title": _report_title(r),
-                        "url": r.get("report_url") or r.get("archive_url"), "archive": r.get("archive_url"),
+                        "url": _filing_url(r), "archive": r.get("archive_url"),
+                        "listing": r.get("report_url"),
                         "date": r.get("date"), "collars": len(r.get("collars") or []),
                         "intervals": len(r.get("intervals") or []), "has_resource": bool(res)})
     # downhole surveys from reports (joined by normalised hole id)
@@ -812,7 +813,8 @@ def _materialise(p, news_holes, news_ivs, ov):
             if kk in seen_res:
                 continue                         # same statement repeated in another report
             seen_res.add(kk)
-            res.append({"source": r["id"], "date": r.get("date"), "url": r.get("report_url") or r.get("archive_url"),
+            res.append({"source": r["id"], "date": r.get("date"), "url": _filing_url(r),
+                        "archive": r.get("archive_url"),
                         "title": sources[[s.get("id") for s in sources].index(r["id"])]["title"] if r["id"] in [s.get("id") for s in sources] else r["id"],
                         **r["resource"]})
     imported = [r for r in reports if r.get("source") == "import"]
@@ -869,6 +871,21 @@ def _report_params(reports):
             out[k] = v
             src[k] = {"id": r.get("id"), "date": _recency(r) or None}
     return out, src
+
+
+
+_STALE_URL = re.compile(r"sedarplus\.ca/csa-party/viewInstance|drmKey=|sedar\.com/GetFile", re.I)
+
+
+def _filing_url(r):
+    """The link that still opens months later. SEDAR+ document URLs are scoped to the
+    session that fetched them and redirect to its home page once that expires, so the
+    archived PDF is what a reader should be given."""
+    u = r.get("report_url")
+    a = r.get("archive_url")
+    if u and not _STALE_URL.search(u):
+        return u
+    return a or u
 
 
 def _report_title(r):
