@@ -248,7 +248,12 @@ function updCut(){const E=M.elements[EL];if(!E.gt)return;const r=E.gt[+$("cut").
   $("g-c").textContent=fmtC(r[3],E.contained_unit);$("g-cu").textContent="Contained "+({oz:"oz",lb:"lb",t:"t"}[E.contained_unit]||"");
   applyCut();drawChart(r);drawCmp(r);drawBreakdown();}
 function pubFor(el){el=el||EL;const E=M.elements[el];const cu=E.contained_unit;
-  return (M.resources||[]).filter(r=>r.contained_unit===cu&&r.contained>0&&(!r.element||r.element===el||r.element===el.replace("Eq","")));}
+  // the statement's grade unit comes from its own arithmetic (tonnes x grade =
+  // contained), so a per-cent statement can never be read against a g/t model
+  const gu=String(E.unit||"").toLowerCase()==="%"?"%":"g/t";
+  return (M.resources||[]).filter(r=>r.contained_unit===cu&&r.contained>0&&
+    (!r.grade_unit||r.grade_unit===gu)&&
+    (!r.element||r.element===el||r.element===el.replace("Eq","")));}
 /* which modelled element a published statement we hold does line up with */
 function pubElsewhere(){const out=[];(M.elements?Object.keys(M.elements):[]).forEach(e=>{if(e!==EL&&pubFor(e).length)out.push(e);});return out;}
 function drawChart(cur){const E=M.elements[EL],svg=$("gtchart"),G=E.gt;const maxC=Math.max(...G.map(r=>r[3]),...pubFor().map(r=>r.contained||0),1);
@@ -297,9 +302,67 @@ function drawCmp(cur){const E=M.elements[EL],box=$("cmp"),pubs=pubFor();
    ${cutline}
    <p class="note">MMP is <b>${(ratio*100).toFixed(0)}%</b> of the published total. ${verdict} ${ratio<0.5?"Below: we may hold only part of the drilling behind the published estimate (see data sources), or interpolation stays close to the holes.":ratio>1.5?"Above: a lower effective cut-off, wider interpolation than the resource wireframes, or composite intercepts reported at a low threshold.":"Broadly consistent in size with the published estimate."} Dashed blue line on the chart = published total.</p>`;
   const mb=$("matchcut");if(mb)mb.onclick=()=>setCut(pc.v);}
-/* what the model itself adds up to, element by element */
+/* ---- one deposit, one tonnage -------------------------------------------
+   A deposit is one body of rock. Estimating each metal on its own blocks gave
+   each metal its own tonnage, which cannot be right: the rock does not change
+   between metals, only the grade in it does — and whether that metal was
+   assayed there at all. So the table below fixes the tonnage from the primary
+   metal's blocks and reports every metal on it. "Assayed over" is the share of
+   that tonnage where the metal was actually measured; a metal sampled in a
+   third of the holes cannot honestly claim the whole deposit. */
+let BMCUT=null,BMUSER=false;
+function bmDefault(){const B=M.by_metal;if(!B)return 0;
+  const E=M.elements[B.basis]||{},all=B.tonnes[0]||0;
+  const near=w=>{let best=-1,bd=Infinity;B.cuts.forEach((c,i)=>{const d=Math.abs(c-w);
+    if(c>0&&d<bd){bd=d;best=i;}});return best;};
+  // a reporting cut-off the model barely reaches tells the reader nothing, so it is
+  // only the default when real tonnage survives it
+  for(const w of [E.default_cutoff,(E.bins||[])[1],(E.bins||[])[0]]){
+    if(w==null)continue;const i=near(+w);
+    if(i>0&&(!all||B.tonnes[i]>=0.02*all))return i;}
+  return B.cuts.length>1?1:0;}
 function drawBreakdown(){
   const box=$("bdown");if(!box)return;
+  const B=M.by_metal;
+  if(!B||!B.cuts||!B.cuts.length){return drawBreakdownLegacy(box);}
+  if(BMCUT==null||BMCUT>=B.cuts.length)BMCUT=bmDefault();
+  // while the viewer is on the basis metal, the table follows the cut-off slider,
+  // so the number on screen and the number in the table are the same number —
+  // until the reader picks a cut-off here, after which this panel stays put
+  if(!BMUSER&&EL===B.basis&&curCut!=null){
+    let j=0;B.cuts.forEach((c,i)=>{if(c<=curCut+1e-9)j=i;});BMCUT=j;}
+  const i=BMCUT,cut=B.cuts[i],T=B.tonnes[i],bu=B.basis_unit||"g/t";
+  const order=(B.order||Object.keys(B.metals||{}));
+  const rows=order.map(e=>{const r=B.metals[e];if(!r)return"";
+    const g=r.grade[i],c=r.contained[i],cov=r.coverage[i]||0,tn=r.tonnes[i];
+    const covtxt=cov>=0.995?"all of it":Math.round(cov*100)+"% of it";
+    const cls=cov<0.25?"n thin":"n";
+    const covtip=cov>=0.995?"assayed throughout":fmtT(tn)+" of the "+fmtT(T)+" carries a "+e+" assay close enough to estimate";
+    return `<tr data-el="${esc(e)}"${e===EL?' class="on"':''}><td>${esc(e)}${e===B.basis?' <em>basis</em>':''}</td>`+
+      `<td class="n">${g==null?"–":fmtG(g,r.unit)}</td>`+
+      `<td class="n"><b>${c==null?"–":fmtC(c,r.contained_unit)}</b></td>`+
+      `<td class="${cls}" title="${esc(covtip)}">${covtxt}</td></tr>`;}).join("");
+  const btns=B.cuts.map((c,j)=>`<button class="mini${j===i?" on":""}" data-bm="${j}">`+
+    (c>0?"≥ "+fmtG(c,bu):"all blocks")+`</button>`).join(" ");
+  box.innerHTML=`<div class="bdhead"><b>${fmtT(T)}</b> of rock`+
+      (cut>0?` at ≥ ${fmtG(cut,bu)} ${esc(B.basis)}`:` (every estimated block)`)+
+      ` · ${B.density||"–"} t/m³</div>`+
+    `<div class="bdcuts">${btns}</div>`+
+    `<table class="bd"><colgroup><col style="width:24%"><col style="width:22%"><col style="width:28%"><col style="width:26%"></colgroup>`+
+    `<thead><tr><th>Metal</th><th class="n">Grade</th><th class="n">Contained</th><th class="n">Assayed over</th></tr></thead>`+
+    `<tbody>${rows}</tbody></table>`+
+    `<p class="note">One deposit, one tonnage. The cut-off above is on <b>${esc(B.basis)}</b>, and every metal is
+      estimated at those same blocks, so the rock is counted once — only the grade in it changes between metals.
+      Where a metal was assayed in fewer holes, "assayed over" says how much of that tonnage its contained figure
+      actually covers. Inverse-distance estimates for visualisation, not a resource estimate.</p>`+
+    (EL!==B.basis?`<p class="note">You are viewing <b>${esc(EL)}</b>. The tonnage in the panel above is
+      ${esc(EL)}'s own interpolated extent — what you see in 3D. This table is the deposit counted once, on
+      ${esc(B.basis)}'s blocks, which is why the two tonnages differ.</p>`:"");
+  box.querySelectorAll("button[data-bm]").forEach(b=>b.onclick=()=>{BMCUT=+b.dataset.bm;BMUSER=true;drawBreakdown();});
+  box.querySelectorAll("tr[data-el]").forEach(tr=>tr.onclick=()=>{if(M.elements[tr.dataset.el])setEl(tr.dataset.el);});
+}
+/* models built before the one-tonnage pass: each metal on its own blocks */
+function drawBreakdownLegacy(box){
   const els=Object.keys(M.elements||{}).filter(e=>M.elements[e].gt&&M.elements[e].gt.length);
   if(els.length<1){box.innerHTML="";return;}
   const rows=els.map(e=>{const E=M.elements[e];
@@ -312,14 +375,16 @@ function drawBreakdown(){
   box.innerHTML=`<table class="bd"><colgroup><col style="width:13%"><col style="width:19%"><col style="width:17%"><col style="width:17%"><col style="width:19%"><col style="width:15%"></colgroup>`+
     `<thead><tr><th>Metal</th><th class="n">Cut-off</th><th class="n">Tonnes</th>`+
     `<th class="n">Grade</th><th class="n">MMP</th><th class="n">Pub.</th></tr></thead><tbody>${rows}</tbody></table>`+
-    `<p class="note">Each row is this model at that metal's own cut-off — move a metal's slider and its row follows. Estimates, not a resource.</p>`;
+    `<p class="note">Each metal here is estimated on its own blocks, so the tonnages differ between rows. Rebuilt models report one deposit tonnage. Estimates, not a resource.</p>`;
   box.querySelectorAll("tr[data-el]").forEach(tr=>tr.onclick=()=>setEl(tr.dataset.el));
 }
 function drawRes(){const box=$("res"),R=M.resources||[];if(!R.length){$("ressec").style.display="none";return;}
-  box.innerHTML=R.map(r=>{const c=r.categories||{},u=r.contained_unit,gu=u==="oz"?"g/t":"%";
+  box.innerHTML=R.map(r=>{const c=r.categories||{},u=r.contained_unit,gu=r.grade_unit||(u==="oz"?"g/t":"%");
     const rows=Object.entries(c).filter(([k])=>["Measured","Indicated","M+I","Inferred"].includes(k)).map(([k,v])=>`<tr><td>${esc(k)}</td><td>${fmtT(v.tonnes)}</td><td>${v.grade} ${gu}</td><td>${fmtC(v.contained,u)}</td></tr>`).join("");
     const cu2=r.cutoff!=null?`<div class="note">reported at ${String(r.cutoff_unit||"").match(/\/t/)?(+r.cutoff).toLocaleString()+" "+esc(r.cutoff_unit):fmtG(+r.cutoff,r.cutoff_unit)} cut-off</div>`:"";
-    return `<div class="res"><div class="kv" style="padding:0"><span>${esc(r.title||r.source)}</span></div>${cu2}
+    const who=r.element?`<div class="note">reported for <b>${esc(r.element)}</b></div>`
+      :`<div class="note">the filed table does not name the metal unambiguously — shown as published, and not compared with the model</div>`;
+    return `<div class="res"><div class="kv" style="padding:0"><span>${esc(r.title||r.source)}</span></div>${who}${cu2}
       <table>${rows}<tr style="border-top:1px solid var(--line)"><td><b>Total</b></td><td><b>${fmtT(r.tonnes)}</b></td><td></td><td><b>${fmtC(r.contained,u)}</b></td></tr></table>
       ${bestUrl(r)?`<a href="${esc(bestUrl(r))}" target="_blank" rel="noopener">open report ↗</a>`:""}${r.page?` <span class="note">· p.${r.page}</span>`:""}</div>`;}).join("");}
 function wireAdopt(){const b=$("adopt");if(!b)return;

@@ -270,6 +270,105 @@ def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None)
     return lo, (bx, by, bz), ijk, gr, params
 
 
+def grade_at(pts, g, hid, centres, opts=None, params=None):
+    """Estimate a grade at given block centres, with the same rules the block model
+    used. This is what lets every metal be reported on ONE tonnage: the deposit is a
+    single body, so the rock does not change between metals — only the grade in it
+    does, and whether that metal was assayed there at all.
+
+    Returns an array aligned to `centres`, NaN where the metal has no data close
+    enough to estimate."""
+    from scipy.spatial import cKDTree
+    o = dict(params or {})
+    o.update({k: v for k, v in (opts or {}).items() if v is not None})
+    radius = float(o.get("radius_m") or 60.0)
+    max_gap = float(o.get("max_gap_m") or 30.0)
+    min_holes = int(o.get("min_holes") or 2)
+    min_samples = int(o.get("min_samples") or 3)
+    power = float(o.get("power") if o.get("power") is not None else 2.0)
+    method = o.get("method") or "idw"
+    out = np.full(len(centres), np.nan, np.float32)
+    if not len(pts):
+        return out
+    tree = cKDTree(pts)
+    CH = 200_000
+    for s in range(0, len(centres), CH):
+        ctr = centres[s:s + CH]
+        dd, ii = tree.query(ctr, k=16, distance_upper_bound=radius)
+        near = np.isfinite(dd)
+        keep = near[:, 0] & (dd[:, 0] <= max_gap) & (near.sum(1) >= min_samples)
+        if not keep.any():
+            continue
+        idx = np.where(keep)[0]
+        dd_, ii_ = dd[keep], ii[keep]
+        nearm = np.isfinite(dd_)
+        iis = np.where(nearm, ii_, 0)
+        hh = np.where(nearm, hid[iis], -1)
+        hs = np.sort(hh, axis=1)
+        nuniq = (np.diff(hs, axis=1) != 0).sum(1) + 1 - (hs[:, 0] == -1)
+        k2 = nuniq >= min_holes
+        if not k2.any():
+            continue
+        idx, dd_, iis, nearm = idx[k2], dd_[k2], iis[k2], nearm[k2]
+        if method == "nn":
+            est = g[iis[:, 0]]
+        elif method == "mean":
+            w = nearm.astype(float)
+            est = (w * g[iis]).sum(1) / w.sum(1)
+        else:
+            w = np.where(nearm, 1.0 / np.maximum(dd_, 0.5) ** power, 0.0)
+            est = (w * g[iis]).sum(1) / w.sum(1)
+        out[s + idx] = est.astype(np.float32)
+    return out
+
+
+def _composite_el(per_hole, H, clen, gap_fill=True):
+    """Downhole composites for one element: fixed-length samples along every hole
+    that assayed it, with un-assayed ground carried as zero grade.
+
+    Pulled out of ``build_project`` so that a metal MMP does not draw as its own
+    block model can still be composited and estimated on another metal's blocks
+    (see ``grade_at``) — that is what puts every metal on one deposit tonnage.
+
+    Returns ``(segments, pts, grades, hole_ids, zone_centres)``."""
+    segs_out = []          # [hole_idx, from, to, grade]
+    comp_p, comp_g, comp_h, cent = [], [], [], []
+    for hi, ivs in per_hole.items():
+        segs = _segments(ivs)
+        if not segs:
+            continue
+        h = H[hi]
+        depth = max(h["depth"], segs[-1][1])
+        for s in segs:
+            segs_out.append([hi, round(s[0], 2), round(s[1], 2), round(s[2], 4)])
+        # composites along the full hole; gaps between intercepts = 0 grade
+        n = max(1, int(math.ceil(depth / clen)))
+        mids = (np.arange(n) + 0.5) * clen
+        mids = mids[mids < depth]
+        if len(mids) == 0:
+            mids = np.array([depth / 2.0])
+        gg = np.zeros(len(mids))
+        if not gap_fill:                     # only composite the reported intervals
+            keep_m = np.zeros(len(mids), bool)
+            for s in segs:
+                keep_m |= (mids >= s[0]) & (mids < s[1])
+            mids = mids[keep_m] if keep_m.any() else mids[:1]
+            gg = np.zeros(len(mids))
+        for s in segs:
+            m = (mids >= s[0]) & (mids < s[1])
+            gg[m] = s[2]
+            if not m.any():                  # a segment shorter than a composite
+                mid = (s[0] + s[1]) / 2
+                j = min(len(mids) - 1, int(mid // clen))
+                gg[j] = max(gg[j], s[2] * (s[1] - s[0]) / clen)
+        xyz = hole_xyz(h, mids)
+        comp_p.append(xyz); comp_g.append(gg); comp_h.append(np.full(len(mids), hi))
+        pos = gg > 0
+        if pos.any():
+            cent.append(xyz[pos].mean(0))
+    return segs_out, comp_p, comp_g, comp_h, cent
+
+
 # ---------------------------------------------------------------- build model
 def _primary_commodity(ds):
     c = [x for x in (ds.get("commodities") or []) if x]
@@ -308,6 +407,112 @@ def auto_params(ds):
 def _snap(v):
     std = [2, 2.5, 3, 4, 5, 6, 6.25, 8, 10, 12, 12.5, 15, 20, 25]
     return min(std, key=lambda s: abs(s - v))
+
+
+MAX_BY_METAL = 12
+
+
+def _by_metal(primary, grids, by_el, units, key2i, H, PS, verbose=False):
+    """Every metal reported on ONE deposit tonnage.
+
+    A deposit is a single body of rock. Estimating each metal on its own blocks
+    gives each metal its own tonnage, which is wrong on its face: the rock does
+    not change between metals, only the grade in it does — and whether that metal
+    was assayed there at all. So this takes the primary metal's blocks as *the*
+    deposit, then estimates every other metal at those same block centres
+    (``grade_at``). At each cut-off the tonnage is the primary's tonnage, and each
+    metal contributes a grade, a contained quantity, and the share of that tonnage
+    where it was actually assayed ("coverage") — because a metal measured in a
+    third of the holes cannot honestly claim the whole deposit's tonnes.
+
+    Returns ``None`` when there is nothing to put on one basis.
+    """
+    gp = grids.get(primary)
+    if not gp or not len(gp.get("gr", ())):
+        return None
+    lo, bsz, ijk, gr = gp["lo"], gp["bsz"], gp["ijk"], gp["gr"]
+    bt, clen = gp["bt"], gp["clen"]
+    centres = lo + (ijk.astype(np.float32) + 0.5) * np.asarray(bsz, np.float32)
+
+    # cut-offs: the reporting bins, compact enough for a table on a phone
+    el0 = units.get(primary) or "g/t"
+    cuts = sorted({round(float(c), 4) for c in
+                   [0.0] + list(gp.get("bins") or PS.get("bins") or []) +
+                   ([float(PS["default_cutoff"])] if PS.get("default_cutoff") is not None else [])})
+    if len(cuts) < 3:
+        q = [float(np.percentile(gr[gr > 0], x)) for x in (50, 75, 90, 95)] if (gr > 0).any() else []
+        cuts = sorted({round(c, 4) for c in cuts + q})
+    cuts = cuts[:10]
+
+    # blocks sorted by primary grade: a cut-off is then a prefix, so every metal's
+    # grade and coverage at every cut-off comes out of one cumulative sum
+    order = np.argsort(-gr)
+    grs = gr[order]
+    ks = []
+    for c in cuts:
+        ks.append(int((grs > 0).sum()) if c <= 0 else int(np.searchsorted(-grs, -c, "right")))
+    tonnes = [round(k * bt) for k in ks]
+
+    want = [primary] + sorted([e for e in by_el if e != primary],
+                              key=lambda e: -len({x["key"] for x in by_el[e]}))
+    metals, order_out = {}, []
+    tcp = float(PS.get("top_cut_pct") or 99.5)
+    for el in want[:MAX_BY_METAL]:
+        unit = units.get(el) or ("g/t" if el in PRECIOUS else "%")
+        if el == primary:
+            vals = gr[order].astype(np.float64)
+            ok = np.ones(len(vals), bool)
+        else:
+            per_hole = defaultdict(list)
+            for x in by_el[el]:
+                if x["key"] in key2i:
+                    per_hole[key2i[x["key"]]].append(x)
+            if len(per_hole) < 2:
+                continue
+            _, cp, cg, ch, _ = _composite_el(per_hole, H, clen,
+                                             gap_fill=PS.get("gap_fill") is not False)
+            if not cp:
+                continue
+            pts = np.concatenate(cp); g = np.concatenate(cg); hid = np.concatenate(ch)
+            if (g > 0).sum() < 3:
+                continue
+            top = float(np.percentile(g[g > 0], tcp)) if (g > 0).sum() > 20 else float(g.max())
+            g = np.minimum(g, top)
+            # the primary's own resolved search rules, so no metal is favoured
+            est = grade_at(pts, g, hid, centres, params=gp.get("opts"))
+            vals = est[order].astype(np.float64)
+            ok = np.isfinite(vals)
+            if not ok.any():
+                continue
+        csum = np.cumsum(np.where(ok, vals, 0.0))
+        ccnt = np.cumsum(ok.astype(np.int64))
+        row = {"unit": unit, "contained_unit": contained_unit(el, unit),
+               "grade": [], "contained": [], "coverage": [], "tonnes": []}
+        for k in ks:
+            if k <= 0:
+                row["grade"].append(None); row["contained"].append(None)
+                row["coverage"].append(0.0); row["tonnes"].append(0)
+                continue
+            n = int(ccnt[k - 1]); ssum = float(csum[k - 1])
+            if n == 0:
+                row["grade"].append(None); row["contained"].append(None)
+                row["coverage"].append(0.0); row["tonnes"].append(0)
+                continue
+            gavg = ssum / n
+            tn = n * bt                       # tonnes this metal was actually measured over
+            row["grade"].append(round(gavg, 4))
+            row["contained"].append(round(contained(tn, gavg, el, unit)))
+            row["coverage"].append(round(n / k, 4))
+            row["tonnes"].append(round(tn))
+        if not any(v for v in row["contained"]):
+            continue
+        metals[el] = row
+        order_out.append(el)
+    if len(metals) < 1:
+        return None
+    return {"basis": primary, "basis_unit": el0, "cuts": cuts, "tonnes": tonnes,
+            "density": gp.get("dens"), "tonnes_per_block": round(bt, 1),
+            "order": order_out, "metals": metals}
 
 
 def build_project(ds, max_elements=3, verbose=False, settings=None):
@@ -418,51 +623,18 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
 
     # --- per element: segments, composites, blocks, GT curve
     elements = {}
+    grids = {}
     for el in els:
         unit = units.get(el) or "g/t"
         per_hole = defaultdict(list)
         for x in by_el[el]:
             per_hole[key2i[x["key"]]].append(x)
-        segs_out = []          # [hole_idx, from, to, grade]
-        comp_p, comp_g, comp_h = [], [], []
         # block size: whoever set it (see auto_params for where it starts)
         blk = PS.get("block") or DEFAULT_BLOCK.get(el) or [10, 10, 5]
         blk = [float(v) for v in blk]
         clen = float(PS.get("composite_m") or max(1.0, min(blk[2], 5.0)))
-        cent = []
-        for hi, ivs in per_hole.items():
-            segs = _segments(ivs)
-            if not segs:
-                continue
-            h = H[hi]
-            depth = max(h["depth"], segs[-1][1])
-            for s in segs:
-                segs_out.append([hi, round(s[0], 2), round(s[1], 2), round(s[2], 4)])
-            # composites along the full hole; gaps between intercepts = 0 grade
-            n = max(1, int(math.ceil(depth / clen)))
-            mids = (np.arange(n) + 0.5) * clen
-            mids = mids[mids < depth]
-            if len(mids) == 0:
-                mids = np.array([depth / 2.0])
-            gg = np.zeros(len(mids))
-            if PS.get("gap_fill") is False:      # only composite the reported intervals
-                keep_m = np.zeros(len(mids), bool)
-                for s in segs:
-                    keep_m |= (mids >= s[0]) & (mids < s[1])
-                mids = mids[keep_m] if keep_m.any() else mids[:1]
-                gg = np.zeros(len(mids))
-            for s in segs:
-                m = (mids >= s[0]) & (mids < s[1])
-                gg[m] = s[2]
-                if not m.any():               # a segment shorter than a composite
-                    mid = (s[0] + s[1]) / 2
-                    j = min(len(mids) - 1, int(mid // clen))
-                    gg[j] = max(gg[j], s[2] * (s[1] - s[0]) / clen)
-            xyz = hole_xyz(h, mids)
-            comp_p.append(xyz); comp_g.append(gg); comp_h.append(np.full(len(mids), hi))
-            pos = gg > 0
-            if pos.any():
-                cent.append(xyz[pos].mean(0))
+        segs_out, comp_p, comp_g, comp_h, cent = _composite_el(
+            per_hole, H, clen, gap_fill=PS.get("gap_fill") is not False)
         if not segs_out:
             continue
         grades = [s[3] for s in segs_out]
@@ -486,6 +658,8 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
             g = np.minimum(g, top)
             spacing = float(PS.get("spacing_m") or _spacing(cent))
             lo, bsz, ijk, gr, params = estimate_blocks(pts, g, hid, blk, spacing, opts=PS)
+            grids[el] = {"lo": lo, "bsz": bsz, "ijk": ijk, "gr": gr, "clen": clen,
+                         "opts": dict(params), "bins": list(bins)}
             params["top_cut"] = round(top, 3)
             params["composite_m"] = clen
             params["block_source"] = (base_src.get("block") if PORIGIN.get("block") == "auto"
@@ -516,6 +690,7 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
             while keep.sum() > cap:
                 show *= 1.25
                 keep = gr >= show
+            grids[el].update({"bt": bt, "dens": dens, "unit": unit})
             el_out["blocks"] = {"origin": [round(float(v), 2) for v in lo], "size": list(bsz),
                                 "ijk": _b64(ijk[keep].astype(np.uint16)), "g": _b64(gr[keep].astype(np.float32)),
                                 "n": int(keep.sum()), "n_total": int(len(gr)), "shown_from": round(show, 4),
@@ -528,6 +703,7 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
     if not elements:
         raise ValueError("no modelable element")
     primary = els[0] if els[0] in elements else next(iter(elements))
+    by_metal = _by_metal(primary, grids, by_el, units, key2i, H, PS, verbose=verbose)
 
     # --- terrain over a padded footprint
     terr = None
@@ -565,7 +741,7 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
         "generated": datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z",
         "frame": {"kind": fr["kind"], "lat0": round(lat0, 6) if geo else None, "lon0": round(lon0, 6) if geo else None,
                   "grid": fr.get("grid")},
-        "holes": hole_rows, "elements": elements, "primary": primary,
+        "holes": hole_rows, "elements": elements, "primary": primary, "by_metal": by_metal,
         "settings": {k: v for k, v in PS.items() if k in PARAMS.ALL},
         "param_sources": {k: (base_src.get(k) if o == "auto" else o)
                           for k, o in PORIGIN.items() if k in PARAMS.ALL},

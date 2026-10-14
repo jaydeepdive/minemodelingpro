@@ -38,7 +38,7 @@ from minemodelingpro import holeid
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 OUT_DIR = os.path.join(_ROOT, "data", "keep", "mmp_reports")
-EXTRACTOR = "dt16"
+EXTRACTOR = "dt17"
 
 # ------------------------------------------------------------------ elements
 _EL = {"au": "Au", "gold": "Au", "ag": "Ag", "silver": "Ag", "cu": "Cu", "copper": "Cu",
@@ -926,7 +926,6 @@ def extract_resources(doc, pages_text):
         cog, cog_unit = _page_cutoff(t)
         years = [int(y) for y in re.findall(r"effective\s+date[^.\n]{0,60}?((?:19|20)\d\d)", t, re.I)]
         pyear = max(years) if years else None
-        el_hint = _page_element(t)
         try:
             lines = page_lines(doc[pno])
         except Exception:
@@ -975,7 +974,9 @@ def extract_resources(doc, pages_text):
                          "tonnes": round(T * tmul),
                          "grade": G, "contained": round(C * cmul), "cunit": kind,
                          "hist": hist, "reserve": cat in ("Proven", "Probable", "P+P"), "pscore": pscore,
-                         "year": pyear, "total": is_total, "el": el_hint,
+                         "year": pyear, "total": is_total,
+                         "el": _page_element(t, kind, G),
+                         "grade_unit": grade_unit_for(kind),
                          "text": txt[:160]})
     return rows
 
@@ -1023,17 +1024,62 @@ def _page_cutoff(t):
     return None, None
 
 
-def _page_element(t):
-    """Which metal a resource page reports: counts of element words near contained-metal units."""
+_EL_WORDS = (("Au", r"\bau\b|gold"), ("Ag", r"\bag\b|silver"), ("Pt", r"\bpt\b|platinum"),
+             ("Pd", r"\bpd\b|palladium"), ("Cu", r"\bcu\b|copper"), ("Zn", r"\bzn\b|zinc"),
+             ("Pb", r"\bpb\b|\blead\b"), ("Ni", r"\bni\b|nickel"),
+             ("U3O8", r"u3o8|uranium"), ("Li2O", r"li2o|lithium"),
+             ("Co", r"\bco\b(?!-)|cobalt"), ("Mo", r"\bmo\b|molybdenum"),
+             ("Sn", r"\bsn\b|\btin\b"), ("WO3", r"wo3|tungsten"))
+# a contained-metal unit decides the grade unit, and the grade unit decides which
+# metals are even possible: ounces come from a g/t grade (precious), pounds and
+# tonnes of metal come from a per-cent grade (base).
+_EL_FAMILY = {"oz": ("Au", "Ag", "Pt", "Pd"),
+              "lb": ("Cu", "Zn", "Pb", "Ni", "Co", "Mo", "U3O8", "Sn", "WO3"),
+              "t": ("Cu", "Zn", "Pb", "Ni", "Co", "Mo", "Li2O", "U3O8", "Sn", "WO3")}
+
+
+def grade_unit_for(kind):
+    """The grade unit a contained-metal unit implies. ``t`` and ``lb`` of metal are
+    arithmetic on a per-cent grade; ``oz`` on grams per tonne."""
+    return "g/t" if kind == "oz" else "%"
+
+
+def _page_element(t, kind=None, grade=None):
+    """Which metal a resource row reports — or ``None`` when the page does not say
+    clearly.
+
+    Word counts alone mislabel statements: a copper page that mentions gold credits
+    reads as gold, and the number then gets compared against MMP's gold model as
+    though 1.187 % Cu were 1.187 g/t Au. So the arithmetic leads: the row's own
+    contained-metal unit fixes the grade unit (see ``grade_unit_for``) and that
+    restricts the candidates to metals reported in it. Within the family the page's
+    own words decide, and only by a clear margin — a wrong label is worse than no
+    label, because an unlabelled statement is shown as published rather than
+    compared.
+    """
     low = t.lower()
+    fam = _EL_FAMILY.get(kind) if kind else None
     c = Counter()
-    for el, pats in (("Au", r"\bau\b|gold"), ("Ag", r"\bag\b|silver"), ("Cu", r"\bcu\b|copper"), ("Zn", r"\bzn\b|zinc"),
-                     ("Pb", r"\bpb\b|\blead\b"), ("Ni", r"\bni\b|nickel"), ("U3O8", r"u3o8|uranium"), ("Li2O", r"li2o|lithium"),
-                     ("Co", r"\bco\b(?!-)|cobalt"), ("Mo", r"\bmo\b|molybdenum")):
-        c[el] = len(re.findall(pats, low))
-    if not c or c.most_common(1)[0][1] == 0:
+    for el, pats in _EL_WORDS:
+        if fam and el not in fam:
+            continue
+        n = len(re.findall(pats, low))
+        if n:
+            c[el] = n
+    if not c:
         return None
-    (e1, n1), = c.most_common(1)
+    top = c.most_common(2)
+    e1, n1 = top[0]
+    n2 = top[1][1] if len(top) > 1 else 0
+    # a precious-metal grade tells gold from silver on its own: a whole resource
+    # averaging more than ~15 g/t is silver, below ~5 g/t is not silver
+    if kind == "oz" and grade and {"Au", "Ag"} & set(dict(top)):
+        if grade >= 15 and c.get("Ag"):
+            return "Ag"
+        if grade <= 5 and c.get("Au") and c.get("Au") >= 2:
+            return "Au"
+    if n1 < 2 or n1 < 1.5 * n2:
+        return None                      # ambiguous page: say nothing
     return e1
 
 
@@ -1055,7 +1101,12 @@ def headline_resource(rows):
         cats = {r["cat"] for r in rs}
         named = len(cats & {"Measured", "Indicated", "Inferred", "M+I"})
         tot = any(r["total"] for r in rs)
-        return ((rs[0].get("year") or 0), named + (1 if tot else 0) + rs[0].get("pscore", 0), -pg)
+        # an identified metal and more rows break ties: a page can carry both a
+        # per-cent base-metal total and the gold statement, and the one MMP can
+        # name is the one worth publishing
+        ident = 1 if any(r.get("el") for r in rs) else 0
+        return ((rs[0].get("year") or 0), named + (1 if tot else 0) + rs[0].get("pscore", 0),
+                ident, len(rs), -pg)
     (page, cunit), rs = max(by_page.items(), key=score)
     named = [r for r in rs if r["cat"] in ("Measured", "Indicated", "Inferred", "M+I")]
     cats = {}
@@ -1086,9 +1137,21 @@ def headline_resource(rows):
     els = Counter(r.get("el") for r in rs if r.get("el"))
     cog = next((r.get("cutoff") for r in rs if r.get("cutoff") is not None), None)
     cogu = next((r.get("cutoff_unit") for r in rs if r.get("cutoff") is not None), None)
+    gu = grade_unit_for(cunit)
+    if cog is not None and cogu and not str(cogu).endswith("NSR"):
+        # a cut-off only belongs to this statement if it is quoted in the statement's
+        # own grade unit; a g/t cut-off beside a per-cent resource came from a
+        # different table on the same page, and showing it implies a reproducibility
+        # MMP cannot deliver
+        ok = {"%": {"%"}, "g/t": {"g/t", "ppm", "oz/t"}}.get(gu, set())
+        if cogu not in ok:
+            cog, cogu = None, None
+    el = els.most_common(1)[0][0] if els else None
+    if el and els[el] < 0.6 * sum(els.values()):
+        el = None                        # the rows disagree about the metal
     return {"page": page, "contained_unit": cunit, "categories": cats, "year": rs[0].get("year"),
-            "cutoff": cog, "cutoff_unit": cogu,
-            "element": els.most_common(1)[0][0] if els else None, **tot}
+            "cutoff": cog, "cutoff_unit": cogu, "grade_unit": gu,
+            "element": el, **tot}
 
 
 
