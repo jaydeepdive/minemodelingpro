@@ -430,6 +430,9 @@ def _by_metal(primary, grids, by_el, units, key2i, H, PS, verbose=False):
     gp = grids.get(primary)
     if not gp or not len(gp.get("gr", ())):
         return None
+    nblk = len(gp["gr"])
+    if nblk > 2_000_000:                     # a nightly build of every project must still finish
+        return None
     lo, bsz, ijk, gr = gp["lo"], gp["bsz"], gp["ijk"], gp["gr"]
     bt, clen = gp["bt"], gp["clen"]
     centres = lo + (ijk.astype(np.float32) + 0.5) * np.asarray(bsz, np.float32)
@@ -457,7 +460,8 @@ def _by_metal(primary, grids, by_el, units, key2i, H, PS, verbose=False):
                               key=lambda e: -len({x["key"] for x in by_el[e]}))
     metals, order_out = {}, []
     tcp = float(PS.get("top_cut_pct") or 99.5)
-    for el in want[:MAX_BY_METAL]:
+    cap = MAX_BY_METAL if nblk <= 300_000 else 6
+    for el in want[:cap]:
         unit = units.get(el) or ("g/t" if el in PRECIOUS else "%")
         if el == primary:
             vals = gr[order].astype(np.float64)
@@ -703,7 +707,12 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
     if not elements:
         raise ValueError("no modelable element")
     primary = els[0] if els[0] in elements else next(iter(elements))
-    by_metal = _by_metal(primary, grids, by_el, units, key2i, H, PS, verbose=verbose)
+    try:
+        by_metal = _by_metal(primary, grids, by_el, units, key2i, H, PS, verbose=verbose)
+    except Exception as e:                   # never lose a model over its summary table
+        by_metal = None
+        if verbose:
+            print("  by_metal failed:", str(e)[:120])
 
     # --- terrain over a padded footprint
     terr = None
