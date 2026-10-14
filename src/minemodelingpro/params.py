@@ -26,9 +26,13 @@ Keys (all optional; anything absent falls back to the data-driven default):
   density          tonnes per m³ (default: the report's, else by commodity)
   gap_fill         True (default): unreported hole length is composited as zero grade
   default_cutoff   cut-off the model page opens at
+  value_cutoff     dollars-per-tonne cut-off (the report's NSR cut-off by default)
   elements         restrict/order the elements modelled
   max_elements     how many elements to model (default 3)
   bins             grade-legend breaks for the primary element
+  nsr              net-smelter-return formula {"factors": {"Cu": 81, ...}, "units": …},
+                   so a polymetallic deposit can be cut in dollars per tonne rather
+                   than on one metal's grade (the report's own formula by default)
 
 CLI:
     python -m minemodelingpro.params --list
@@ -43,18 +47,21 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 PATH = os.path.join(_ROOT, "data", "keep", "mmp_model_params.json")
 
 NUMERIC = {"composite_m", "radius_m", "max_gap_m", "spacing_m", "power", "top_cut", "top_cut_pct",
-           "density", "default_cutoff"}
+           "density", "default_cutoff", "value_cutoff"}
 INTEGER = {"min_holes", "min_samples", "max_elements"}
 BOOLEAN = {"gap_fill"}
 LISTS = {"block", "elements", "bins"}
 STRINGS = {"method", "name", "company", "note"}
-ALL = NUMERIC | INTEGER | BOOLEAN | LISTS | STRINGS
+# the net-smelter-return formula: {"factors": {el: $/t per unit grade}, "units": ...}.
+# Not a number and not a list, so it travels as an object of its own.
+OBJECTS = {"nsr"}
+ALL = NUMERIC | INTEGER | BOOLEAN | LISTS | STRINGS | OBJECTS
 
 LIMITS = {"block": (0.5, 200.0), "composite_m": (0.25, 50.0), "radius_m": (5.0, 2000.0),
           "max_gap_m": (1.0, 1000.0), "spacing_m": (1.0, 2000.0), "power": (0.0, 8.0),
           "top_cut": (0.0, 1e6), "top_cut_pct": (50.0, 100.0), "density": (1.0, 8.0),
           "min_holes": (1, 20), "min_samples": (1, 100), "max_elements": (1, 8),
-          "default_cutoff": (0.0, 1e6), "bins": (0.0, 1e6)}
+          "default_cutoff": (0.0, 1e6), "value_cutoff": (0.0, 1e5), "bins": (0.0, 1e6)}
 
 
 def load(path=PATH):
@@ -134,7 +141,23 @@ def validate(values):
             errors.append(f"unknown parameter '{k}'")
             continue
         try:
-            if k in LISTS:
+            if k in OBJECTS:
+                if not isinstance(v, dict) or not isinstance(v.get("factors"), dict):
+                    errors.append(f"{k}: expected an object with a 'factors' map")
+                    continue
+                fac = {}
+                for el, f in v["factors"].items():
+                    try:
+                        f = float(f)
+                    except (TypeError, ValueError):
+                        continue
+                    if 0 < f < 1e6:
+                        fac[str(el)[:6]] = f
+                if len(fac) < 2:
+                    errors.append(f"{k}: needs at least two priced metals")
+                    continue
+                v = {**v, "factors": fac}
+            elif k in LISTS:
                 if isinstance(v, str):
                     v = [p for p in v.replace(";", ",").split(",") if p.strip()]
                 v = list(v)

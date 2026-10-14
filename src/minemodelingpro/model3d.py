@@ -186,6 +186,30 @@ def _spacing(hole_centroids):
 
 
 # ------------------------------------------------------------- block estimate
+# How confidently a block was estimated, in the words a resource statement uses.
+# These are MMP's own confidence tiers on public data, not CIM categories assigned
+# by a qualified person — the model page says so.
+CLASSES = ("well drilled", "moderately drilled", "thinly drilled")
+
+
+def _passes(radius, max_gap, min_holes, min_samples, given=None):
+    """Three estimation passes of decreasing confidence, inside one envelope.
+
+    A single pass with one rule gives every block the same standing, which is both
+    less honest and less complete than what a resource estimate does. P&E estimate
+    Murray Brook in three passes — tight and sample-hungry first, then progressively
+    longer with fewer samples required — and classify each block by the pass that
+    reached it. Requiring two holes everywhere, as MMP did, also silently drops the
+    blocks that only one hole can speak for: real rock, worth showing, worth
+    labelling as thinly drilled rather than leaving out.
+
+    The last pass keeps today's envelope (``max_gap``), so nothing is estimated
+    further from the drilling than before — the passes only tier what is inside it."""
+    if given:
+        return [(float(r), float(gp), int(mh), int(ms)) for r, gp, mh, ms in given][:3]
+    return [(radius * 0.6, max_gap * 0.5, max(3, min_holes + 1), max(6, min_samples * 2)),
+            (radius * 0.85, max_gap * 0.8, max(2, min_holes), max(4, min_samples)),
+            (radius, max_gap, 1, 2)]
 def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None):
     """Grade estimate on a regular grid of `block` (bx,by,bz) cells, only within
     max_gap of real composites and informed by >= min_holes holes. Returns
@@ -205,6 +229,7 @@ def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None)
     min_samples = int(o.get("min_samples") or 3)
     power = float(o.get("power") if o.get("power") is not None else 2.0)
     method = o.get("method") or "idw"
+    passes = _passes(radius, max_gap, min_holes, min_samples, o.get("passes"))
     lo = pts.min(0) - max_gap
     hi = pts.max(0) + max_gap
     dims = np.ceil((hi - lo) / [bx, by, bz]).astype(int) + 1
@@ -228,29 +253,36 @@ def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None)
     # expand to fine cells
     off = np.stack(np.meshgrid(np.arange(f), np.arange(f), np.arange(f), indexing="ij"), -1).reshape(-1, 3)
     tree = cKDTree(pts)
-    ijk_out, g_out = [], []
+    ijk_out, g_out, c_out = [], [], []
     CH = max(1, 400_000 // len(off))
     for s in range(0, len(cand_c), CH):
         cc = cand_c[s:s + CH]
         fine = (cc[:, None, :] * f + off[None, :, :]).reshape(-1, 3)
         fine = fine[(fine < dims).all(1)]
         ctr = lo + (fine + 0.5) * [bx, by, bz]
-        dd, ii = tree.query(ctr, k=16, distance_upper_bound=radius)
+        dd, ii = tree.query(ctr, k=24, distance_upper_bound=radius)
         near = np.isfinite(dd)
-        keep = near[:, 0] & (dd[:, 0] <= max_gap) & (near.sum(1) >= min_samples)
-        if not keep.any():
-            continue
-        dd, ii, fine = dd[keep], ii[keep], fine[keep]
-        nearm = np.isfinite(dd)
-        iis = np.where(nearm, ii, 0)
-        hh = np.where(nearm, hid[iis], -1)
-        # >= 2 distinct holes
+        iis0 = np.where(near, ii, 0)
+        hh = np.where(near, hid[iis0], -1)
         hs = np.sort(hh, axis=1)
         nuniq = (np.diff(hs, axis=1) != 0).sum(1) + 1 - (hs[:, 0] == -1)
-        k2 = nuniq >= min_holes
-        if not k2.any():
+        nsamp = near.sum(1)
+        cls = np.zeros(len(fine), np.uint8)
+        for pi, (p_rad, p_gap, p_holes, p_samp) in enumerate(passes, 1):
+            if (cls > 0).all():
+                break
+            ok = ((cls == 0) & near[:, 0] & (dd[:, 0] <= p_gap)
+                  & (nsamp >= p_samp) & (nuniq >= p_holes))
+            # a pass only counts samples inside its own, shorter range
+            if p_rad < radius:
+                ok &= (np.where(near, dd, np.inf) <= p_rad).sum(1) >= p_samp
+            cls[ok] = pi
+        keep = cls > 0
+        if not keep.any():
             continue
-        dd, iis, nearm, fine = dd[k2], iis[k2], nearm[k2], fine[k2]
+        dd, ii, fine, cls = dd[keep], ii[keep], fine[keep], cls[keep]
+        nearm = np.isfinite(dd)
+        iis = np.where(nearm, ii, 0)
         if method == "nn":
             est = g[iis[:, 0]]
         elif method == "mean":
@@ -260,14 +292,20 @@ def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None)
             w = np.where(nearm, 1.0 / np.maximum(dd, 0.5) ** power, 0.0)
             est = (w * g[iis]).sum(1) / w.sum(1)
         ijk_out.append(fine.astype(np.int32)); g_out.append(est.astype(np.float32))
+        c_out.append(cls)
     if ijk_out:
         ijk = np.concatenate(ijk_out); gr = np.concatenate(g_out)
+        cl = np.concatenate(c_out)
     else:
         ijk = np.zeros((0, 3), np.int32); gr = np.zeros(0, np.float32)
+        cl = np.zeros(0, np.uint8)
     params = {"block": [bx, by, bz], "radius_m": round(radius, 1), "max_gap_m": round(max_gap, 1),
               "spacing_m": round(spacing, 1), "power": power, "min_holes": min_holes,
-              "min_samples": min_samples, "method": method, "coarsened": coarsened}
-    return lo, (bx, by, bz), ijk, gr, params
+              "min_samples": min_samples, "method": method, "coarsened": coarsened,
+              "passes": [{"range_m": round(r, 1), "max_gap_m": round(gp, 1),
+                          "min_holes": mh, "min_samples": ms, "class": CLASSES[i]}
+                         for i, (r, gp, mh, ms) in enumerate(passes)]}
+    return lo, (bx, by, bz), ijk, gr, params, cl
 
 
 def grade_at(pts, g, hid, centres, opts=None, params=None):
@@ -412,6 +450,22 @@ def _snap(v):
 MAX_BY_METAL = 12
 
 
+def _class_split(cls_sorted, ks, bt):
+    """Tonnes by confidence tier at each cut-off.
+
+    A resource statement is not one number — Murray Brook is 17.5 Mt measured,
+    5.6 Mt indicated and 0.1 Mt inferred — because how well a tonne is known matters
+    as much as that it is there. The tier comes from which estimation pass reached
+    the block (see ``_passes``)."""
+    if cls_sorted is None or not len(cls_sorted):
+        return None
+    out = {}
+    for pi, name in enumerate(CLASSES, 1):
+        cc = np.cumsum((cls_sorted == pi).astype(np.int64))
+        out[name] = [round(int(cc[k - 1]) * bt) if k > 0 else 0 for k in ks]
+    return out
+
+
 def _by_metal(primary, grids, by_el, units, key2i, H, PS, verbose=False):
     """Every metal reported on ONE deposit tonnage.
 
@@ -458,12 +512,13 @@ def _by_metal(primary, grids, by_el, units, key2i, H, PS, verbose=False):
 
     want = [primary] + sorted([e for e in by_el if e != primary],
                               key=lambda e: -len({x["key"] for x in by_el[e]}))
-    metals, order_out = {}, []
+    metals, order_out, by_metal_grades = {}, [], {}
     tcp = float(PS.get("top_cut_pct") or 99.5)
     cap = MAX_BY_METAL if nblk <= 300_000 else 6
     for el in want[:cap]:
         unit = units.get(el) or ("g/t" if el in PRECIOUS else "%")
         if el == primary:
+            vals_unsorted = gr.astype(np.float64)
             vals = gr[order].astype(np.float64)
             ok = np.ones(len(vals), bool)
         else:
@@ -482,12 +537,22 @@ def _by_metal(primary, grids, by_el, units, key2i, H, PS, verbose=False):
                 continue
             top = float(np.percentile(g[g > 0], tcp)) if (g > 0).sum() > 20 else float(g.max())
             g = np.minimum(g, top)
-            # the primary's own resolved search rules, so no metal is favoured
-            est = grade_at(pts, g, hid, centres, params=gp.get("opts"))
+            # The primary's own search rules, but at the last pass's tolerance: the
+            # block is already inside the deposit — the primary put it there — so the
+            # question for a second metal is only "is there enough data to say what
+            # its grade is here", not "does this rock exist". Holding secondary
+            # metals to the strict first-pass rule left them NaN on blocks the
+            # deposit plainly occupies, which quietly understated every contained
+            # figure and every dollar of NSR.
+            o = dict(gp.get("opts") or {})
+            o.update({"min_holes": 1, "min_samples": 2})
+            est = grade_at(pts, g, hid, centres, params=o)
+            vals_unsorted = est.astype(np.float64)
             vals = est[order].astype(np.float64)
             ok = np.isfinite(vals)
             if not ok.any():
                 continue
+        by_metal_grades[el] = vals_unsorted
         csum = np.cumsum(np.where(ok, vals, 0.0))
         ccnt = np.cumsum(ok.astype(np.int64))
         row = {"unit": unit, "contained_unit": contained_unit(el, unit),
@@ -514,9 +579,90 @@ def _by_metal(primary, grids, by_el, units, key2i, H, PS, verbose=False):
         order_out.append(el)
     if len(metals) < 1:
         return None
-    return {"basis": primary, "basis_unit": el0, "cuts": cuts, "tonnes": tonnes,
-            "density": gp.get("dens"), "tonnes_per_block": round(bt, 1),
-            "order": order_out, "metals": metals}
+    out = {"basis": primary, "basis_unit": el0, "cuts": cuts, "tonnes": tonnes,
+           "density": gp.get("dens"), "tonnes_per_block": round(bt, 1),
+           "order": order_out, "metals": metals,
+           "classes": _class_split(gp["cls"][order] if gp.get("cls") is not None
+                                   and len(gp["cls"]) == len(gr) else None, ks, bt)}
+    val = _by_value(grids, by_metal_grades, order_out, units, bt, PS,
+                    cls=gp.get("cls") if gp.get("cls") is not None
+                    and len(gp["cls"]) == len(gr) else None, verbose=verbose)
+    if val:
+        out["value"] = val
+    return out
+
+
+def _by_value(grids, grades, order, units, bt, PS, cls=None, verbose=False):
+    """The same deposit, cut in dollars per tonne instead of on one metal's grade.
+
+    This is the correction Murray Brook forced. P&E report 23.1 Mt there at a
+    CAD$23/t NSR cut-off; MMP reported 4.8 Mt from the same drilling because it cut
+    at 0.1% Cu, and copper is barely a third of that rock's value — every zinc-rich,
+    copper-poor block fell out. Cut on NSR instead and the same block model reports
+    21.3 Mt. Nothing about the estimate changed; the question put to it did.
+
+    So wherever a deposit carries more than one metal worth money, the cut-off
+    belongs in dollars, and ideally in the report's own formula — then MMP's tonnage
+    and the published tonnage are the same measurement."""
+    from minemodelingpro import nsr as NSR
+    model = PS.get("nsr")
+    approx = False
+    if not model or not model.get("factors"):
+        model = NSR.indicative([e for e in order], {e: units.get(e) for e in order})
+        approx = True
+    if not model:
+        return None
+    have = {e: g for e, g in grades.items() if g is not None}
+    if sum(1 for e in model["factors"] if e in have) < 2:
+        return None                           # one priced metal is a grade cut-off
+    v = NSR.value(have, model)
+    if v is None or not np.isfinite(v).any():
+        return None
+    pos = v[v > 0]
+    if not len(pos):
+        return None
+    top = float(np.percentile(pos, 99.5))
+    cuts = [0.0] + [round(float(x), 1) for x in np.linspace(top / 8.0, top * 0.75, 7)]
+    cog = PS.get("value_cutoff")
+    if cog:
+        cuts.append(round(float(cog), 1))
+    cuts = sorted({round(c, 1) for c in cuts})
+    order_v = np.argsort(-v)
+    vs = v[order_v]
+    ks = [int((vs > 0).sum()) if c <= 0 else int(np.searchsorted(-vs, -c, "right"))
+          for c in cuts]
+    rows = {}
+    for el in order:
+        g = have.get(el)
+        if g is None:
+            continue
+        vals = np.asarray(g, np.float64)[order_v]
+        ok = np.isfinite(vals)
+        csum = np.cumsum(np.where(ok, vals, 0.0)); ccnt = np.cumsum(ok.astype(np.int64))
+        unit = units.get(el) or ("g/t" if el in PRECIOUS else "%")
+        r = {"unit": unit, "contained_unit": contained_unit(el, unit),
+             "grade": [], "contained": [], "coverage": [], "tonnes": [],
+             "priced": el in model["factors"]}
+        for k in ks:
+            if k <= 0 or int(ccnt[k - 1]) == 0:
+                r["grade"].append(None); r["contained"].append(None)
+                r["coverage"].append(0.0); r["tonnes"].append(0); continue
+            n = int(ccnt[k - 1]); gavg = float(csum[k - 1]) / n; tn = n * bt
+            r["grade"].append(round(gavg, 4))
+            r["contained"].append(round(contained(tn, gavg, el, unit)))
+            r["coverage"].append(round(n / k, 4))
+            r["tonnes"].append(round(tn))
+        rows[el] = r
+    nsr_avg = []
+    for k in ks:
+        nsr_avg.append(round(float(vs[:k].mean()), 2) if k > 0 else None)
+    return {"currency": model.get("currency") or "$", "formula": NSR.describe(model),
+            "classes": _class_split(cls[order_v] if cls is not None else None, ks, bt),
+            "factors": model["factors"], "approximate": bool(approx or model.get("approximate")),
+            "covers": NSR.covered(have, model), "source": model.get("source"),
+            "cuts": cuts, "tonnes": [round(k * bt) for k in ks], "nsr": nsr_avg,
+            "cutoff": round(float(cog), 1) if cog else None,
+            "order": [e for e in order if e in rows], "metals": rows}
 
 
 def build_project(ds, max_elements=3, verbose=False, settings=None):
@@ -661,9 +807,10 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                                               if (g > 0).sum() > 20 else float(g.max())))
             g = np.minimum(g, top)
             spacing = float(PS.get("spacing_m") or _spacing(cent))
-            lo, bsz, ijk, gr, params = estimate_blocks(pts, g, hid, blk, spacing, opts=PS)
+            lo, bsz, ijk, gr, params, bcls = estimate_blocks(pts, g, hid, blk, spacing, opts=PS)
             grids[el] = {"lo": lo, "bsz": bsz, "ijk": ijk, "gr": gr, "clen": clen,
-                         "opts": dict(params), "bins": list(bins)}
+                         "opts": {k: v for k, v in params.items() if k != "passes"},
+                         "bins": list(bins), "cls": bcls}
             params["top_cut"] = round(top, 3)
             params["composite_m"] = clen
             params["block_source"] = (base_src.get("block") if PORIGIN.get("block") == "auto"
@@ -695,7 +842,10 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                 show *= 1.25
                 keep = gr >= show
             grids[el].update({"bt": bt, "dens": dens, "unit": unit})
-            el_out["blocks"] = {"origin": [round(float(v), 2) for v in lo], "size": list(bsz),
+            el_out["blocks"] = {"cls": (_b64(bcls[keep].astype(np.uint8))
+                                       if len(bcls) == len(gr) else None),
+                                "classes": list(CLASSES),
+                                "origin": [round(float(v), 2) for v in lo], "size": list(bsz),
                                 "ijk": _b64(ijk[keep].astype(np.uint16)), "g": _b64(gr[keep].astype(np.float32)),
                                 "n": int(keep.sum()), "n_total": int(len(gr)), "shown_from": round(show, 4),
                                 "tonnes_per_block": round(bt, 1), "density": dens, "params": params}

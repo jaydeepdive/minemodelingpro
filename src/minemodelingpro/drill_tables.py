@@ -881,7 +881,10 @@ def _consistent_triples(nums):
 
 
 def _unit_hints(text):
-    low = text.lower()
+    # a PDF table header extracts as "Tonnes \n(k)", so the unit sits on its own
+    # line: without flattening the whitespace the "(k)" is invisible and every
+    # tonnage on the page is read a thousand times too small
+    low = re.sub(r"\s+", " ", text).lower()
     tm = None
     if re.search(r"\bmt\b|million tonnes|tonnes? \(m\)|\(mt\)|mtonnes|m tonnes|tonnage \(m", low):
         tm = 1e6
@@ -955,12 +958,23 @@ def extract_resources(doc, pages_text):
             # smallest plausible ones), then take the largest-tonnage triple in the
             # row (the row total when a table splits by zone/pit).
             def pref(x):
+                """Resolve the unit multipliers. tonnes x grade = contained is
+                scale-invariant — multiply both by a thousand and it still balances
+                — so the arithmetic alone cannot say whether a row reads 21,105 t or
+                21,105 kt. Only the column headers can, and a stated contained-metal
+                unit ("Mlb", "Moz") is hard evidence where "is this at least five
+                thousand tonnes" is a guess. So headers rank above guesses, and a
+                guess is used only where no header speaks."""
                 T, G, C, kind, tmul, cmul = x
-                tok = (tm_hint == tmul) if tm_hint else (T * tmul >= 5e3 and tmul == min(
+                t_said = tm_hint is not None
+                c_said = kind in cm_hint
+                tok = (tm_hint == tmul) if t_said else (T * tmul >= 5e3 and tmul == min(
                     m for m in (1, 1e3, 1e6) if T * m >= 5e3))
-                cok = (cm_hint.get(kind) == cmul) if kind in cm_hint else (cmul == min(
+                cok = (cm_hint.get(kind) == cmul) if c_said else (cmul == min(
                     y[5] for y in tr if y[3] == kind and y[4] == tmul) if any(
                     y[3] == kind and y[4] == tmul for y in tr) else False)
+                if c_said and not t_said:
+                    return (cok, tok, kind != "t", T)   # the header beats the guess
                 return (tok, cok, kind != "t", T)
             best = max(tr, key=pref)
             T, G, C, kind, tmul, cmul = best
@@ -1175,7 +1189,12 @@ def _cats_consistent(cats, tot):
     for k, v in (cats or {}).items():
         g, c, tn = v.get("grade"), v.get("contained"), v.get("tonnes")
         if g and c and tn:                # tonnes x grade should land near contained
-            for f in (31.1034768, 100.0, 2204.62262 / 100.0):
+            # the divisor per contained unit: grams per troy ounce for ounces, per
+            # cent for tonnes of metal, and for POUNDS the per-cent divided by
+            # pounds per tonne — dividing by 2204.62/100 instead of by its
+            # reciprocal rejected every base-metal statement quoted in pounds,
+            # which is most of them
+            for f in (31.1034768, 100.0, 100.0 / 2204.62262):
                 if 0.5 <= (tn * g / f) / c <= 2.0:
                     break
             else:
@@ -1314,6 +1333,27 @@ def extract_model_params(pages_text):
         out["method"] = name
         if pw:
             out["power"] = float(pw)
+    # the net-smelter-return formula, where the report states one. For a deposit
+    # carrying more than one metal of value this is the cut-off that the published
+    # tonnage was actually reported at, so without it MMP cannot reproduce the
+    # statement no matter how good the block model is.
+    try:
+        from minemodelingpro import nsr as _nsr
+        f = _nsr.stated(pages_text)
+        if f:
+            out["nsr"] = f
+    except Exception:
+        pass
+    # and the dollar cut-off it was reported at — a value cut-off is not a grade,
+    # so it has its own key rather than being squeezed into default_cutoff
+    vals = []
+    for t in pages_text:
+        v, u = _page_cutoff(t)
+        if v is not None and str(u or "").endswith("NSR"):
+            vals.append(float(v))
+    if vals:
+        vals.sort()
+        out["value_cutoff"] = round(vals[len(vals) // 2], 2)
     return out
 
 
