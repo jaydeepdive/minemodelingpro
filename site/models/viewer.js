@@ -29,6 +29,15 @@ $("s-src").textContent=fmtN((M.sources||[]).length);
 /* ---------------- layout repair for pages built before the left column ----------
    Model pages bake in their own markup, so this rebuilds the left column at runtime;
    once a page is rebuilt the shell already has it and this does nothing. */
+(function addSizeBox(){
+  if(document.getElementById("sizebox"))return;
+  const body=document.querySelector("#pModel .pbody");if(!body)return;
+  const sec=document.createElement("div");sec.className="sec";
+  sec.innerHTML='<p class="lab">Size</p><div id="sizebox"></div>';
+  const first=body.querySelector(".sec");
+  if(first&&first.nextSibling)body.insertBefore(sec,first.nextSibling);else body.appendChild(sec);
+})();
+
 (function fixLayout(){
   const model=document.getElementById("pModel"),data=document.getElementById("pData");
   if(!data||document.getElementById("leftcol"))return;
@@ -136,11 +145,60 @@ function buildBlocks(){if(blockMesh){scene.remove(blockMesh);blockMesh.geometry.
   const geo=new THREE.BoxGeometry(bx*0.97,bz*0.97,by*0.97);
   blockMesh=new THREE.InstancedMesh(geo,new THREE.MeshLambertMaterial({transparent:true,opacity:+$("blk-op").value/100,depthWrite:false}),n);
   blockMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);blockMesh.visible=$("L-blocks").checked;scene.add(blockMesh);applyCut();}
+/* ---------------- how big is it, and how deep ---------------- */
+function drawSize(){
+  const box=$("sizebox");if(!box)return;
+  const E=M.elements[EL],B=E.blocks;
+  const rows=[];
+  // the drilling itself (model space is metres: x east, y north, z elevation)
+  if(HO.length){
+    let x0=1e18,x1=-1e18,y0=1e18,y1=-1e18,z0=1e18,z1=-1e18,deep=0;
+    HO.forEach(h=>{const t=toe(h);
+      x0=Math.min(x0,h.x,t.ex);x1=Math.max(x1,h.x,t.ex);
+      y0=Math.min(y0,h.y,t.ny);y1=Math.max(y1,h.y,t.ny);
+      z0=Math.min(z0,h.z,t.ez);z1=Math.max(z1,h.z,t.ez);
+      deep=Math.max(deep,h.depth||0);});
+    rows.push(["Drilled area",`${m(x1-x0)} E–W × ${m(y1-y0)} N–S`]);
+    rows.push(["Deepest hole",m(deep)]);
+  }
+  if(B&&BK){
+    const [bx,by,bz]=B.size,o=B.origin,ijk=b64(B.ijk,Uint16Array);
+    const X=[],Y=[],Z=[];
+    for(let i=0;i<BK.n;i++){
+      if(BK.g[i]<curCut)continue;
+      X.push(o[0]+ijk[i*3]*bx);Y.push(o[1]+ijk[i*3+1]*by);Z.push(o[2]+ijk[i*3+2]*bz);}
+    if(X.length){
+      X.sort((a,b)=>a-b);Y.sort((a,b)=>a-b);Z.sort((a,b)=>a-b);
+      const q=(A,p)=>A[Math.min(A.length-1,Math.max(0,Math.round((A.length-1)*p)))];
+      const surf=medianCollar();
+      // the body itself: the middle 90% of blocks, so one stray outlier 20 km away
+      // does not report the deposit as being 20 km wide
+      const cx=q(X,.95)-q(X,.05)+bx, cy=q(Y,.95)-q(Y,.05)+by, cz=q(Z,.95)-q(Z,.05)+bz;
+      const top=q(Z,.95)+bz, bot=q(Z,.05);
+      rows.push(["Main zone", `${m(cx)} E–W × ${m(cy)} N–S`]);
+      rows.push(["Vertical extent", m(cz)]);
+      if(isFinite(surf))rows.push(["Depth below surface", `${m(Math.max(0,surf-top))} to ${m(Math.max(0,surf-bot))}`]);
+      rows.push(["Elevation range", `${Math.round(bot)} to ${Math.round(top)} masl`]);
+      const fx=X[X.length-1]-X[0]+bx, fy=Y[Y.length-1]-Y[0]+by;
+      if(fx>cx*1.3||fy>cy*1.3)
+        rows.push(["Full footprint", `${m(fx)} E–W × ${m(fy)} N–S`]);
+      rows.push(["Blocks above cut-off", fmtN(X.length)+" of "+fmtN(B.n_total)]);
+    }
+  }
+  box.innerHTML=rows.map(([k,v])=>`<div class="kv"><span>${k}</span><b>${v}</b></div>`).join("")
+    +`<p class="note">Extent of the blocks above the cut-off you have set — move the cut-off and these follow.</p>`;
+}
+function m(v){return v>=10000?(v/1000).toFixed(1)+" km":Math.round(v)+" m";}
+function toe(h){const d=(h.depth||0),dip=(h.dip||-90)*Math.PI/180,az=(h.az||0)*Math.PI/180,run=Math.cos(dip)*d;
+  return {ex:h.x+run*Math.sin(az),ny:h.y+run*Math.cos(az),ez:h.z+Math.sin(dip)*d};}
+function medianCollar(){if(!HO.length)return NaN;const z=HO.map(h=>h.z).filter(v=>isFinite(v)).sort((a,b)=>a-b);
+  return z.length?z[z.length>>1]:NaN;}
+
 const _m=new THREE.Matrix4(),_c=new THREE.Color();
 function applyCut(){if(!BK||!blockMesh)return;const E=M.elements[EL];let j=0;
   for(let i=0;i<BK.n;i++){if(BK.g[i]<curCut)continue;_m.makeTranslation(BK.pos[i*3],BK.pos[i*3+1],BK.pos[i*3+2]);blockMesh.setMatrixAt(j,_m);
     _c.set(E.colors[Math.max(0,binIdx(E,BK.g[i]))]);blockMesh.setColorAt(j,_c);j++;}
-  blockMesh.count=j;blockMesh.instanceMatrix.needsUpdate=true;if(blockMesh.instanceColor)blockMesh.instanceColor.needsUpdate=true;}
+  blockMesh.count=j;blockMesh.instanceMatrix.needsUpdate=true;if(blockMesh.instanceColor)blockMesh.instanceColor.needsUpdate=true;drawSize();}
 
 /* ---- terrain ---- */
 let terrain=null;
@@ -527,7 +585,7 @@ function updHud(){const mpp=2*dist*Math.tan(camera.fov*Math.PI/360)/Hh();const n
   $("needle").setAttribute("transform",`rotate(${(-yaw*180/Math.PI+180).toFixed(1)})`);}
 
 /* ---------------- start ---------------- */
-drawEls();buildIntervals();drawLegend();drawSources();buildBlocks();setupGT();drawData();drawBreakdown();
+drawEls();buildIntervals();drawLegend();drawSources();buildBlocks();setupGT();drawData();drawBreakdown();drawSize();
 resize();F=framing();view("3d",0);
 addEventListener("resize",()=>{resize();place();});
 if(!store.get("seen-pivot",false)){setTimeout(()=>toast(MOBILE?"Double-tap any hole to pivot around it":"Tip: double-click any hole or block to pivot around it",4200),900);store.set("seen-pivot",true);}
