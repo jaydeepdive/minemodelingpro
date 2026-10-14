@@ -216,6 +216,11 @@ def startup():
         from studio import sitesync
 
         def _ready(path, commit):
+            if not sitesync.fresher_than(SITE_DIR, path):
+                print(f"[server] mirrored site {str(commit)[:7]} is older than this build — "
+                      f"serving the image's own site/", flush=True)
+                LIVE["dir"] = SITE_DIR
+                return
             LIVE["dir"] = path
             LIVE["commit"] = commit
             print(f"[server] serving mirrored site {str(commit)[:7]} from {path}", flush=True)

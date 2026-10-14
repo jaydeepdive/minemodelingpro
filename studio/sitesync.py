@@ -116,6 +116,22 @@ def mirror(sha=None, verbose=True):
 
 
 # -------------------------------------------------------------------- pulling
+def _generated(path):
+    """When a site directory's gallery was built (models_index.json), or ''."""
+    try:
+        return str(json.load(open(os.path.join(path, "models_index.json"))).get("generated") or "")
+    except Exception:
+        return ""
+
+
+def fresher_than(baked, dest=LOCAL):
+    """Is the mirrored copy at least as new as the one baked into the image? A newly
+    deployed image can carry a gallery the mirror has not caught up with yet, and
+    serving the stale one would look like the site going backwards."""
+    a, b = _generated(dest), _generated(baked)
+    return bool(a) and (not b or a >= b)
+
+
 def pull(dest=LOCAL, verbose=False):
     """Bring the local copy in line with what Spaces holds. Returns the commit, or None."""
     man = _manifest()
