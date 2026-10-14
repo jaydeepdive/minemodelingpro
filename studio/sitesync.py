@@ -190,7 +190,6 @@ def mirror_loop():
     """worker: when the repo's site/ moves, mirror it to Spaces."""
     last = (_manifest() or {}).get("commit")
     while True:
-        time.sleep(MIRROR_EVERY)
         try:
             sha = head_sha()
             if sha and sha != last:
@@ -198,6 +197,8 @@ def mirror_loop():
                 last = sha
         except Exception as e:
             print(f"[sitesync] mirror: {type(e).__name__}: {str(e)[:140]}", flush=True)
+        time.sleep(MIRROR_EVERY)          # check first, then wait: a restart should not
+                                          # delay the gallery by a whole interval
 
 
 def start_server(on_ready=None):
