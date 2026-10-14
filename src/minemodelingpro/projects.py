@@ -217,6 +217,7 @@ def load_news():
                                "is_subinterval FROM intervals", con)
     finally:
         con.close()
+    h = _place_unzoned(h)
     h = h.dropna(subset=["lat", "lon"])
     h = h[(h.lat.abs() <= 85) & (h.lon.abs() <= 180)].copy()
     h = _repair_zones(h)
@@ -243,6 +244,114 @@ def _f(v):
         return None if math.isnan(f) else f
     except (TypeError, ValueError):
         return None
+
+
+def _place_unzoned(h):
+    """Place holes published as easting/northing with no UTM zone.
+
+    Most drill-result releases print a collar table in local UTM and never say which
+    zone, so upstream geolocation leaves them without lat/long — two thirds of the
+    holes in the bank. The northing already fixes the latitude; only the zone (a
+    longitude band) is unknown, and there are at most 60 of those. So: take the
+    candidates that land on dry ground, prefer a zone the same project or company is
+    already known to drill in, and confirm the winner by matching the published
+    collar elevations to the DEM — the same test `_repair_zones` uses on releases
+    that were geolocated into the wrong zone.
+    """
+    try:
+        from minemodelingpro import terrain
+        from pyproj import Transformer
+    except Exception:
+        return h
+    need = h[h.lat.isna() & h.easting.notna() & h.northing.notna()]
+    if not len(need):
+        return h
+    # zones the same project / company is already located in — the strongest prior
+    done = h.dropna(subset=["lat", "lon"])
+    prior = defaultdict(set)
+    for r in done.dropna(subset=["utm_zone"]).itertuples(index=False):
+        for k in (("p", _s(r.project) or ""), ("c", _s(r.company) or "")):
+            if k[1]:
+                prior[k].add(int(r.utm_zone))
+    placed_rel = placed_holes = 0
+    for rid, g in need.groupby("release_id"):
+        g = g[(g.easting > 100000) & (g.easting < 900000) & (g.northing > 0) & (g.northing < 1e7)]
+        if len(g) < 2:
+            continue
+        country = _s(g.country.iloc[0]) if "country" in g else None
+        proj = _s(g.project.iloc[0]) if "project" in g else None
+        comp = _s(g.company.iloc[0]) if "company" in g else None
+        hint = set()
+        for k in (("p", proj or ""), ("c", comp or "")):
+            if k[1]:
+                hint |= prior.get(k, set())
+        e = g.easting.values.astype(float); n = g.northing.values.astype(float)
+        em = float(np.median(e)); nm = float(np.median(n))
+        cands = []
+        for south in (False, True):
+            for z in range(1, 61):
+                try:
+                    tr = Transformer.from_crs(f"EPSG:{(32700 if south else 32600) + z}", "EPSG:4326",
+                                              always_xy=True)
+                    lo, la = tr.transform(em, nm)
+                except Exception:
+                    continue
+                if not (-85 <= la <= 85 and -180 <= lo <= 180):
+                    continue
+                reg = terrain.region_of(la, lo)
+                if not reg:
+                    continue                       # ocean, or off the map
+                score = 0
+                if z in hint:
+                    score -= 2                      # same project/company drills here
+                if country and terrain._fold(reg) == terrain._fold(country):
+                    score -= 1
+                cands.append((score, z, south, tr, reg))
+        if not cands:
+            continue
+        cands.sort(key=lambda c: c[0])
+        cands = cands[:14]
+        # confirm with the DEM where the release published collar elevations
+        ev = g.dropna(subset=["elev_m"])
+        ev = ev[(ev.elev_m > -500) & (ev.elev_m < 6000)]
+        pick, how = None, None
+        if len(ev) >= 2:
+            sub = ev.head(6)
+            scored = []
+            for score, z, south, tr, reg in cands:
+                lo, la = tr.transform(sub.easting.values.astype(float), sub.northing.values.astype(float))
+                try:
+                    dem = terrain.elevations(la, lo, 10)
+                    m = float(np.nanmedian(np.abs(dem - sub.elev_m.values.astype(float))))
+                except Exception:
+                    continue
+                if np.isfinite(m):
+                    scored.append((m, z, south, tr, reg))
+            scored.sort()
+            if scored and scored[0][0] < 90 and (len(scored) == 1 or scored[0][0] < scored[1][0] / 4):
+                pick, how = scored[0], f"DEM fit {scored[0][0]:.0f} m"
+        if pick is None:
+            # no usable elevations: accept only when the prior is unambiguous
+            strong = [c for c in cands if c[0] < 0]
+            if len(strong) == 1:
+                c = strong[0]
+                pick, how = (None, c[1], c[2], c[3], c[4]), ("same project/company" if c[0] <= -2
+                                                            else "stated region")
+        if pick is None:
+            continue
+        _m, z, south, tr, reg = pick
+        gg = g.dropna(subset=["easting", "northing"])
+        lo, la = tr.transform(gg.easting.values.astype(float), gg.northing.values.astype(float))
+        h.loc[gg.index, "lat"] = la
+        h.loc[gg.index, "lon"] = lo
+        h.loc[gg.index, "utm_zone"] = z
+        h.loc[gg.index, "utm_hemi"] = "S" if south else "N"
+        placed_rel += 1; placed_holes += len(gg)
+        print(f"[projects] placed release {str(rid)[:10]}: UTM zone {z}{'S' if south else 'N'} "
+              f"({how}) -> {reg}, {len(gg)} holes")
+    if placed_rel:
+        print(f"[projects] placed {placed_holes} unzoned holes across {placed_rel} release(s)")
+    return h
 
 
 def _repair_zones(h):
@@ -500,10 +609,16 @@ def _auto_names(p):
         if x and name_key(x) != name_key(clean_company(r.get("company")) or ""):
             rnames.append(x)
     name = (rnames[0] if rnames else None) or clean_project(p.get("project")) or clean_company(p.get("company")) or "Unnamed project"
-    company = clean_company(p.get("company")) or next((clean_company(r.get("company")) for r in reports
-                                                      if clean_company(r.get("company"))), None)
-    if company and (name_key(company) == name_key(name) or re.fullmatch(r"[A-Z]{2,5}", company)):
-        company = None if name_key(company) == name_key(name) else company
+    company = (clean_company(p.get("company"))
+               or next((clean_company(r.get("company")) for r in reports
+                        if clean_company(r.get("company"))), None)
+               # SEDAR ledgers often leave the filer blank; the report cover never does
+               or next((clean_company(r.get("cover_company")) for r in reports
+                        if clean_company(r.get("cover_company"))), None))
+    if company and re.fullmatch(r"[A-Z]{2,5}", company):
+        pass                                  # a ticker, not a name — keep it out of the slug
+    if company and name_key(company) == name_key(name):
+        company = None                        # the "project" is the company; don't print it twice
     slug = _slugify(name + ("-" + company if company else ""))
     return name, company, slug
 

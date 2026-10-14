@@ -155,7 +155,7 @@ function drawLegend(){const E=M.elements[EL];$("lg-h").textContent=EL+" grade ("
   for(let k=E.bins.length-1;k>=0;k--){const d=document.createElement("div");const hi=k<E.bins.length-1?E.bins[k+1]:null;
     d.innerHTML=`<i style="background:${E.colors[k]}"></i>${hi==null?"≥ "+E.bins[k]:E.bins[k]+" – "+hi} ${esc(E.unit)}`;L.appendChild(d);}
   const d=document.createElement("div");d.innerHTML=`<i class="lo"></i>&lt; ${E.bins[0]} ${esc(E.unit)} · <span style="color:var(--mut)">grey = no reported intercept</span>`;L.appendChild(d);}
-function setEl(e){EL=e;store.set("el:"+M.slug,e);drawEls();buildIntervals();drawLegend();setupGT();buildBlocks();}
+function setEl(e){EL=e;store.set("el:"+M.slug,e);drawEls();buildIntervals();drawLegend();setupGT();buildBlocks();drawData();}
 
 function setupGT(){const E=M.elements[EL];const cut=$("cut");
   if(!E.gt){$("gtsec").hidden=true;$("nogt").hidden=false;
@@ -167,8 +167,11 @@ function setupGT(){const E=M.elements[EL];const cut=$("cut");
 function updCut(){const E=M.elements[EL];if(!E.gt)return;const r=E.gt[+$("cut").value];curCut=r[0];store.set("cut:"+M.slug+":"+EL,+$("cut").value);
   $("cut-v").textContent="≥ "+fmtG(r[0],E.unit);$("g-t").textContent=fmtT(r[1]);$("g-g").textContent=r[1]?fmtG(r[2],E.unit):"–";
   $("g-c").textContent=fmtC(r[3],E.contained_unit);$("g-cu").textContent="Contained "+({oz:"oz",lb:"lb",t:"t"}[E.contained_unit]||"");
-  applyCut();drawChart(r);drawCmp(r);}
-function pubFor(){const E=M.elements[EL];const cu=E.contained_unit;return (M.resources||[]).filter(r=>r.contained_unit===cu&&r.contained>0&&(!r.element||r.element===EL||r.element===EL.replace("Eq","")));}
+  applyCut();drawChart(r);drawCmp(r);drawBreakdown();}
+function pubFor(el){el=el||EL;const E=M.elements[el];const cu=E.contained_unit;
+  return (M.resources||[]).filter(r=>r.contained_unit===cu&&r.contained>0&&(!r.element||r.element===el||r.element===el.replace("Eq","")));}
+/* which modelled element a published statement we hold does line up with */
+function pubElsewhere(){const out=[];(M.elements?Object.keys(M.elements):[]).forEach(e=>{if(e!==EL&&pubFor(e).length)out.push(e);});return out;}
 function drawChart(cur){const E=M.elements[EL],svg=$("gtchart"),G=E.gt;const maxC=Math.max(...G.map(r=>r[3]),...pubFor().map(r=>r.contained||0),1);
   const maxX=G[G.length-1][0]||1;const X=v=>6+v/maxX*288,Y=v=>104-v/maxC*96;
   let p="";G.forEach((r,i)=>{p+=(i?"L":"M")+X(r[0]).toFixed(1)+","+Y(r[3]).toFixed(1);});
@@ -177,17 +180,66 @@ function drawChart(cur){const E=M.elements[EL],svg=$("gtchart"),G=E.gt;const max
   s+=`<line x1="${X(cur[0])}" x2="${X(cur[0])}" y1="4" y2="106" stroke="#111418" stroke-width="1" vector-effect="non-scaling-stroke" opacity=".5"/>`;
   s+=`<circle cx="${X(cur[0])}" cy="${Y(cur[3])}" r="3.5" fill="#D71920"/>`;
   svg.innerHTML=s;svg.setAttribute("aria-label","Contained metal versus cut-off grade");}
+/* the cut-off a published statement is reported at, in our units when comparable */
+function pubCut(p){const E=M.elements[EL];if(!p||p.cutoff==null)return null;
+  const u=String(p.cutoff_unit||"").toLowerCase(),mu=String(E.unit||"").toLowerCase();
+  if(u===mu)return{v:+p.cutoff,unit:p.cutoff_unit,same:true};
+  if(u==="ppm"&&mu==="g/t")return{v:+p.cutoff,unit:"g/t",same:true};
+  if(u==="g/t"&&mu==="ppm")return{v:+p.cutoff,unit:"ppm",same:true};
+  return{v:+p.cutoff,unit:p.cutoff_unit,same:false};}      // NSR $/t etc: not a grade
+function setCut(v){const E=M.elements[EL];if(!E.gt)return;let i=E.gt.findIndex(r=>r[0]>=v);
+  if(i<0)i=E.gt.length-1;$("cut").value=i;updCut();}
 function drawCmp(cur){const E=M.elements[EL],box=$("cmp"),pubs=pubFor();
-  if(!pubs.length){box.innerHTML=`<p class="note">Red line: contained ${EL} vs cut-off. No published ${E.contained_unit==="oz"?"ounce":"metal"} resource matched to this project yet${(M.resources||[]).length?" in these units":""}.</p>`;return;}
+  if(!pubs.length){const other=pubElsewhere();
+    box.innerHTML=`<p class="note">Red line: contained ${EL} vs cut-off. `+
+      (other.length?`The published statement we extracted from the filings is for <b>${other.map(esc).join(", ")}</b>, not ${esc(EL)} — `+
+        other.map(e=>`<button class="mini" data-el="${esc(e)}">compare ${esc(e)}</button>`).join(" ")+
+        ` — so there is nothing to compare ${esc(EL)} against here.`
+       :`No published resource for ${esc(EL)} has been matched to this project yet${(M.resources||[]).length?"; the statement below is in different units":""}.`)+`</p>`;
+    box.querySelectorAll("button[data-el]").forEach(b=>b.onclick=()=>setEl(b.dataset.el));
+    return;}
   const p=pubs[0],mx=Math.max(p.contained,cur[3]),ratio=cur[3]/p.contained;
+  const pc=pubCut(p);
+  let cutline="",verdict="";
+  if(pc&&pc.same){
+    const match=Math.abs(cur[0]-pc.v)<1e-9||(cur[0]>=pc.v&&E.gt[Math.max(0,+$("cut").value-1)][0]<pc.v);
+    cutline=`<div class="kv"><span>Published cut-off</span><b>${fmtG(pc.v,pc.unit)}${match?"":` <button class="mini" id="matchcut">use it</button>`}</b></div>`;
+    verdict=match?`Compared <b>at the published cut-off</b> (${fmtG(pc.v,pc.unit)}), so this is like for like.`
+                 :`Your cut-off is ${fmtG(cur[0],E.unit)}; the published statement is at ${fmtG(pc.v,pc.unit)} — set them equal before reading anything into the gap.`;
+  }else if(pc){
+    cutline=`<div class="kv"><span>Published cut-off</span><b>${(+pc.v).toLocaleString()} ${esc(pc.unit)}</b></div>`;
+    verdict=`The published statement is reported at a <b>value cut-off</b> (${(+pc.v).toLocaleString()} ${esc(pc.unit)}), which depends on metal prices, recoveries and costs — a grade model cannot reproduce it exactly. Compare the shape and order of magnitude, not the totals.`;
+  }else{
+    verdict=`The report's cut-off for this statement was not captured, so the two numbers are not necessarily at the same cut-off.`;
+  }
   box.innerHTML=`<p class="lab" style="margin-top:8px">Check against published resource</p>
    <div class="kv"><span>MMP at this cut-off</span><b>${fmtC(cur[3],E.contained_unit)}</b></div><div class="cmpbar"><i style="width:${(cur[3]/mx*100).toFixed(1)}%"></i></div>
    <div class="kv"><span>Published M+I+Inf</span><b>${fmtC(p.contained,p.contained_unit)}</b></div><div class="cmpbar pub"><i style="width:${(p.contained/mx*100).toFixed(1)}%"></i></div>
-   <p class="note">MMP is <b>${(ratio*100).toFixed(0)}%</b> of the published total. ${ratio<0.5?"Well below: we hold only part of the drilling behind the published estimate (see sources), or interpolation stays close to holes.":ratio>1.5?"Well above: likely a lower effective cut-off, wider interpolation than the resource wireframes, or composite intercepts reported at a low threshold.":"Broadly consistent in size with the published estimate."} Dashed blue line on the chart = published total.</p>`;}
+   ${cutline}
+   <p class="note">MMP is <b>${(ratio*100).toFixed(0)}%</b> of the published total. ${verdict} ${ratio<0.5?"Below: we may hold only part of the drilling behind the published estimate (see data sources), or interpolation stays close to the holes.":ratio>1.5?"Above: a lower effective cut-off, wider interpolation than the resource wireframes, or composite intercepts reported at a low threshold.":"Broadly consistent in size with the published estimate."} Dashed blue line on the chart = published total.</p>`;
+  const mb=$("matchcut");if(mb)mb.onclick=()=>setCut(pc.v);}
+/* what the model itself adds up to, element by element */
+function drawBreakdown(){
+  const box=$("bdown");if(!box)return;
+  const els=Object.keys(M.elements||{}).filter(e=>M.elements[e].gt&&M.elements[e].gt.length);
+  if(els.length<1){box.innerHTML="";return;}
+  const rows=els.map(e=>{const E=M.elements[e];
+    const saved=store.get("cut:"+M.slug+":"+e,null);
+    let i=saved!=null&&saved<E.gt.length?+saved:E.gt.findIndex(r=>r[0]>=(E.bins[1]!=null?E.bins[1]:E.bins[0]));
+    if(i<0)i=0;const r=E.gt[i];const p=pubFor(e)[0];
+    return `<tr data-el="${esc(e)}"${e===EL?' class="on"':''}><td>${esc(e)}</td><td class="n">≥ ${fmtG(r[0],E.unit)}</td>`+
+      `<td class="n">${fmtT(r[1])}</td><td class="n">${fmtG(r[2],E.unit)}</td><td class="n"><b>${fmtC(r[3],E.contained_unit)}</b></td>`+
+      `<td class="n">${p?fmtC(p.contained,p.contained_unit):"–"}</td></tr>`;}).join("");
+  box.innerHTML=`<table class="bd"><thead><tr><th>Metal</th><th class="n">Cut-off</th><th class="n">Tonnes</th>`+
+    `<th class="n">Grade</th><th class="n">MMP contained</th><th class="n">Published</th></tr></thead><tbody>${rows}</tbody></table>`+
+    `<p class="note">Each row is this model at that metal's own cut-off — move a metal's slider and its row follows. Estimates, not a resource.</p>`;
+  box.querySelectorAll("tr[data-el]").forEach(tr=>tr.onclick=()=>setEl(tr.dataset.el));
+}
 function drawRes(){const box=$("res"),R=M.resources||[];if(!R.length){$("ressec").style.display="none";return;}
   box.innerHTML=R.map(r=>{const c=r.categories||{},u=r.contained_unit,gu=u==="oz"?"g/t":"%";
     const rows=Object.entries(c).filter(([k])=>["Measured","Indicated","M+I","Inferred"].includes(k)).map(([k,v])=>`<tr><td>${esc(k)}</td><td>${fmtT(v.tonnes)}</td><td>${v.grade} ${gu}</td><td>${fmtC(v.contained,u)}</td></tr>`).join("");
-    return `<div class="res"><div class="kv" style="padding:0"><span>${esc(r.title||r.source)}</span></div>
+    const cu2=r.cutoff!=null?`<div class="note">reported at ${String(r.cutoff_unit||"").match(/\/t/)?(+r.cutoff).toLocaleString()+" "+esc(r.cutoff_unit):fmtG(+r.cutoff,r.cutoff_unit)} cut-off</div>`:"";
+    return `<div class="res"><div class="kv" style="padding:0"><span>${esc(r.title||r.source)}</span></div>${cu2}
       <table>${rows}<tr style="border-top:1px solid var(--line)"><td><b>Total</b></td><td><b>${fmtT(r.tonnes)}</b></td><td></td><td><b>${fmtC(r.contained,u)}</b></td></tr></table>
       ${r.url?`<a href="${esc(r.url)}" target="_blank" rel="noopener">open report ↗</a>`:""}${r.page?` <span class="note">· p.${r.page}</span>`:""}</div>`;}).join("");}
 function drawParams(){const E=M.elements[EL],B=E.blocks,box=$("params");
@@ -201,6 +253,35 @@ function drawParams(){const E=M.elements[EL],B=E.blocks,box=$("params");
     +(q.coarsened>1?`<p class="note">Display grid coarsened ×${q.coarsened} (very large extent).</p>`:"");}
 function drawSources(){const S=M.sources||[],L=$("srclist");$("src-n").textContent="· "+S.length;
   L.innerHTML=S.map(s=>`<a class="${s.kind==="news release"?"":"rep"}" href="${esc(s.url||s.archive||"#")}" target="_blank" rel="noopener">${esc(s.title||s.kind)}<br><em>${esc(s.kind)}${s.date?" · "+esc(String(s.date).slice(0,10)):""}${s.intervals!=null?" · "+s.collars+" collars, "+s.intervals+" intervals":""}</em></a>`).join("");}
+/* ---------------- what drill data this model is built on ---------------- */
+function drawData(){
+  const C=M.counts||{},box=$("datasum");
+  const assayed=C.assayed_holes||0,holes=C.holes||0;
+  const rows=[["Holes placed in 3D",fmtN(holes)],
+              ["Holes with reported assays",fmtN(assayed)+(holes?` · ${Math.round(assayed/holes*100)}%`:"")],
+              ["Assay intervals",fmtN(C.intervals)],
+              ["Holes with downhole surveys",fmtN(C.surveyed||0)],
+              ["Blocks estimated",fmtN(C.blocks)],
+              ["Sources",fmtN((M.sources||[]).length)]];
+  box.innerHTML=rows.map(([k,v])=>`<div class="kv"><span>${k}</span><b>${v}</b></div>`).join("")
+    +(holes&&assayed/holes<0.6?`<p class="note">Only ${fmtN(assayed)} of ${fmtN(holes)} holes carry assay intervals in the filings we hold — technical reports usually publish a <em>significant intercepts</em> table rather than the full assay file. The block model is therefore estimated around those holes only; the rest are drawn as traces so you can see where the drilling actually is.</p>`:"");
+  // every hole, searchable, click to fly to it
+  const byHole={};IV.forEach(x=>{const k=x.h.id;(byHole[k]=byHole[k]||[]).push(x);});
+  const draw=(q)=>{const list=HO.filter(h=>!q||h.id.toLowerCase().includes(q)).slice(0,400);
+    $("hole-n").textContent="· "+fmtN(HO.length);
+    $("holetbl").innerHTML=`<table><thead><tr><th>Hole</th><th class="n">Depth</th><th class="n">${esc(EL)}</th><th class="n">Best</th></tr></thead><tbody>`+
+      list.map(h=>{const iv=byHole[h.id]||[];const best=iv.length?Math.max(...iv.map(x=>x.g)):null;
+        return `<tr data-h="${esc(h.id)}"><td>${esc(h.id)}</td><td class="n">${h.depth?Math.round(h.depth)+" m":"–"}</td>`+
+               `<td class="n">${iv.length||"–"}</td><td class="n">${best!=null?fmtG(best,M.elements[EL].unit):"–"}</td></tr>`;}).join("")+
+      `</tbody></table>`+(HO.length>400?`<p class="note" style="padding:6px 8px">Showing the first 400 — filter to narrow.</p>`:"");
+    $("holetbl").querySelectorAll("tr[data-h]").forEach(tr=>tr.onclick=()=>{
+      const h=HO.find(x=>x.id===tr.dataset.h);if(!h)return;
+      const mid=at(h,(h.depth||0)/2),L=Math.max(h.depth||100,120);
+      fly({x:mid.x,y:mid.y,z:mid.z,dist:L*1.8},600);toast("Pivoting on "+h.id);
+      if(MOBILE)document.querySelectorAll(".panel").forEach(x=>x.classList.remove("open"));});};
+  draw("");
+  const f=$("hfilter");if(f)f.oninput=e=>draw(e.target.value.trim().toLowerCase());
+}
 $("cut").addEventListener("input",updCut);
 
 /* ---------------- camera + controls ---------------- */
@@ -410,7 +491,7 @@ function updHud(){const mpp=2*dist*Math.tan(camera.fov*Math.PI/360)/Hh();const n
   $("needle").setAttribute("transform",`rotate(${(-yaw*180/Math.PI+180).toFixed(1)})`);}
 
 /* ---------------- start ---------------- */
-drawEls();buildIntervals();drawLegend();drawSources();buildBlocks();setupGT();
+drawEls();buildIntervals();drawLegend();drawSources();buildBlocks();setupGT();drawData();drawBreakdown();
 resize();F=framing();view("3d",0);
 addEventListener("resize",()=>{resize();place();});
 if(!store.get("seen-pivot",false)){setTimeout(()=>toast(MOBILE?"Double-tap any hole to pivot around it":"Tip: double-click any hole or block to pivot around it",4200),900);store.set("seen-pivot",true);}

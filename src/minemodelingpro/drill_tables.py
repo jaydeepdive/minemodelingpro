@@ -923,6 +923,7 @@ def extract_resources(doc, pages_text):
         if re.search(r"\bpit\b.*\bshell\b|block model validation|swath|comparison|previous|\b20[01]\d\b mineral resource", low):
             pscore -= 1
         tm_hint, cm_hint = _unit_hints(t)
+        cog, cog_unit = _page_cutoff(t)
         years = [int(y) for y in re.findall(r"effective\s+date[^.\n]{0,60}?((?:19|20)\d\d)", t, re.I)]
         pyear = max(years) if years else None
         el_hint = _page_element(t)
@@ -970,12 +971,56 @@ def extract_resources(doc, pages_text):
                 continue
             if kind == "lb" and C * cmul > 2e11:
                 continue
-            rows.append({"page": pno + 1, "cat": cat, "tonnes": round(T * tmul),
+            rows.append({"page": pno + 1, "cat": cat, "cutoff": cog, "cutoff_unit": cog_unit,
+                         "tonnes": round(T * tmul),
                          "grade": G, "contained": round(C * cmul), "cunit": kind,
                          "hist": hist, "reserve": cat in ("Proven", "Probable", "P+P"), "pscore": pscore,
                          "year": pyear, "total": is_total, "el": el_hint,
                          "text": txt[:160]})
     return rows
+
+
+
+def _page_cutoff(t):
+    """The cut-off a resource page reports at — what makes a published statement
+    reproducible. Returns (value, unit): a grade cut-off ("0.3", "%") when the page
+    states one, else a value cut-off ("23", "C$/t NSR"), which a grade model cannot
+    reproduce directly but which the model page should still show.
+    """
+    g, v = [], []
+    for m in re.finditer(r"cut[- ]?off\s*(?:grade|value)?[^.\n]{0,40}?"
+                         r"(?<![\d.])(\d{1,4}(?:\.\d{1,3})?)\s*(g/t|gpt|g\s*/\s*t|%|ppm|oz/t)", t, re.I):
+        g.append((float(m.group(1)), m.group(2).lower().replace(" ", "")))
+    for m in re.finditer(r"(?<![\d.])(\d{1,4}(?:\.\d{1,3})?)\s*(g/t|gpt|g\s*/\s*t|%|ppm|oz/t)"
+                         r"[^.\n]{0,30}?cut[- ]?off", t, re.I):
+        g.append((float(m.group(1)), m.group(2).lower().replace(" ", "")))
+    for m in re.finditer(r"(?:(C\$|US\$|\$|A\$)\s*(\d{1,4}(?:\.\d{1,2})?)\s*/\s*t|"
+                         r"(\d{1,4}(?:\.\d{1,2})?)\s*/\s*t\s*(?:NSR|net\s+smelter))"
+                         r"[^.\n]{0,30}?cut[- ]?off|cut[- ]?off[^.\n]{0,40}?(C\$|US\$|\$|A\$)\s*(\d{1,4}(?:\.\d{1,2})?)\s*/\s*t",
+                         t, re.I):
+        cur = m.group(1) or m.group(4) or "$"
+        val = m.group(2) or m.group(3) or m.group(5)
+        if val:
+            v.append((float(val), f"{cur}/t NSR"))
+    clean = []
+    for val, u in g:
+        u = {"gpt": "g/t", "g/t": "g/t", "%": "%", "ppm": "ppm", "oz/t": "oz/t"}.get(u, u)
+        if u == "%" and not (0.01 <= val <= 20):
+            continue
+        if u == "g/t" and not (0.05 <= val <= 20):
+            continue
+        if u == "ppm" and not (1 <= val <= 20000):
+            continue
+        if u == "oz/t" and not (0.001 <= val <= 1):
+            continue
+        clean.append((val, u))
+    if clean:
+        unit = Counter(u for _v, u in clean).most_common(1)[0][0]
+        return sorted(val for val, u in clean if u == unit)[0], unit
+    if v:
+        unit = Counter(u for _v, u in v).most_common(1)[0][0]
+        return sorted(val for val, u in v if u == unit)[0], unit
+    return None, None
 
 
 def _page_element(t):
@@ -1036,9 +1081,43 @@ def headline_resource(rows):
         t = sum(r["tonnes"] for r in uniq); c = sum(r["contained"] for r in uniq)
         cats = {"Total": {"tonnes": t, "grade": round(c / t * (31.1034768 if cunit == "oz" else 100 / 2204.62262 if cunit == "lb" else 100), 3) if t else None, "contained": c}}
         tot = {"tonnes": t, "contained": c, "mi_tonnes": None, "mi_contained": None, "inf_tonnes": None, "inf_contained": None}
+    if not _cats_consistent(cats, tot):
+        return None                      # a mis-read table (M+I ≠ M + I) is worse than none
     els = Counter(r.get("el") for r in rs if r.get("el"))
+    cog = next((r.get("cutoff") for r in rs if r.get("cutoff") is not None), None)
+    cogu = next((r.get("cutoff_unit") for r in rs if r.get("cutoff") is not None), None)
     return {"page": page, "contained_unit": cunit, "categories": cats, "year": rs[0].get("year"),
+            "cutoff": cog, "cutoff_unit": cogu,
             "element": els.most_common(1)[0][0] if els else None, **tot}
+
+
+
+def _cats_consistent(cats, tot):
+    """Reject a statement whose own rows disagree: M+I must be about M plus I, and no
+    category may exceed the total. Column drift in a PDF table produces rows like
+    "Indicated 102 Mt / M+I 60 kt", which are worse than publishing nothing."""
+    def t(k):
+        v = (cats or {}).get(k) or {}
+        return float(v.get("tonnes") or 0)
+    m, i, mi = t("Measured"), t("Indicated"), t("M+I")
+    if mi and (m or i):
+        s = m + i
+        if s and not (0.75 * s <= mi <= 1.25 * s):
+            return False
+    total = float((tot or {}).get("tonnes") or 0)
+    if total:
+        for k in ("Measured", "Indicated", "M+I", "Inferred"):
+            if t(k) > total * 1.25:
+                return False
+    for k, v in (cats or {}).items():
+        g, c, tn = v.get("grade"), v.get("contained"), v.get("tonnes")
+        if g and c and tn:                # tonnes x grade should land near contained
+            for f in (31.1034768, 100.0, 2204.62262 / 100.0):
+                if 0.5 <= (tn * g / f) / c <= 2.0:
+                    break
+            else:
+                return False
+    return True
 
 
 def _sum_cats(rs):
@@ -1227,6 +1306,36 @@ _TP_BAD = re.compile(r"^(the|a|an|this|mineral|technical|report|updated?|amended
                      r"mining associates|red pine|mercator geological|watts|minefill)\b", re.I)
 
 
+
+_CO_SUFFIX = (r"(?:Inc\.?|Incorporated|Corp\.?|Corporation|Ltd\.?|Limited|LLC|PLC|plc|"
+              r"Resources|Resource\s+Corp|Mining|Mines|Minerals|Metals|Gold|Silver|Copper|"
+              r"Exploration|Explorations|Ventures|Holdings|Energy|Lithium|Graphite|Uranium)")
+_CO_PREP = re.compile(r"(?:prepared\s+for|report\s+prepared\s+for|prepared\s+on\s+behalf\s+of|"
+                      r"submitted\s+to|client)\s*:?\s*\n?\s*([A-Z][\w'’.,&\- ]{2,60}?\s+" + _CO_SUFFIX + r")",
+                      re.I)
+_CO_ANY = re.compile(r"\b([A-Z][\w'’.&\-]*(?:\s+[A-Z][\w'’.&\-]*){0,4}\s+" + _CO_SUFFIX + r")\b")
+_CO_BAD = re.compile(r"^(?:the|this|a|an|technical|report|mineral|ni\s*43-101|qualified|"
+                     r"srk|slr|amc|wsp|micon|ausenco|rpa|agp|p ?& ?e|moose mountain|hatch|wood|golder|"
+                     r"stantec|bba|gms|kappes|lycopodium|mining plus|erm|goldspot|innovexplo|nordmin|"
+                     r"snowden|optiro|entech|dra|fluor|jds|cube|tetra ?tech|sgs|m3|global resource)\b", re.I)
+
+
+def title_company(pages_text):
+    """The issuer a technical report was prepared for — SEDAR ledgers often leave
+    the company blank, but the cover page always names it ("Prepared for ...")."""
+    blob = re.sub(r"[ \t]+", " ", "\n".join(pages_text[:4]))
+    for m in _CO_PREP.finditer(blob):
+        nm = re.sub(r"\s+", " ", m.group(1)).strip(" ,.-")
+        if 4 <= len(nm) <= 60 and not _CO_BAD.match(nm):
+            return nm
+    cnt = Counter()
+    for m in _CO_ANY.finditer(blob[:4000]):
+        nm = re.sub(r"\s+", " ", m.group(1)).strip(" ,.-")
+        if 4 <= len(nm) <= 60 and not _CO_BAD.match(nm):
+            cnt[nm] += 1
+    return cnt.most_common(1)[0][0] if cnt else None
+
+
 def title_project(pages_text):
     """Project name from the report cover / first pages ("Technical Report on the
     X Project"), which the SEDAR ledgers rarely carry."""
@@ -1293,6 +1402,7 @@ def extract_report(pdf_path, meta=None):
     out = {
         **meta,
         "title_project": title_project(pages_text),
+        "cover_company": title_company(pages_text),
         "extractor": EXTRACTOR,
         "extracted": datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z",
         "pages": len(doc),
