@@ -23,6 +23,7 @@ The model page is a self-contained three.js viewer (``model3d_viewer.html``).
 Grades are for visualisation, not a mineral resource estimate.
 """
 import os
+import sys
 import re
 import io
 import json
@@ -792,6 +793,16 @@ def build_all(site_dir="site", only=None, verbose=True):
             if f.endswith((".html", ".svg")) and f not in built and not f.startswith("_"):
                 os.remove(os.path.join(out_dir, f))      # stale model pages (keep _shell.html)
     _write_gallery(cards, os.path.join(site_dir, "models.html"))
+    # the landing page shows one real model; keep it in step with the build
+    hero = os.environ.get("MMP_HERO_SLUG", "murray-brook")
+    if not only and hero and os.path.exists(os.path.join(out_dir, hero + ".html")):
+        try:
+            sys.path.insert(0, os.path.join(_ROOT, "scripts"))
+            import hero_model
+            hero_model.build(hero, site_dir)
+        except Exception as ex:
+            if verbose:
+                print(f"[model3d] hero: {str(ex)[:120]}")
     by_release = {}
     for e in index:
         for u in e.get("releases") or []:

@@ -575,6 +575,8 @@ def regional_table():
 # sign-in page itself, and the auth endpoints. Everything else — the gallery, the
 # model viewers, the model JSON — needs a session, unless PUBLIC_GALLERY is on.
 _OPEN_EXACT = {"/", "/index.html", "/favicon.ico", "/robots.txt",
+               # the landing page shows one real model, built from public filings
+               "/hero.json", "/hero.js", "/models/three.min.js",
                "/app/", "/app/index.html", "/app/app.js", "/app/app.css", "/app/config.js"}
 _OPEN_PREFIX = ("/api/auth/", "/api/health", "/assets/", "/static/", "/.well-known/")
 _GALLERY_PREFIX = ("/models", "/models/")

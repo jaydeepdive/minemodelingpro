@@ -45,7 +45,12 @@ h1{font-size:44px;line-height:1.12;margin:12px 0 0}
 .shot{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--deep);box-shadow:0 18px 44px rgba(17,20,24,.14)}
 .shot .bar{height:30px;background:#1e232a;display:flex;align-items:center;gap:6px;padding:0 11px}
 .shot .bar i{width:9px;height:9px;border-radius:50%;background:#394049;display:block}
-.shot canvas{display:block;width:100%;height:280px}
+.shot #hero3d{display:block;width:100%;height:330px;cursor:grab;touch-action:none}
+.shot #hero3d:active{cursor:grabbing}
+.shot #hero3d canvas{display:block;width:100%;height:100%}
+.bar .barlbl{margin-left:8px;color:#8a94a0;font-size:11px;letter-spacing:.04em}
+.cap{margin:10px 2px 0;font-size:12px;color:var(--mut);line-height:1.5}
+.cap b{color:var(--ink)}
 
 /* numbers */
 .nums{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-bottom:1px solid var(--line)}
@@ -121,9 +126,12 @@ footer.site{border-top:1px solid var(--line);color:var(--mut);font-size:13px;pad
       <a class="btn ghost" href="app/index.html">Sign in</a>
     </div>
   </div>
-  <div class="shot">
-    <div class="bar"><i></i><i></i><i></i></div>
-    <canvas id="demo" width="640" height="280"></canvas>
+  <div>
+    <div class="shot">
+      <div class="bar"><i></i><i></i><i></i><span class="barlbl">a live MineModelingPro model</span></div>
+      <div id="hero3d"></div>
+    </div>
+    <p class="cap" id="herocap">Loading a model…</p>
   </div>
 </div></div>
 
@@ -227,51 +235,8 @@ fetch("/api/stats").then(r => r.json()).then(d => {
   n("n-updated", d.generated || "—");
 }).catch(() => {});
 
-/* a small, honest stand-in for the viewer: drill traces coloured by grade */
-(function () {
-  const c = document.getElementById("demo"); if (!c) return;
-  const x = c.getContext("2d"), W = c.width, H = c.height;
-  const cols = ["#2b6cb0", "#38a169", "#d69e2e", "#dd6b20", "#D71920"];
-  let t = 0;
-  const holes = [];
-  for (let i = 0; i < 26; i++) {
-    const u = (i % 7) / 6 - .5, v = Math.floor(i / 7) / 3 - .5;
-    holes.push({ u, v, seg: Array.from({ length: 11 }, (_, k) => Math.max(0, Math.min(4,
-      Math.round(4 * Math.exp(-Math.pow((k - (5 + 3 * u)) / 2.1, 2)) - 0.35 + Math.random() * .4))) ) });
-  }
-  function draw() {
-    t += 0.0045;
-    x.fillStyle = "#15181d"; x.fillRect(0, 0, W, H);
-    const cx = W / 2, cy = H / 2 - 6, s = Math.min(W, H) * 0.95;
-    const ca = Math.cos(t), sa = Math.sin(t);
-    // ground plane
-    x.strokeStyle = "rgba(255,255,255,.08)"; x.lineWidth = 1;
-    for (let g = -3; g <= 3; g++) {
-      const a = [-3, g], b = [3, g], c2 = [g, -3], d2 = [g, 3];
-      line(a, b); line(c2, d2);
-    }
-    function proj(u, v, w) {
-      const X = u * ca - v * sa, Y = u * sa + v * ca;
-      return [cx + X * s * 0.78, cy + Y * s * 0.34 + w * s * 0.30];
-    }
-    function line(a, b) {
-      const p = proj(a[0] * .22, a[1] * .22, 0.95), q = proj(b[0] * .22, b[1] * .22, 0.95);
-      x.beginPath(); x.moveTo(p[0], p[1]); x.lineTo(q[0], q[1]); x.stroke();
-    }
-    for (const h of holes) {
-      for (let k = 0; k < h.seg.length; k++) {
-        const w0 = -0.9 + k * 0.17, w1 = w0 + 0.17;
-        const p = proj(h.u + k * 0.012, h.v + k * 0.012, w0), q = proj(h.u + (k + 1) * 0.012, h.v + (k + 1) * 0.012, w1);
-        const g = h.seg[k];
-        x.strokeStyle = g ? cols[g] : "rgba(255,255,255,.22)";
-        x.lineWidth = g ? 4.2 : 1.8;
-        x.beginPath(); x.moveTo(p[0], p[1]); x.lineTo(q[0], q[1]); x.stroke();
-      }
-    }
-    requestAnimationFrame(draw);
-  }
-  draw();
-})();
 </script>
+<script src="models/three.min.js" defer></script>
+<script src="hero.js" defer></script>
 </body>
 </html>
