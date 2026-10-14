@@ -16,16 +16,14 @@
 <body>
 <div id="boot">Loading the model…</div>
 <script type="module">
-import { sb, requireUser, getProject, modelUrl, publicModelUrl } from "./app.js";
+import { requireUser, getProject, modelUrl } from "./app.js";
 const q = new URLSearchParams(location.search);
 const id = q.get("id"), pub = q.get("public");
 const boot = document.getElementById("boot");
 try {
   let url, project;
   if (pub) {                                   // a shared model, no sign-in needed
-    const { data } = await sb.from("projects").select("*").eq("id", pub).eq("is_public", true).single();
-    if (!data) throw new Error("That shared model is not available.");
-    project = data; url = publicModelUrl(data);
+    url = "/api/public/model/" + encodeURIComponent(pub);
   } else {
     const user = await requireUser(); if (!user) throw new Error("redirecting");
     project = await getProject(id);

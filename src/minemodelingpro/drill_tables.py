@@ -38,7 +38,7 @@ from minemodelingpro import holeid
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 OUT_DIR = os.path.join(_ROOT, "data", "keep", "mmp_reports")
-EXTRACTOR = "dt15"
+EXTRACTOR = "dt16"
 
 # ------------------------------------------------------------------ elements
 _EL = {"au": "Au", "gold": "Au", "ag": "Ag", "silver": "Ag", "cu": "Cu", "copper": "Cu",
@@ -1062,12 +1062,36 @@ def _sum_cats(rs):
 # -------------------------------------------------------- block model params
 _BLOCK3 = re.compile(r"(\d{1,3}(?:\.\d+)?)\s*(?:m\s*)?[x×X*]\s*(\d{1,3}(?:\.\d+)?)\s*(?:m\s*)?[x×X*]\s*(\d{1,3}(?:\.\d+)?)\s*(m|metres|meters|ft|feet)?\b")
 _BLOCKCTX = re.compile(r"block\s*(?:model\s*)?(?:size|dimension)|parent\s*block|block\s*model|block\s*size|blocks?\s*(?:of|measuring)|cell\s*size|SMU|selective\s*mining\s*unit", re.I)
-_DENS = re.compile(r"(?:bulk\s*)?(?:density|specific\s*gravity|\bSG\b|tonnage\s*factor)[^.\n]{0,60}?(\d\.\d{1,3})\s*(?:t/m3|t/m³|g/cm3|g/cm³|g/cc|tonnes?/m)?", re.I)
+_DENS = re.compile(r"(?:bulk\s*)?(?:density|specific\s*gravity|\bSG\b|tonnage\s*factor)[^.\n]{0,60}?"
+                   r"(?<![\d.])(\d\.\d{1,3})(?!\d)\s*(?:t/m3|t/m³|g/cm3|g/cm³|g/cc|tonnes?/m)?", re.I)
 
 
-def extract_block_params(pages_text):
-    votes = Counter()
-    dens = Counter()
+# ------------------------------------------------- modelling parameters
+# A technical report publishes the estimation recipe it used. We lift the parts
+# the MMP modeller can honour, so a project's starting parameters are the ones
+# its most recent report actually used (and are then adjustable per project).
+_COMP = re.compile(r"(?:composite[sd]?|compositing|composit\w*)[^.\n]{0,80}?(\d{1,2}(?:\.\d+)?)\s*(m|metre|meter|ft|foot|feet)\b"
+                   r"|(\d{1,2}(?:\.\d+)?)\s*(m|metre|meter|ft|foot|feet)\s*(?:down[- ]?hole\s*)?composite", re.I)
+_SEARCH = re.compile(r"(?:search\s*(?:ellipse|ellipsoid|radius|radii|range|distance|neighbourhood|neighborhood)|"
+                     r"first\s*(?:search\s*)?pass|range\s*of\s*influence)[^.\n]{0,120}", re.I)
+_CAP = re.compile(r"(?:cap(?:ped|ping)?|top[- ]?cut|grade\s*cap)[^.\n]{0,90}?(\d{1,4}(?:\.\d+)?)\s*(g/t|gpt|g\s*/\s*t|%|ppm)", re.I)
+_COG = re.compile(r"cut[- ]?off\s*(?:grade)?[^.\n]{0,60}?(\d{1,3}(?:\.\d+)?)\s*(g/t|gpt|%|ppm|\$)", re.I)
+_METH = (("idw", 3, r"inverse\s*distance\s*(?:cub|to\s*the\s*(?:third|3rd)\s*power)|\bID3\b|IDW3|inverse\s*distance\s*weighting\s*cub"),
+         ("idw", 2, r"inverse\s*distance\s*(?:squar|to\s*the\s*(?:second|2nd)\s*power)|\bID2\b|IDW2|inverse\s*distance\s*square"),
+         ("idw", 2, r"ordinary\s*kriging|\bOK\b\s*(?:estimat|interpolat)|kriged|kriging"),
+         ("nn", None, r"nearest\s*neighbour|nearest\s*neighbor|\bNN\b\s*estimat"),
+         ("idw", None, r"inverse\s*distance"))
+
+
+def _ft(v, unit):
+    return v * 0.3048 if (unit or "").lower().startswith(("ft", "foot", "feet")) else v
+
+
+def extract_model_params(pages_text):
+    """The estimation parameters the report states: parent block size, density,
+    composite length, search radius, grade cap, reporting cut-off, estimator."""
+    votes = Counter(); dens = Counter(); comp = Counter(); rad = []
+    caps = []; cogs = []; meth = Counter()
     for t in pages_text:
         for m in _BLOCKCTX.finditer(t):
             win = t[m.start(): m.start() + 260]
@@ -1082,11 +1106,108 @@ def extract_block_params(pages_text):
                 votes[(round(x, 2), round(y, 2), round(z, 2))] += w
         for m in _DENS.finditer(t):
             v = float(m.group(1))
-            if 2.0 <= v <= 5.0:
-                dens[round(v, 2)] += 1
-    block = list(votes.most_common(1)[0][0]) if votes else None
-    density = dens.most_common(1)[0][0] if dens else None
-    return block, density
+            if not 2.0 <= v <= 5.0:
+                continue
+            seg = m.group(0)
+            if re.search(r"var(y|ies|ied)|rang(e|ed|es|ing)|between|minimum|maximum", seg, re.I):
+                continue                      # "varied from 2.04 to 6.86" is a range
+            win = seg + t[m.end(): m.end() + 60]
+            w = 3 if re.search(r"applied|assigned|used|average|block[- ]model|assumed", win, re.I) else 1
+            dens[round(v, 2)] += w
+        for m in _COMP.finditer(t):
+            v = _ft(float(m.group(1) or m.group(3)), m.group(2) or m.group(4))
+            if 0.25 <= v <= 20:
+                comp[round(v, 2)] += 1
+        for m in _SEARCH.finditer(t):
+            win = m.group(0)
+            b = _BLOCK3.search(win)
+            vals = []
+            if b:
+                vals = [_ft(float(b.group(i)), b.group(4)) for i in (1, 2)]
+            else:
+                vals = [_ft(float(a), u) for a, u in
+                        re.findall(r"(\d{2,4}(?:\.\d+)?)\s*(m|metres|meters|ft|feet)\b", win, re.I)]
+            for v in vals:
+                if 20 <= v <= 400:
+                    rad.append(v)
+        for m in _CAP.finditer(t):
+            v, u = float(m.group(1)), m.group(2).lower()
+            if u.startswith("%") and 0.05 <= v <= 40:
+                caps.append(v)
+            elif u.startswith("ppm") and 0.1 <= v <= 5000:
+                caps.append(v)
+            elif 0.5 <= v <= 200:
+                caps.append(v)
+        for m in _COG.finditer(t):
+            v, u = float(m.group(1)), m.group(2).lower()
+            if u == "$":
+                continue
+            if 0.01 <= v <= 20:
+                cogs.append(v)
+        for name, pw, rx in _METH:
+            n = len(re.findall(rx, t, re.I))
+            if n:
+                meth[(name, pw)] += n
+                break
+    out = {}
+    if votes:
+        out["block"] = list(votes.most_common(1)[0][0])
+    if dens:
+        firm = Counter({v: n for v, n in dens.items() if v >= 2.3})
+        out["density"] = (firm or dens).most_common(1)[0][0]
+    if comp:
+        out["composite_m"] = comp.most_common(1)[0][0]
+    if rad:
+        rad.sort()
+        out["radius_m"] = round(rad[len(rad) // 2], 1)       # median stated range
+    if caps:
+        out["top_cut"] = round(max(caps), 2)                 # least aggressive stated cap
+    cogs = [v for v in cogs if 0.05 <= v <= 15 and
+            not (out.get("density") and abs(v - out["density"]) < 0.02)]
+    if cogs:
+        cogs.sort()
+        out["default_cutoff"] = round(cogs[len(cogs) // 2], 3)   # median stated cut-off
+    if meth:
+        (name, pw), _n = meth.most_common(1)[0]
+        out["method"] = name
+        if pw:
+            out["power"] = float(pw)
+    return out
+
+
+def extract_block_params(pages_text):
+    """Back-compatible shim: (block, density)."""
+    P = extract_model_params(pages_text)
+    return P.get("block"), P.get("density")
+
+
+_MONTHS = ("january february march april may june july august september october "
+           "november december").split()
+_EFF = re.compile(r"effective\s*(?:date|as\s*of)?[^.\n]{0,40}?"
+                  r"(?:(\d{1,2})\s+)?(" + "|".join(_MONTHS) + r"|" +
+                  "|".join(m[:3] for m in _MONTHS) + r")\.?,?\s*(?:(\d{1,2})\s*,?\s*)?((?:19|20)\d\d)", re.I)
+_EFF_ISO = re.compile(r"effective\s*date[^.\n]{0,40}?((?:19|20)\d\d)-(\d{2})-(\d{2})", re.I)
+
+
+def effective_date(pages_text):
+    """The report's stated effective date (latest one stated), as YYYY-MM-DD."""
+    found = []
+    for t in pages_text[:80]:
+        for m in _EFF_ISO.finditer(t):
+            found.append("%s-%s-%s" % m.groups())
+        for m in _EFF.finditer(t):
+            d1, mon, d2, yr = m.groups()
+            mon = mon.lower()[:3]
+            try:
+                mi = [x[:3] for x in _MONTHS].index(mon) + 1
+            except ValueError:
+                continue
+            day = int(d1 or d2 or 1)
+            if not 1 <= day <= 31:
+                day = 1
+            found.append("%04d-%02d-%02d" % (int(yr), mi, day))
+    found = [d for d in found if "1990-01-01" <= d <= "2035-12-31"]
+    return max(found) if found else None
 
 
 # ---------------------------------------------------------- report identity
@@ -1160,7 +1281,9 @@ def extract_report(pdf_path, meta=None):
                                         trust_jurisdiction=str(meta.get("id", "")).startswith("ni43101:"))
     res_rows = extract_resources(doc, pages_text)
     head = headline_resource(res_rows)
-    block, density = extract_block_params(pages_text)
+    mp = extract_model_params(pages_text)
+    block, density = mp.get("block"), mp.get("density")
+    eff = effective_date(pages_text)
     # link collars <-> intervals via normalised hole ids
     ckeys = {holeid.key(c["hole"]) for c in collars}
     ikeys = {holeid.key(r["hole"]) for r in intervals}
@@ -1175,6 +1298,7 @@ def extract_report(pdf_path, meta=None):
         "pages": len(doc),
         "crs": crs, "center": center or tcenter, "text_center": tcenter,
         "block_size": block, "density": density,
+        "model_params": mp or None, "effective_date": eff,
         "resource": head, "resource_rows": res_rows[:80],
         "counts": {"collars": len(collars), "intervals": len(intervals), "surveyed_holes": len({x["hole"] for x in surveys}),
                    "holes_with_intervals": len(ikeys), "linked": len(ckeys & ikeys)},

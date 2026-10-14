@@ -70,15 +70,38 @@ def save(data, path=PATH):
     return path
 
 
-def for_project(slug, path=PATH, extra=None):
-    """Merged parameters for one project: file defaults < file entry < `extra`
-    (e.g. settings carried on an imported dataset)."""
+ORIGINS = ("auto", "defaults", "project", "dataset")
+
+
+def layered(slug, path=PATH, extra=None, base=None):
+    """Merged parameters and where each one came from.
+
+    Precedence, lowest first:
+      ``base``   - derived automatically (the project's most recent technical
+                   report, else what is typical for its region + commodity)
+      defaults   - the ``_defaults`` entry in mmp_model_params.json
+      project    - the per-slug entry in that file
+      ``extra``  - settings carried on the dataset / sent by the web app
+
+    Returns ``(merged, origin)`` where ``origin[key]`` is one of ORIGINS. Anything
+    not tagged "auto" is a human choice, which is what the model page reports.
+    """
     data = load(path)
-    out = copy.deepcopy(data.get("_defaults") or {})
-    out.update(copy.deepcopy(data.get(slug) or {}))
-    if extra:
-        out.update({k: v for k, v in extra.items() if v is not None})
-    return validate(out)[0]
+    out, origin = {}, {}
+    for src, layer in (("auto", base), ("defaults", data.get("_defaults")),
+                       ("project", data.get(slug)), ("dataset", extra)):
+        for k, v in copy.deepcopy(layer or {}).items():
+            if v is None:
+                continue
+            out[k] = v
+            origin[k] = src
+    clean = validate(out)[0]
+    return clean, {k: origin.get(k) for k in clean}
+
+
+def for_project(slug, path=PATH, extra=None, base=None):
+    """Merged parameters for one project (see `layered`)."""
+    return layered(slug, path=path, extra=extra, base=base)[0]
 
 
 def set_for(slug, values, path=PATH):

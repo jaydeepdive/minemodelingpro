@@ -40,7 +40,7 @@
 </div>
 <footer class="site"><b>MineModelingPro Studio</b> — your uploads and models are private to your account. Grades are inverse-distance estimates for visualisation, not a mineral resource estimate.</footer>
 <script type="module">
-import { sb, chrome, requireUser, listProjects, createProject, statusChip, $, esc, fmt, fmtC, banner } from "./app.js";
+import { chrome, requireUser, listProjects, createProject, statusChip, $, esc, fmt, fmtC, banner } from "./app.js";
 await chrome("dashboard");
 const user = await requireUser(); if (!user) throw new Error("redirecting");
 

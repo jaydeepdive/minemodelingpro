@@ -1,0 +1,245 @@
+{
+ "commodity": {
+  "Ag": {
+   "block": [
+    5.0,
+    5.0,
+    5.0
+   ],
+   "density": 2.69,
+   "n": 10
+  },
+  "Au": {
+   "block": [
+    5.0,
+    5.0,
+    5.0
+   ],
+   "density": 2.7,
+   "n": 69
+  },
+  "Cu": {
+   "block": [
+    15.0,
+    15.0,
+    15.0
+   ],
+   "density": 2.71,
+   "n": 18
+  },
+  "Li2O": {
+   "block": [
+    1.0,
+    5.0,
+    3.0
+   ],
+   "n": 3
+  },
+  "Ni": {
+   "block": [
+    20.0,
+    20.0,
+    15.0
+   ],
+   "density": 3.2,
+   "n": 6
+  }
+ },
+ "global": {
+  "": {
+   "block": [
+    6.0,
+    5.0,
+    5.0
+   ],
+   "density": 2.7,
+   "n": 179
+  }
+ },
+ "region": {
+  "Arizona": {
+   "block": [
+    6.0,
+    6.0,
+    6.0
+   ],
+   "density": 2.86,
+   "n": 5
+  },
+  "Brazil": {
+   "density": 2.77,
+   "n": 4
+  },
+  "British Columbia": {
+   "block": [
+    15.0,
+    15.0,
+    10.0
+   ],
+   "density": 2.65,
+   "n": 5
+  },
+  "Mexico": {
+   "block": [
+    5.0,
+    5.0,
+    5.0
+   ],
+   "density": 2.6,
+   "n": 7
+  },
+  "Nevada": {
+   "block": [
+    6.0,
+    6.0,
+    6.0
+   ],
+   "density": 2.62,
+   "n": 10
+  },
+  "New Brunswick": {
+   "block": [
+    5.0,
+    5.0,
+    5.0
+   ],
+   "density": 2.69,
+   "n": 4
+  },
+  "Ontario": {
+   "block": [
+    10.0,
+    10.0,
+    6.0
+   ],
+   "density": 2.73,
+   "n": 15
+  },
+  "Qu\u00e9bec": {
+   "block": [
+    10.0,
+    5.0,
+    5.0
+   ],
+   "density": 2.8,
+   "n": 13
+  },
+  "Saskatchewan": {
+   "block": [
+    4.0,
+    4.0,
+    4.0
+   ],
+   "density": 2.67,
+   "n": 4
+  },
+  "Yukon": {
+   "block": [
+    5.0,
+    5.0,
+    5.0
+   ],
+   "density": 2.48,
+   "n": 5
+  }
+ },
+ "region+commodity": {
+  "British Columbia|Cu": {
+   "block": [
+    15.0,
+    15.0,
+    15.0
+   ],
+   "n": 2
+  },
+  "Colombia|Au": {
+   "block": [
+    10.0,
+    5.0,
+    8.0
+   ],
+   "n": 2
+  },
+  "Ghana|Au": {
+   "block": [
+    5.0,
+    5.0,
+    4.0
+   ],
+   "n": 2
+  },
+  "Mexico|Au": {
+   "block": [
+    8.0,
+    8.0,
+    5.0
+   ],
+   "n": 2
+  },
+  "Nevada|Au": {
+   "block": [
+    6.0,
+    6.0,
+    6.0
+   ],
+   "n": 6
+  },
+  "New Brunswick|Ag": {
+   "block": [
+    5.0,
+    5.0,
+    5.0
+   ],
+   "n": 2
+  },
+  "Nova Scotia|Au": {
+   "block": [
+    2.0,
+    2.0,
+    2.0
+   ],
+   "n": 2
+  },
+  "Ontario|Au": {
+   "block": [
+    10.0,
+    10.0,
+    6.0
+   ],
+   "n": 5
+  },
+  "Ontario|Ni": {
+   "block": [
+    20.0,
+    20.0,
+    15.0
+   ],
+   "n": 4
+  },
+  "Qu\u00e9bec|Au": {
+   "block": [
+    7.5,
+    5.0,
+    5.0
+   ],
+   "density": 2.8,
+   "n": 7
+  },
+  "South Africa|Li2O": {
+   "block": [
+    1.0,
+    5.0,
+    3.0
+   ],
+   "n": 2
+  },
+  "Yukon|Au": {
+   "block": [
+    5.0,
+    5.0,
+    5.0
+   ],
+   "n": 4
+  }
+ }
+}

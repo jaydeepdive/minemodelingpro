@@ -36,6 +36,7 @@ import numpy as np
 from minemodelingpro import projects as P
 from minemodelingpro import holeid
 from minemodelingpro import params as PARAMS
+from minemodelingpro import regional as REG
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(os.path.dirname(_HERE))
@@ -269,27 +270,38 @@ def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None)
 
 
 # ---------------------------------------------------------------- build model
-_REPORT_BLOCKS = None
+def _primary_commodity(ds):
+    c = [x for x in (ds.get("commodities") or []) if x]
+    return Counter(c).most_common(1)[0][0] if c else None
 
 
-def _median_blocks():
-    """Median 43-101 parent block size by commodity, from every extracted report."""
-    global _REPORT_BLOCKS
-    if _REPORT_BLOCKS is not None:
-        return _REPORT_BLOCKS
-    by = defaultdict(list)
-    for r in P.load_reports():
-        b = r.get("block_size")
-        el = (r.get("commodity") or "").split("-")[0]
-        if b and el and all(2 <= v <= 30 for v in b):
-            by[el].append(b)
-    out = {}
-    for el, bl in by.items():
-        if len(bl) >= 3:
-            a = np.median(np.asarray(bl, float), 0)
-            out[el] = [float(_snap(v)) for v in a]
-    _REPORT_BLOCKS = out
-    return out
+def auto_params(ds):
+    """Where a project's parameters start before anyone adjusts them.
+
+    1. the project's **most recent technical report** — its parent block size,
+       density, composite length, search range, grade cap, reporting cut-off
+       (``projects._report_params`` picks these newest-first);
+    2. failing that, what is **typical for the region and commodity**, measured
+       across the whole 43-101 corpus (``minemodelingpro.regional``).
+
+    Returns ``(params, sources)``; `sources` labels each key for the model page.
+    """
+    out, src = {}, {}
+    rp = dict(ds.get("report_params") or {})
+    rfrom = ds.get("report_params_from") or {}
+    for k, v in rp.items():
+        if v is None:
+            continue
+        out[k] = v
+        d = (rfrom.get(k) or {}).get("date") or ""
+        src[k] = "technical report" + (f" ({d[:4]})" if len(d) >= 4 else "")
+    el = _primary_commodity(ds)
+    tp, label = REG.typical(ds.get("region"), el)
+    for k in ("block", "density"):            # geometry/material norms only:
+        if k in tp and k not in out:          # radius and composites follow the
+            out[k] = tp[k]                    # project's own measured spacing
+            src[k] = label
+    return PARAMS.validate(out)[0], src
 
 
 def _snap(v):
@@ -301,7 +313,9 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
     """Build one project model. `settings` (or data/keep/mmp_model_params.json via
     the project slug, or ds["params"] from an imported dataset) overrides any of
     the data-driven defaults — see minemodelingpro.params."""
-    PS = PARAMS.for_project(ds.get("slug"), extra={**(ds.get("params") or {}), **(settings or {})})
+    base, base_src = auto_params(ds)
+    PS, PORIGIN = PARAMS.layered(ds.get("slug"), base=base,
+                                 extra={**(ds.get("params") or {}), **(settings or {})})
     max_elements = int(PS.get("max_elements") or max_elements)
     fr = ds["frame"]
     holes = [h for h in ds["holes"].values() if h.get("_ok")]
@@ -403,8 +417,6 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
 
     # --- per element: segments, composites, blocks, GT curve
     elements = {}
-    report_block = ds.get("report_block")
-    med_blocks = _median_blocks()
     for el in els:
         unit = units.get(el) or "g/t"
         per_hole = defaultdict(list)
@@ -412,9 +424,8 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
             per_hole[key2i[x["key"]]].append(x)
         segs_out = []          # [hole_idx, from, to, grade]
         comp_p, comp_g, comp_h = [], [], []
-        # block size: project settings, else the report's parent block, else the
-        # median 43-101 block for the commodity
-        blk = PS.get("block") or report_block or med_blocks.get(el) or DEFAULT_BLOCK.get(el) or [10, 10, 5]
+        # block size: whoever set it (see auto_params for where it starts)
+        blk = PS.get("block") or DEFAULT_BLOCK.get(el) or [10, 10, 5]
         blk = [float(v) for v in blk]
         clen = float(PS.get("composite_m") or max(1.0, min(blk[2], 5.0)))
         cent = []
@@ -476,12 +487,14 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
             lo, bsz, ijk, gr, params = estimate_blocks(pts, g, hid, blk, spacing, opts=PS)
             params["top_cut"] = round(top, 3)
             params["composite_m"] = clen
-            params["block_source"] = ("project settings" if PS.get("block") else
-                                      "technical report" if report_block else
-                                      "median 43-101 block for " + el if med_blocks.get(el) else "default")
+            params["block_source"] = (base_src.get("block") if PORIGIN.get("block") == "auto"
+                                      else "project settings" if PS.get("block")
+                                      else "default for " + el)
             params["gap_fill"] = PS.get("gap_fill") is not False
-            params["custom"] = sorted(k for k in PS if k in PARAMS.ALL)
-            dens = PS.get("density") or ds.get("report_density")
+            params["custom"] = sorted(k for k in PS if k in PARAMS.ALL
+                                      and PORIGIN.get(k) != "auto")
+            params["auto"] = {k: v for k, v in base_src.items() if PORIGIN.get(k) == "auto"}
+            dens = PS.get("density")
             if not dens or not (1.0 <= dens <= 8.0):
                 dens = DENSITY.get(el, 2.7)
             bt = bsz[0] * bsz[1] * bsz[2] * dens
@@ -553,6 +566,8 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                   "grid": fr.get("grid")},
         "holes": hole_rows, "elements": elements, "primary": primary,
         "settings": {k: v for k, v in PS.items() if k in PARAMS.ALL},
+        "param_sources": {k: (base_src.get(k) if o == "auto" else o)
+                          for k, o in PORIGIN.items() if k in PARAMS.ALL},
         "terrain": terr, "sources": ds["sources"], "resources": ds.get("resources") or [],
         "counts": {"holes": len(H), "assayed_holes": len({s[0] for e in elements.values() for s in e["segments"]}),
                    "intervals": sum(len(e["segments"]) for e in elements.values()),

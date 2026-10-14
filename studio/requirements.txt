@@ -1,4 +1,18 @@
-# MMP Studio worker — on top of the repo's requirements.txt
-supabase>=2.4          # Supabase client (auth-free service-role access)
-# Access (.mdb/.accdb) imports additionally need the mdbtools binaries:
-#   macOS: brew install mdbtools      Debian/Ubuntu: apt-get install mdbtools
+# MMP Studio — the web service and the modelling worker (studio/server.py, studio/worker.py).
+# The PDF/SEDAR extraction stack (pymupdf, camelot, playwright) is NOT needed here:
+# that runs in GitHub Actions. Keep this list small so the image builds quickly.
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+psycopg[binary]>=3.2
+psycopg_pool>=3.2
+boto3>=1.34
+numpy>=1.26
+scipy>=1.11
+pandas>=2.1
+openpyxl>=3.1
+xlrd>=2.0
+pyproj>=3.6
+shapely>=2.0
+requests>=2.31
+# Access (.mdb/.accdb) imports also need the mdbtools binaries (in the Dockerfile).

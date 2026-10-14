@@ -1,10 +1,8 @@
 // MMP Studio — browser configuration.
-// These two values are PUBLIC by design (the anon key only ever acts as the
-// signed-in user, through the row-level-security policies in studio/schema.sql).
-// The service-role key must never appear here — it belongs to the worker only.
+// Studio talks to this site's own API with a session cookie, so there are no keys
+// here at all: the database and the object store are reachable only by the server.
 window.MMP_CONFIG = {
-  SUPABASE_URL: "",          // https://<project-ref>.supabase.co
-  SUPABASE_ANON_KEY: "",     // the "anon public" key from Supabase → Project Settings → API
+  API_BASE: "/api",
   SITE_NAME: "MineModelingPro Studio",
   MAX_FILE_MB: 200,
   // formats the importer understands

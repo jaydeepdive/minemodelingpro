@@ -4,59 +4,30 @@ Studio adds accounts, uploads and private projects to MineModelingPro. The publi
 gallery (43-101 + news models) is unchanged; Studio sits beside it at `/app/`.
 
 ```
-browser (site/app/*)  ──►  Supabase            ──►  worker (studio/worker.py)
-  sign in / upload          auth, Postgres,          parses the files, builds the
-  parameters, viewer        storage, job queue       model, writes it back
+browser (site/app/*)  ──►  studio/server.py  ──►  Postgres + Spaces
+  sign in / upload          FastAPI, session         accounts, projects,
+  parameters, viewer        cookie, no keys          jobs, files
+                                   │
+                                   ▼
+                            studio/worker.py — parses the files, builds the model
 ```
 
-* **Private by default.** Row-level security means a signed-in account can only read
-  its own projects, datasets and files. A model becomes public only when its owner
-  flips "Share this model publicly", and even then only the model is shared — never
-  the uploaded source files.
-* **Nothing sensitive in the browser.** The page uses the Supabase *anon* key, which
-  acts strictly as the signed-in user. The *service-role* key lives only on the worker.
+Everything runs on DigitalOcean, in one App Platform app inside its own DO project
+(**studio/DEPLOY-DO.md** is the setup and operations guide). There is no third-party
+auth service and no API key in the browser.
 
-## 1. Create the Supabase project (5 minutes)
+* **Invite-only.** MMP runs on a client basis: an admin issues an invite code, the
+  client signs up with it. There is no open sign-up.
+* **Private by default.** Every API call is authenticated and scoped to the signed-in
+  account; object keys are prefixed with the owner's id. A model becomes visible to
+  others only when its owner shares it — and only the *model* is shared, never the
+  uploaded source files.
+* **Nothing sensitive in the browser.** The page holds a session cookie and nothing
+  else. The database URL and the Spaces keys exist only in the app's environment.
 
-1. supabase.com → New project. Keep the database password somewhere safe.
-2. SQL Editor → paste `studio/schema.sql` → Run. It creates the tables, the
-   row-level-security policies, the three storage buckets and the sign-up trigger.
-3. Project Settings → API. Copy:
-   * **Project URL** and **anon public** key → into `site/app/config.js`
-   * **service_role** key → the worker's environment (never into the repo)
-4. Authentication → Providers → Email: leave "Confirm email" on for public sign-up.
-   Authentication → URL Configuration → Site URL:
-   `https://jaydeepdive.github.io/minemodelingpro/app/index.html`
+## What a client does
 
-Commit `site/app/config.js` with the first two values and the app is live on the
-existing GitHub Pages site — no server needed for the front end.
-
-## 2. Run the worker
-
-The worker is the only piece that needs Python. It can run anywhere that reaches
-Supabase — the Mac mini that already runs the SEDAR collector is the obvious home.
-
-```bash
-cd ~/minemodelingpro
-pip3 install -r requirements.txt supabase
-export SUPABASE_URL=https://<project-ref>.supabase.co
-export SUPABASE_SERVICE_KEY=<service-role key>
-PYTHONPATH=src python3 studio/worker.py          # --once for a single pass
-```
-
-Keep it running with launchd (`scripts/com.thedeepdive.mmpstudio.plist`):
-
-```bash
-cp scripts/com.thedeepdive.mmpstudio.plist ~/Library/LaunchAgents/
-# put the two environment values in the plist first, then:
-launchctl load ~/Library/LaunchAgents/com.thedeepdive.mmpstudio.plist
-```
-
-If the worker is down, uploads still succeed — jobs queue and run when it comes back.
-
-## 3. What a user does
-
-1. Sign up at `/app/`, create a project (optionally "built on top of" a public model,
+1. Sign in at `/app/`, create a project (optionally "built on top of" a public model,
    which merges their holes with the drilling MMP already has, by hole id).
 2. Drop in collars / assays / surveys — CSV, Excel, Access, or a zip. Pick the UTM
    zone or EPSG code (or say it's a local grid).
@@ -65,8 +36,24 @@ If the worker is down, uploads still succeed — jobs queue and run when it come
    contained metal, and opens the full 3D viewer.
 4. Parameters (block size, search radius, composite length, estimator, top-cut,
    density, cut-off, elements …) are editable per project; saving rebuilds.
-5. "Share this model publicly" copies the model — not the files — into the public
-   bucket, where it appears under Shared models.
+
+## Where the parameters start
+
+A project's parameters are not guesses:
+
+1. **The most recent technical report for that project.** `drill_tables` lifts the
+   parent block size, bulk density, composite length, search range, capping grade,
+   reporting cut-off and estimator from every 43-101 it extracts;
+   `projects._report_params` takes them newest-first (by stated effective date), so a
+   2024 resource update supplies the block size even if only a 2016 PEA printed a density.
+2. **Otherwise, what is typical for the region and commodity** —
+   `minemodelingpro.regional` measures that across the whole extracted corpus
+   (`data/keep/mmp_regional_params.json`), narrowing from region+commodity to
+   commodity to region to global as the evidence allows.
+3. **Then whatever the client sets**, per project, which always wins.
+
+The model page and the parameter form both say which of the three each number came
+from (`model.param_sources`), so nothing is a black box.
 
 ## Columns the importer understands
 
@@ -80,12 +67,23 @@ Headers are matched by meaning: `HOLEID`, `Hole_No`, `BHID`, `DDH`, `FROM_FT`,
 `Au_ppm`, `Cu (%)`, `Depth_m` all land in the right place. Anything skipped is
 counted and explained on the project page.
 
-Access databases (`.mdb`/`.accdb`) need `mdbtools` on the worker machine
-(`brew install mdbtools` / `apt-get install mdbtools`).
+Access databases (`.mdb`/`.accdb`) need `mdbtools`, which the Docker image installs.
 
-## Local use without Supabase
+## Running it locally
 
-The same import path works from the command line, which is handy for testing:
+```bash
+createdb mmp
+export DATABASE_URL=postgresql:///mmp PGSSLMODE=disable MMP_SECRET=dev
+export MMP_ADMIN_EMAIL=you@example.com MMP_ADMIN_PASSWORD=a-good-password
+export MMP_COOKIE_SECURE=0            # plain http
+pip install -r studio/requirements.txt
+PYTHONPATH=src:. python -m uvicorn studio.server:app --port 8099     # the site + API
+PYTHONPATH=src:. python studio/worker.py                             # the modeller
+```
+
+With no `SPACES_*` set, uploads and models go to `data/private/studio/` on disk.
+
+The same import path also works straight from the command line, without a server:
 
 ```bash
 PYTHONPATH=src python3 -m minemodelingpro.imports ~/data/*.csv \
@@ -93,12 +91,8 @@ PYTHONPATH=src python3 -m minemodelingpro.imports ~/data/*.csv \
     --set block=5,5,5 density=2.75 --private --build
 ```
 
-`--private` keeps the dataset in `data/private/` (gitignored); without it the
-dataset is written to `data/keep/mmp_imports/` and the daily public build picks it up.
+## Limits
 
-## Costs and limits
-
-Supabase's free tier covers a small team comfortably (500 MB database, 1 GB storage,
-50k monthly active users). Studio enforces a 200 MB per-file limit and a 512 MB
-per-account storage quota (`profiles.quota_bytes`) — raise it per account in SQL.
-Heavy public sign-up would eventually need the paid tier for storage and egress.
+200 MB per uploaded file, 2 GB per account (`users.quota_bytes`, raise it in SQL).
+Spaces includes 250 GiB of storage and 1 TiB of transfer; the in-app Postgres is
+sized for a client roster, not a public sign-up.

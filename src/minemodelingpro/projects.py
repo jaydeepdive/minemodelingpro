@@ -704,19 +704,56 @@ def _materialise(p, news_holes, news_ivs, ov):
     ds_params = {}
     for r in imported:
         ds_params.update(r.get("params") or {})
-    blocks = [r.get("block_size") for r in reports if r.get("block_size")]
-    dens = [r.get("density") for r in reports if r.get("density")]
+    rp, rp_from = _report_params(reports)
     return {"slug": slug, "name": name, "company": company, "region": region,
             "params": ds_params or None,
             "private": any(r.get("private") for r in imported) or None,
             "owners": sorted({r["owner"] for r in imported if r.get("owner")}) or None,
             "frame": frame, "holes": holes, "intervals": intervals, "sources": sources,
-            "resources": res, "report_block": blocks[0] if blocks else None,
+            "resources": res,
+            "report_params": rp or None, "report_params_from": rp_from or None,
+            "report_block": rp.get("block"),
             "commodities": [c for c in (str(r.get("commodity") or "").split("-")[0] for r in reports) if c],
-            "report_density": dens[0] if dens else None,
+            "report_density": rp.get("density"),
             "updated": max(dates) if dates else None,
             "kinds": sorted({("report" if s["kind"].startswith("NI") else
                               "import" if s["kind"] == "imported data" else "news") for s in sources})}
+
+
+def _recency(r):
+    """How current a report is: its stated effective date, else the effective year
+    of the resource statement it carries, else when we collected it."""
+    d = str(r.get("effective_date") or "")[:10]
+    if len(d) == 10:
+        return d
+    y = (r.get("resource") or {}).get("year")
+    if y:
+        return "%04d-07-01" % int(y)
+    return str(r.get("date") or "")[:10]
+
+
+def _report_params(reports):
+    """Modelling parameters from the project's MOST RECENT technical report.
+
+    Reports are taken newest first (by effective date) and the first one that
+    states a parameter wins it, so a 2024 resource update supplies the block size
+    even if only a 2016 PEA printed a density. Imported client datasets carry
+    their own settings separately (ds["params"]) and are not read here."""
+    rpt = [r for r in reports if r.get("source") != "import"]
+    rpt.sort(key=_recency, reverse=True)
+    out, src = {}, {}
+    for r in rpt:
+        mp = dict(r.get("model_params") or {})
+        if r.get("block_size") and not mp.get("block"):
+            mp["block"] = r["block_size"]
+        if r.get("density") and not mp.get("density"):
+            mp["density"] = r["density"]
+        for k, v in mp.items():
+            if v is None or k in out:
+                continue
+            out[k] = v
+            src[k] = {"id": r.get("id"), "date": _recency(r) or None}
+    return out, src
 
 
 def _report_title(r):

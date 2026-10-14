@@ -18,13 +18,13 @@
 </div>
 <footer class="site"><b>MineModelingPro Studio</b> — grades are inverse-distance estimates for visualisation, not a mineral resource estimate.</footer>
 <script type="module">
-import { sb, chrome, $, esc, fmt, fmtC } from "./app.js";
+import { chrome, $, esc, fmt, fmtC, listPublic } from "./app.js";
 await chrome("public");
-const { data, error } = await sb.from("projects").select("id,slug,name,company,region,stats,updated_at")
-  .eq("is_public", true).order("updated_at", { ascending: false });
+let data = [], error = null;
+try { data = await listPublic(); } catch (e) { error = e; }
 $("#list").innerHTML = error ? `<div class="err">${esc(error.message)}</div>`
   : (data || []).length ? `<div class="grid c3">${data.map(p => { const s = p.stats || {};
-      return `<a class="card" href="model.html?public=${p.id}" style="display:block;color:inherit">
+      return `<a class="card" href="model.html?public=${encodeURIComponent(p.public_key)}" style="display:block;color:inherit">
         <h3>${esc(p.name)}</h3>${p.company ? `<div class="note">${esc(p.company)}</div>` : ""}
         ${p.region ? `<div style="margin-top:8px"><span class="chip">${esc(p.region)}</span></div>` : ""}
         <div class="stats" style="margin-top:12px">

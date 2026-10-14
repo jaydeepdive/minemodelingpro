@@ -78,8 +78,8 @@
 </div>
 <footer class="site"><b>MineModelingPro Studio</b> — grades are inverse-distance estimates for visualisation, not a mineral resource estimate.</footer>
 <script type="module">
-import { sb, chrome, requireUser, getProject, listDatasets, uploadDataset, saveParams, setPublic,
-         deleteProject, enqueue, watchProject, paramForm, readParams, statusChip, modelUrl,
+import { chrome, requireUser, getProject, listDatasets, uploadDataset, saveParams, setPublic,
+         deleteProject, build, watchProject, paramForm, readParams, statusChip, modelUrl, defaults,
          $, $$, esc, fmt, fmtT, fmtC, banner } from "./app.js";
 await chrome("dashboard");
 const user = await requireUser(); if (!user) throw new Error("redirecting");
@@ -103,7 +103,7 @@ function paint(p, job) {
       <div class="stat"><b>${fmtC(s.contained, s.contained_unit)}</b><span>Contained ${esc(s.element || "")}</span></div>
     </div>` : `<p class="note">${p.status === "error" ? esc(p.error || "The last build failed.") : "Upload drill data to build the model."}</p>`;
   const open = $("#openmodel");
-  if (p.model_path && p.status === "ready") { open.style.display = ""; open.href = "model.html?id=" + p.id; }
+  if (p.model_key && p.status === "ready") { open.style.display = ""; open.href = "model.html?id=" + p.id; }
   else open.style.display = "none";
   if (job) {
     const spin = ["queued", "running"].includes(job.status) ? `<span class="spin"></span> ` : "";
@@ -112,7 +112,11 @@ function paint(p, job) {
   }
 }
 paint(project, null);
-paramForm($("#paramgrid"), project.params || {});
+// parameters start from the project's most recent technical report, else from
+// what is typical for its region and commodity; the form shows where each came from
+const auto = await defaults({ region: project.region, commodity: project.commodity, attach_to: project.attach_to });
+paramForm($("#paramgrid"), { ...(auto.params || {}), ...(project.params || {}) },
+          Object.fromEntries(Object.entries(auto.sources || {}).filter(([k]) => (project.params || {})[k] == null)));
 watchProject(id, paint);
 
 // ---- datasets
@@ -177,8 +181,8 @@ $("#params").onsubmit = async e => {
   try { await saveParams(id, readParams($("#paramgrid"))); banner("Saved — rebuilding the model.", "ok"); watchProject(id, paint); }
   catch (err) { banner(err.message || String(err)); }
 };
-$("#reset").onclick = async () => { paramForm($("#paramgrid"), {}); await saveParams(id, {}); banner("Back to automatic settings — rebuilding.", "ok"); watchProject(id, paint); };
-$("#rebuild").onclick = async () => { await enqueue("build", { project_id: id }); banner("Rebuild queued.", "ok"); watchProject(id, paint); };
+$("#reset").onclick = async () => { paramForm($("#paramgrid"), auto.params || {}, auto.sources || {}); await saveParams(id, {}); banner("Back to automatic settings — rebuilding.", "ok"); watchProject(id, paint); };
+$("#rebuild").onclick = async () => { await build(id); banner("Rebuild queued.", "ok"); watchProject(id, paint); };
 $("#pub").onchange = async e => { try { await setPublic(id, e.target.checked); banner(e.target.checked ? "Sharing — the model will be public once the job finishes." : "No longer shared.", "ok"); } catch (err) { banner(err.message); } };
 $("#del").onclick = async () => {
   if (!confirm("Delete this project, its uploads and its model? This cannot be undone.")) return;

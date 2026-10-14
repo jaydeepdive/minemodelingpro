@@ -1,0 +1,9 @@
+.git
+.github
+data/cache
+data/keep/mmp
+data/keep/sedar_pdfs
+data/private
+**/__pycache__
+*.sqlite
+*.pyc

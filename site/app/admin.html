@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Accounts · MineModelingPro Studio</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bitter:wght@500;700;800&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+<script src="config.js"></script>
+</head>
+<body>
+<div class="topbar" id="topbar"></div>
+<div class="wrap">
+  <h1>Accounts</h1><div class="rule"></div>
+  <p class="lead">MineModelingPro Studio is invite-only. Issue a code, send it to the client, and they set their own password.</p>
+  <div id="msg"></div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Invite a client</h3>
+    <form id="inviteform" style="margin-top:10px">
+      <div class="row">
+        <div><label>Their email (optional)</label><input type="email" name="email" placeholder="locks the code to this address"></div>
+        <div><label>Valid for (days)</label><input type="number" name="days" value="30" step="1" min="1"></div>
+        <div><label>Role</label><select name="role"><option value="client">Client</option><option value="admin">Administrator</option></select></div>
+      </div>
+      <div style="margin-top:10px"><label>Note (optional)</label><input type="text" name="note" placeholder="e.g. Perron data review"></div>
+      <div class="row" style="margin-top:14px"><button class="btn" type="submit">Create invite</button></div>
+    </form>
+    <div id="newinvite" style="margin-top:12px"></div>
+  </div>
+
+  <h2 style="margin-top:26px">Invites</h2>
+  <div id="invites"><p class="muted"><span class="spin"></span> Loading…</p></div>
+
+  <h2 style="margin-top:26px">People</h2>
+  <div id="users"></div>
+</div>
+<footer class="site"><b>MineModelingPro Studio</b> — client data is private to the account that uploaded it.</footer>
+<script type="module">
+import { chrome, requireUser, $, esc, fmt, banner, listInvites, createInvite, listUsers } from "./app.js";
+await chrome("admin");
+const user = await requireUser(); if (!user) throw new Error("redirecting");
+if (user.role !== "admin") { document.querySelector(".wrap").innerHTML = "<h1>Accounts</h1><p class='lead'>This page is for administrators.</p>"; throw new Error("not admin"); }
+
+const link = code => location.origin + location.pathname.replace(/admin\.html$/, "index.html") + "?invite=" + encodeURIComponent(code);
+
+async function paint() {
+  const [inv, us] = await Promise.all([listInvites(), listUsers()]);
+  $("#invites").innerHTML = inv.length ? `<table class="tbl"><thead><tr><th>Code</th><th>For</th><th>Role</th><th>Status</th><th>Expires</th><th>Note</th></tr></thead><tbody>${
+    inv.map(i => `<tr><td><code>${esc(i.code)}</code></td><td>${esc(i.email || "anyone")}</td><td>${esc(i.role)}</td>
+      <td>${i.used_by ? "<span class='chip ok'>used</span>" : (i.expires_at && new Date(i.expires_at) < new Date() ? "<span class='chip err'>expired</span>" : "<span class='chip info'>open</span>")}</td>
+      <td>${esc((i.expires_at || "").slice(0, 10))}</td><td>${esc(i.note || "")}</td></tr>`).join("")}</tbody></table>`
+    : `<div class="card"><p class="note">No invites yet.</p></div>`;
+  $("#users").innerHTML = `<table class="tbl"><thead><tr><th>Email</th><th>Name</th><th>Role</th><th>Quota</th><th>Joined</th><th>Last seen</th></tr></thead><tbody>${
+    us.map(u => `<tr><td>${esc(u.email)}</td><td>${esc(u.name || "")}</td><td>${esc(u.role)}</td>
+      <td>${fmt((u.quota_bytes || 0) / 1e9, 1)} GB</td><td>${esc((u.created_at || "").slice(0, 10))}</td>
+      <td>${esc((u.last_seen || "").slice(0, 10))}</td></tr>`).join("")}</tbody></table>`;
+}
+await paint();
+
+$("#inviteform").onsubmit = async e => {
+  e.preventDefault(); banner("");
+  const f = new FormData(e.target);
+  try {
+    const i = await createInvite({ email: f.get("email"), days: Number(f.get("days") || 30),
+                                   role: f.get("role"), note: f.get("note") });
+    $("#newinvite").innerHTML = `<div class="ok">Invite created. Send them this link:<br>
+      <code>${esc(link(i.code))}</code></div>`;
+    await paint();
+  } catch (err) { banner(err.message || String(err)); }
+};
+</script>
+</body>
+</html>

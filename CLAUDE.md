@@ -108,37 +108,64 @@ PYTHONPATH=src python3 -c "from minemodelingpro import model3d; model3d.build_al
 - `drill_tables` extracted all 201 archived reports (both the ni43101 queue archive and the SEDAR/ceo.ca archive); ~98 SEDAR PDFs had been archived but never ingested before.
 - Region labels come from the model's coordinates (not the SEDAR filing province).
 
-## MMP Studio — accounts, uploads, private models (added 2026-10-13)
+## MMP Studio — accounts, uploads, private models (added 2026-10-13, moved to DigitalOcean 2026-10-14)
 
-Studio lets anyone sign up, upload their own drill data and model it privately,
-beside the public gallery. Static front end on the same GitHub Pages site; Supabase
-for auth / Postgres / storage / job queue; a Python worker does the modelling.
+Studio lets an invited client upload their own drill data and model it privately,
+beside the public gallery. It is **invite-only** (MMP runs on a client basis) and
+runs entirely on DigitalOcean — no third-party auth, no keys in the browser.
 
-- `site/app/` — the app: `index.html` (sign in / sign up), `dashboard.html` (projects),
+- **Hosting:** one App Platform app (`minemodelingpro`, region Toronto) in its own DO
+  project, built from this public repo over https (no GitHub authorisation on DO).
+  `web` = FastAPI serving the site + API; `modeler` = the worker; an attached
+  Postgres; Spaces bucket `mmp-studio` (tor1). Domains: **minemodelingpro.com**
+  (primary), www, **minemodelingpro.ca** (alias). See `studio/DEPLOY-DO.md` for the
+  spec, the environment variables and the operational commands; `.do/app.yaml` is the
+  reference copy of the spec.
+- `studio/server.py` — the API and the static site. Session cookie (scrypt passwords,
+  HMAC-signed cookie); every query scoped to the signed-in account; admins issue
+  invites at `/app/admin.html`.
+- `studio/worker.py` — jobs: `import` (parse files → dataset JSON → build), `build`,
+  `publish`, `delete`. Claims jobs with `FOR UPDATE SKIP LOCKED`.
+- `studio/store.py` — the only place that talks to Postgres (psycopg3) or object
+  storage (Spaces via boto3; a local directory when `SPACES_*` is unset).
+- `studio/schema_pg.sql` — users, invites, projects, datasets, jobs, events. Applied
+  automatically at start; idempotent. (The old Supabase `schema.sql` was removed.)
+- `site/app/` — `index.html` (sign in / invite sign-up), `dashboard.html`,
   `project.html` (upload, parameters, publish), `model.html` (private 3D viewer),
-  `public.html` (shared models), `app.js` (client), `config.js` (**set SUPABASE_URL +
-  SUPABASE_ANON_KEY here**; both are public values).
-- `studio/schema.sql` — tables (profiles, projects, datasets, jobs), row-level security,
-  storage buckets (`uploads`, `models` private; `public-models` public). Run once.
-- `studio/worker.py` — polls `jobs`: `import` (parse files → dataset JSON → build),
-  `build`, `publish`, `delete`. Needs `SUPABASE_URL` + `SUPABASE_SERVICE_KEY`
-  (service-role; **never** in the browser). launchd plist: `scripts/com.thedeepdive.mmpstudio.plist`.
-- `studio/README.md` — the setup walkthrough, column reference and limits.
+  `public.html` (shared models), `admin.html` (invites + people), `app.js` (fetch
+  client), `config.js` (no keys — just `/api` and the accepted file types).
 - `src/minemodelingpro/imports.py` — the importer: CSV/TSV/Excel/Access/zip/Parquet →
   collars, surveys, intervals; headers matched by meaning; ft→m; %/g/t/ppm/ppb/oz-t →
   standard units; EPSG/UTM/lat-long or a local grid; writes a dataset JSON in the same
   shape as a report, so `projects.assemble` merges it like any other source.
-  Private imports live in `data/private/imports/` (gitignored) and never reach the
-  public build; `data/keep/mmp_imports/` is the public-facing equivalent.
-- `src/minemodelingpro/params.py` — per-project modelling parameters
-  (`data/keep/mmp_model_params.json`, or `projects.params` in Supabase): block size,
-  composite length, search radius, max distance to data, min holes/samples, estimator
-  (idw/nn/mean) and power, top-cut, density, opening cut-off, elements, gap-fill.
-  CLI: `python -m minemodelingpro.params <slug> block=5,5,5 radius_m=60`.
+- `src/minemodelingpro/params.py` — per-project parameters and, importantly, the
+  **precedence**: `layered()` merges `auto` (report → regional) < file `_defaults` <
+  per-slug entry < dataset/web settings, and reports where each value came from.
 - Viewer split: `src/minemodelingpro/viewer.js` is the renderer, `model3d_viewer.html`
   the shell. `write_viewer` copies both next to the pages (`site/models/viewer.js`,
   `_shell.html`), so public pages and Studio's private viewer share one renderer.
   **Never delete `site/models/_shell.html`** — `build_all` keeps files starting with `_`.
+
+## Where modelling parameters come from (2026-10-14)
+
+1. **The project's most recent technical report.** `drill_tables.extract_model_params`
+   lifts parent block size, bulk density, composite length, search range, capping
+   grade, reporting cut-off and estimator/power from each 43-101, and
+   `drill_tables.effective_date` reads its stated effective date.
+   `projects._report_params` then takes them **newest first**, per key, so a recent
+   resource update supplies the block size even if an older PEA supplied the density.
+   Carried on the dataset as `report_params` / `report_params_from`.
+2. **Else what is typical for the region + commodity.** `minemodelingpro.regional`
+   measures block size and density across the whole extracted corpus and narrows from
+   region+commodity → commodity → region → global as the evidence allows (minimum
+   counts per key; a group's density is dropped when it disagrees with the commodity
+   as a whole). Cached in `data/keep/mmp_regional_params.json`; rebuild with
+   `python -m minemodelingpro.regional --build`.
+3. **Else the per-commodity default**, and above all of it, whatever the user set.
+
+`model3d.auto_params(ds)` returns both the values and a human label for each; the
+model carries `param_sources`, and the block panel says "block source: technical
+report (2021)" or "typical for Au in Québec (7 reports)".
 
 ## Reasonable backlog / ideas
 
