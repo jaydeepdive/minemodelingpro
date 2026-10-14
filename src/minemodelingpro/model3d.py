@@ -628,6 +628,126 @@ def _esc(s):
     return str(s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+# ------------------------------------------------------------------ thumbnails
+def thumb_svg(m, w=360, h=190):
+    """A small plan view of the drill pattern, holes coloured by their best grade.
+
+    The gallery is a library of deposits; a name and two numbers do not tell them
+    apart, but the drill pattern does — a 900-hole grid looks nothing like four
+    scout holes on a ridge."""
+    holes = m.get("holes") or []
+    if not holes:
+        return None
+    el = m["elements"][m["primary"]]
+    bins = el.get("bins") or []
+    cols = el.get("colors") or []
+    best = {}
+    for sgm in el.get("segments") or []:
+        i, g = sgm[0], sgm[3]
+        if g > best.get(i, 0):
+            best[i] = g
+    # frame on the body of the drilling, not on one stray hole 20 km away
+    xs = np.array([hh[1] for hh in holes], float); ys = np.array([hh[2] for hh in holes], float)
+    if len(xs) > 12:
+        x0, x1 = np.percentile(xs, [2, 98]); y0, y1 = np.percentile(ys, [2, 98])
+    else:
+        x0, x1, y0, y1 = xs.min(), xs.max(), ys.min(), ys.max()
+    span = max(float(x1 - x0), float(y1 - y0), 50.0) * 1.08
+    cx = float(x0 + x1) / 2; cy = float(y0 + y1) / 2
+    pad = 10
+    sc = min((w - 2 * pad), (h - 2 * pad)) / span
+    def P(x, y):                       # north up, east right
+        return (w / 2 + (x - cx) * sc, h / 2 - (y - cy) * sc)
+    def colour(i):
+        g = best.get(i)
+        if not g or not bins:
+            return None
+        k = 0
+        for j, b in enumerate(bins):
+            if g >= b:
+                k = j
+        return cols[min(k, len(cols) - 1)] if cols else "#D71920"
+    parts = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" width="{w}" height="{h}" '
+             f'role="img" aria-label="drill plan">',
+             f'<rect width="{w}" height="{h}" fill="#f7f9fb"/>']
+    # faint graticule
+    for gx in range(1, 6):
+        parts.append(f'<line x1="{gx * w / 6:.0f}" y1="0" x2="{gx * w / 6:.0f}" y2="{h}" stroke="#e8edf2"/>')
+    for gy in range(1, 3):
+        parts.append(f'<line x1="0" y1="{gy * h / 3:.0f}" x2="{w}" y2="{gy * h / 3:.0f}" stroke="#e8edf2"/>')
+    # a thumbnail does not need 900 holes drawn: keep every assayed hole and thin the
+    # rest, so the file stays a few KB
+    idx = list(range(len(holes)))
+    plain = [i for i in idx if i not in best]
+    if len(plain) > 320:
+        step = len(plain) / 320.0
+        keep = {plain[int(k * step)] for k in range(320)}
+        idx = [i for i in idx if i in best or i in keep]
+    # one path per colour keeps the file small (a few KB) however many holes there are
+    lanes = defaultdict(list)
+    dots = defaultdict(list)
+    for i in idx:
+        hh = holes[i]
+        az = math.radians(float(hh[4] or 0.0)); dip = math.radians(float(hh[5] or -90.0))
+        run = max(0.0, float(hh[6] or 0.0)) * math.cos(dip)
+        ax, ay = P(hh[1], hh[2])
+        bx, by = P(hh[1] + run * math.sin(az), hh[2] + run * math.cos(az))
+        c = colour(i)
+        if max(abs(ax), abs(bx)) > 4 * w or max(abs(ay), abs(by)) > 4 * h:
+            continue                      # an outlier hole outside the framed body
+        lanes[c or "plain"].append(f"M{ax:.1f} {ay:.1f}L{bx:.1f} {by:.1f}")
+        if c:
+            dots[c].append(f"M{ax - 2.2:.1f} {ay:.1f}a2.2 2.2 0 1 0 4.4 0a2.2 2.2 0 1 0-4.4 0")
+    if lanes.get("plain"):
+        parts.append(f'<path d="{"".join(lanes.pop("plain"))}" stroke="#b9c3cd" stroke-width="1.5" '
+                     f'fill="none" stroke-linecap="round"/>')
+    for c, d in lanes.items():
+        parts.append(f'<path d="{"".join(d)}" stroke="{c}" stroke-width="2.6" fill="none" '
+                     f'stroke-linecap="round" opacity=".95"/>')
+    for c, d in dots.items():
+        parts.append(f'<path d="{"".join(d)}" fill="{c}"/>')
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def write_thumb(m, path):
+    svg = thumb_svg(m)
+    if not svg:
+        return None
+    with open(path, "w") as f:
+        f.write(svg)
+    return path
+
+
+def card_of(m):
+    """The gallery row for one model: what it is, how much real data stands behind
+    it, and what it adds up to at the opening cut-off."""
+    pe = m["elements"][m["primary"]]
+    cu = pe.get("contained_unit") or contained_unit(m["primary"], pe["unit"])
+    best_res = next((r for r in m["resources"] if r.get("contained_unit") == cu and r.get("contained")
+                     and (not r.get("element") or r["element"] == m["primary"].replace("Eq", ""))), None)
+    gt = pe.get("gt") or []
+    cut = pe.get("default_cutoff") or (pe["bins"][1] if len(pe.get("bins") or []) > 1
+                                       else (pe.get("bins") or [0])[0])
+    row = next((r for r in gt if r[0] >= cut), (gt[0] if gt else [0, 0, 0, 0]))
+    c = m["counts"]
+    # how much a model is worth looking at: assayed holes and intervals, with credit
+    # for a published resource to check against
+    score = (c.get("assayed_holes") or 0) * 3 + (c.get("intervals") or 0) + \
+            (160 if best_res else 0) + (40 if (c.get("reports") or 0) else 0)
+    return {"slug": m["slug"], "project": m["project"], "company": m.get("company"),
+            "region": m.get("region"), "element": m["primary"],
+            "elements": list(m["elements"].keys()), "unit": pe["unit"],
+            "counts": c, "updated": m.get("updated"), "kinds": m.get("kinds"),
+            "max": pe["stats"]["max"], "terrain": bool(m.get("terrain")),
+            "cut": row[0], "tonnes": row[1], "grade": row[2], "contained": row[3],
+            "contained_unit": cu, "score": score,
+            "block": (pe.get("blocks") or {}).get("size"),
+            "block_source": ((pe.get("blocks") or {}).get("params") or {}).get("block_source"),
+            "resource": ({"contained": best_res.get("contained"), "unit": best_res.get("contained_unit"),
+                          "date": best_res.get("date")} if best_res else None)}
+
+
 # --------------------------------------------------------------- build all
 def build_all(site_dir="site", only=None, verbose=True):
     """One model page per PROJECT (all sources merged), the gallery, and
@@ -652,17 +772,9 @@ def build_all(site_dir="site", only=None, verbose=True):
         slug = m["slug"]
         write_viewer(m, os.path.join(out_dir, slug + ".html"))
         built.add(slug + ".html")
-        pe = m["elements"][m["primary"]]
-        cu = pe.get("contained_unit") or contained_unit(m["primary"], pe["unit"])
-        best_res = next((r for r in m["resources"] if r.get("contained_unit") == cu and r.get("contained")
-                         and (not r.get("element") or r["element"] == m["primary"].replace("Eq", ""))), None)
-        card = {"slug": slug, "project": m["project"], "company": m.get("company"), "region": m.get("region"),
-                "element": m["primary"], "elements": list(m["elements"].keys()), "unit": pe["unit"],
-                "counts": m["counts"], "updated": m.get("updated"), "kinds": m.get("kinds"),
-                "max": pe["stats"]["max"], "terrain": bool(m.get("terrain")),
-                "resource": ({"contained": best_res.get("contained"), "unit": best_res.get("contained_unit")}
-                             if best_res else None)}
-        cards.append(card)
+        write_thumb(m, os.path.join(out_dir, slug + ".svg"))
+        built.add(slug + ".svg")
+        cards.append(card_of(m))
         e = {"slug": slug, "url": site_base + "models/" + slug + ".html", "project": m["project"],
              "company": m.get("company"), "region": m.get("region"), "element": m["primary"],
              "updated": m.get("updated"), "source": "+".join(m.get("kinds") or []),
@@ -677,7 +789,7 @@ def build_all(site_dir="site", only=None, verbose=True):
     # remove stale model pages (old per-source pages) — keep the three.js runtime
     if not only:
         for f in os.listdir(out_dir):
-            if f.endswith(".html") and f not in built and not f.startswith("_"):
+            if f.endswith((".html", ".svg")) and f not in built and not f.startswith("_"):
                 os.remove(os.path.join(out_dir, f))      # stale model pages (keep _shell.html)
     _write_gallery(cards, os.path.join(site_dir, "models.html"))
     by_release = {}

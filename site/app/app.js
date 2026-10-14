@@ -69,8 +69,7 @@ export async function chrome(active) {
     <a class="brand" href="../index.html"><span class="name">Mine<b>Modeling</b>Pro</span><span class="sub">Studio</span></a>
     <nav class="menu">
       <a href="dashboard.html" class="${active === "dashboard" ? "active" : ""}">My projects</a>
-      <a href="public.html" class="${active === "public" ? "active" : ""}">Shared models</a>
-      <a href="../models.html">Public gallery</a>
+      <a href="../models.html">Model library</a>
       ${user ? `<span class="who">${esc(user.email)}</span>${user.role === "admin" ? `<a href="admin.html" class="${active === "admin" ? "active" : ""}">Accounts</a>` : ""}<a href="#" id="signout">Sign out</a>`
              : `<a href="index.html">Sign in</a>`}
     </nav></div>`;

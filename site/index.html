@@ -103,7 +103,7 @@ footer.site{border-top:1px solid var(--line);color:var(--mut);font-size:13px;pad
   <nav class="menu">
     <a href="#what">What it does</a>
     <a href="#how">How it works</a>
-    <a href="models.html">3D models</a>
+    <a href="#access">Request access</a>
     <a class="cta" href="app/index.html">Sign in</a>
   </nav>
 </div></div>
@@ -117,8 +117,8 @@ footer.site{border-top:1px solid var(--line);color:var(--mut);font-size:13px;pad
       orbit, slice and interrogate — tonnes, grade and <b>contained metal</b>, cross-checked against
       the published resource. Upload your own drilling and it stays private to your account.</p>
     <div class="btns">
-      <a class="btn" href="models.html">Explore the public models</a>
-      <a class="btn ghost" href="app/index.html">Sign in to Studio</a>
+      <a class="btn" href="#access">Request access</a>
+      <a class="btn ghost" href="app/index.html">Sign in</a>
     </div>
   </div>
   <div class="shot">
@@ -201,7 +201,7 @@ footer.site{border-top:1px solid var(--line);color:var(--mut);font-size:13px;pad
   </div>
 </div></section>
 
-<div class="cta">
+<div class="cta" id="access">
   <h2>Model your own drilling</h2>
   <p>MineModelingPro Studio is available to clients by invitation. If you have drill data you want in
     3D — or a portfolio you want modelled on a consistent basis — get in touch.</p>
@@ -219,14 +219,12 @@ footer.site{border-top:1px solid var(--line);color:var(--mut);font-size:13px;pad
 
 <script>
 /* live counts from the gallery index */
-fetch("models_index.json").then(r => r.json()).then(d => {
-  const models = d.models || [];
+fetch("/api/stats").then(r => r.json()).then(d => {
   const n = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-  const sum = k => models.reduce((a, m) => a + (Number(m[k]) || 0), 0);
-  n("n-models", models.length.toLocaleString());
-  n("n-holes", sum("holes").toLocaleString());
-  n("n-reports", models.filter(m => String(m.source || "").includes("report")).length.toLocaleString());
-  n("n-updated", (d.generated || "").slice(0, 10) || "—");
+  n("n-models", (d.models || 0).toLocaleString());
+  n("n-holes", (d.holes || 0).toLocaleString());
+  n("n-reports", (d.reports || 0).toLocaleString());
+  n("n-updated", d.generated || "—");
 }).catch(() => {});
 
 /* a small, honest stand-in for the viewer: drill traces coloured by grade */

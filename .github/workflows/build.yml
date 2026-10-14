@@ -52,6 +52,8 @@ jobs:
           key: dem-${{ github.run_id }}
           restore-keys: dem-
       - name: Render 3D model gallery + viewers
+        env:
+          MMP_SITE_URL: https://minemodelingpro.com/
         run: PYTHONPATH=src python -c "from minemodelingpro import model3d; model3d.build_all('site')"
       - name: Commit site + shard store
         run: |

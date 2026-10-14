@@ -8,68 +8,73 @@
 <link href="https://fonts.googleapis.com/css2?family=Bitter:wght@500;700;800&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="app.css">
 <script src="config.js"></script>
+<style>
+  body{background:#f5f7fa}
+  .signwrap{min-height:100vh;display:grid;place-items:center;padding:28px 20px}
+  .signcard{width:100%;max-width:400px;background:#fff;border:1px solid var(--line);border-radius:14px;
+            padding:30px 28px 26px;box-shadow:0 14px 40px rgba(17,20,24,.08)}
+  .signcard .brand{display:flex;flex-direction:column;gap:3px;text-decoration:none;margin-bottom:22px}
+  .signcard .brand .name{font-family:'Bitter',serif;font-weight:800;font-size:21px;color:var(--ink)}
+  .signcard .brand .name b{color:var(--red)}
+  .signcard .brand .sub{font-family:'Bitter',serif;font-weight:700;font-size:10px;letter-spacing:2.4px;
+                        color:var(--mut);text-transform:uppercase}
+  .signcard h1{font-size:21px;margin-bottom:4px}
+  .signcard .hint{font-size:13.5px;color:var(--mut);margin:0 0 18px}
+  .signcard label{display:block;font-size:12.5px;font-weight:600;margin:0 0 5px}
+  .signcard input{width:100%;height:42px;padding:0 12px;border:1px solid var(--line);border-radius:8px;
+                  font-size:15px;font-family:inherit;background:#fff}
+  .signcard input:focus{outline:none;border-color:var(--red);box-shadow:0 0 0 3px rgba(215,25,32,.10)}
+  .signcard .field{margin-bottom:14px}
+  .signcard button{width:100%;height:46px;border:0;border-radius:9px;background:var(--red);color:#fff;
+                   font-weight:700;font-size:15px;font-family:inherit;cursor:pointer}
+  .signcard button:hover{background:#b3141a}
+  .signcard button:disabled{opacity:.6;cursor:default}
+  .alt{margin-top:16px;font-size:13px;color:var(--mut);text-align:center}
+  .back{display:block;text-align:center;margin-top:18px;font-size:13px;color:var(--mut)}
+  .back:hover{color:var(--red)}
+</style>
 </head>
 <body>
-<div class="topbar" id="topbar"></div>
-<div class="wrap">
-  <div class="grid c2" style="align-items:start">
-    <div>
-      <h1>Model your own drill data</h1>
-      <div class="rule"></div>
-      <p class="lead">Upload collar, survey and assay files — CSV, Excel, Access or a zip of them — and MineModelingPro
-        builds the same 3D model it builds from technical reports: desurveyed holes coloured by grade, an inverse-distance
-        block model on the block size you choose, grade-tonnage and contained metal, on real terrain.</p>
-      <p class="lead"><b>Your data stays private.</b> Projects are visible only to your account until you choose to share one.
-        You can keep adding data to a project over time, or merge your drilling with a project already in the public gallery.</p>
-      <div class="sec">
-        <h3>What to upload</h3>
-        <table>
-          <tr><th>Table</th><th>Needs</th><th>Also understood</th></tr>
-          <tr><td><b>Collars</b></td><td>hole id, easting/northing (or lat/long)</td><td>elevation, azimuth, dip, total depth, feet or metres</td></tr>
-          <tr><td><b>Assays</b></td><td>hole id, from, to (or length), one grade column per element</td><td>long format (element + value), ppm/ppb/%/g/t/oz-t</td></tr>
-          <tr><td><b>Surveys</b></td><td>hole id, depth, azimuth, dip</td><td>used for minimum-curvature hole paths</td></tr>
-        </table>
-        <p class="note">Column names are matched by meaning — <code>HOLEID</code>, <code>Hole_No</code>, <code>BHID</code>, <code>DDH</code> all work.
-          Tell us the EPSG code or UTM zone and your grid is placed on the map; without one the model still builds in its own local grid.</p>
-      </div>
-    </div>
-    <div class="card" id="authcard">
-      <h2 id="authtitle">Sign in</h2>
-      <p class="note" id="authnote">New here? Create an account — it takes a second and your projects stay private.</p>
-      <div id="msg"></div>
-      <form id="authform" style="margin-top:12px">
-        <div id="namewrap" style="display:none"><label>Name</label><input type="text" name="name" autocomplete="name"></div>
-        <label>Email</label><input type="email" name="email" required autocomplete="email">
-        <div id="invitewrap" style="display:none"><label>Invite code</label><input type="text" name="invite" autocomplete="off" placeholder="the code your MMP contact sent you"></div>
-        <label style="margin-top:10px">Password</label><input type="password" name="password" required minlength="8" autocomplete="current-password">
-        <button class="btn" style="width:100%;margin-top:14px" id="submit">Sign in</button>
-      </form>
-      <p class="note" style="margin-top:12px"><a href="#" id="toggle">I have an invite code</a></p>
-      <p class="note" id="cfgwarn" style="display:none;margin-top:12px"></p>
-    </div>
+<div class="signwrap">
+  <div class="signcard">
+    <a class="brand" href="../index.html">
+      <span class="name">Mine<b>Modeling</b>Pro</span>
+      <span class="sub">Studio</span>
+    </a>
+    <h1 id="authtitle">Sign in</h1>
+    <p class="hint" id="authnote">Studio is for invited clients. Your drill data and models stay private to your account.</p>
+    <div id="msg"></div>
+    <form id="authform">
+      <div class="field" id="namewrap" style="display:none"><label>Name</label><input type="text" name="name" autocomplete="name"></div>
+      <div class="field" id="invitewrap" style="display:none"><label>Invite code</label><input type="text" name="invite" autocomplete="off" placeholder="the code you were sent"></div>
+      <div class="field"><label>Email</label><input type="email" name="email" required autocomplete="email"></div>
+      <div class="field"><label>Password</label><input type="password" name="password" required minlength="8" autocomplete="current-password"></div>
+      <button id="submit" type="submit">Sign in</button>
+    </form>
+    <p class="alt"><a href="#" id="toggle">I have an invite code</a></p>
+    <a class="back" href="../index.html">← About MineModelingPro</a>
   </div>
 </div>
-<footer class="site"><b>MineModelingPro Studio</b> — grades are inverse-distance estimates for visualisation, not a mineral resource estimate.</footer>
 <script type="module">
-import { chrome, $, banner, session, signIn, signUp } from "./app.js";
-await chrome("");
+import { $, banner, session, signIn, signUp } from "./app.js";
 if (await session()) location.href = "dashboard.html";
 let mode = "signin";
 const q = new URLSearchParams(location.search);
 const next = q.get("next") || "dashboard.html";
-if (q.get("invite")) {                       // an invite link opens straight on sign-up
-  setTimeout(() => $("#toggle").click(), 0);
-}
-$("#toggle").onclick = e => { e.preventDefault(); mode = mode === "signin" ? "signup" : "signin";
+$("#toggle").onclick = e => {
+  e.preventDefault();
+  mode = mode === "signin" ? "signup" : "signin";
   $("#authtitle").textContent = mode === "signin" ? "Sign in" : "Create your account";
   $("#submit").textContent = mode === "signin" ? "Sign in" : "Create account";
   $("#namewrap").style.display = $("#invitewrap").style.display = mode === "signup" ? "block" : "none";
   $("#toggle").textContent = mode === "signin" ? "I have an invite code" : "I already have an account";
   $("#authnote").textContent = mode === "signin"
-    ? "MineModelingPro Studio is for invited clients. Your data stays private to your account."
-    : "Enter the invite code you were sent. Your projects stay private unless you choose to share one.";
+    ? "Studio is for invited clients. Your drill data and models stay private to your account."
+    : "Enter the invite code you were sent and choose a password.";
   if (mode === "signup" && q.get("invite")) $("[name=invite]").value = q.get("invite");
-  banner(""); };
+  banner("");
+};
+if (q.get("invite")) $("#toggle").click();
 $("#authform").onsubmit = async e => {
   e.preventDefault(); banner(""); $("#submit").disabled = true;
   const f = new FormData(e.target), email = f.get("email").trim(), password = f.get("password");

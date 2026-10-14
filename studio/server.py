@@ -34,6 +34,7 @@ import hashlib
 import secrets
 import datetime
 import mimetypes
+import urllib.parse
 
 from fastapi import FastAPI, Request, Response, UploadFile, File, Form, HTTPException, Depends
 from fastapi.responses import JSONResponse, FileResponse, RedirectResponse, StreamingResponse
@@ -56,6 +57,9 @@ COOKIE_SECURE = (os.environ.get("MMP_COOKIE_SECURE", "")
 SESSION_DAYS = float(os.environ.get("MMP_SESSION_DAYS", "14"))
 MAX_UPLOAD_MB = float(os.environ.get("MMP_MAX_FILE_MB", "200"))
 VERSION = os.environ.get("MMP_VERSION") or datetime.date.today().isoformat()
+# The gallery is behind the sign-in by default: MMP runs on a client basis, so only
+# the landing page is public. Set MMP_PUBLIC_GALLERY=1 to open /models* to everyone.
+PUBLIC_GALLERY = (os.environ.get("MMP_PUBLIC_GALLERY", "0") or "0").lower() not in ("0", "false", "no", "")
 
 app = FastAPI(title="MineModelingPro Studio", docs_url=None, redoc_url=None, openapi_url=None)
 
@@ -539,9 +543,64 @@ def defaults(region: str = None, commodity: str = None, attach_to: str = None):
             "fields": sorted(PARAMS.ALL - {"name", "company", "note"})}
 
 
+@app.get("/api/stats")
+def stats():
+    """Aggregate counts for the landing page. Numbers only — no project names — so
+    the gallery itself can stay behind the sign-in."""
+    out = {"models": 0, "holes": 0, "reports": 0, "generated": None, "public_gallery": PUBLIC_GALLERY}
+    try:
+        idx = json.load(open(os.path.join(SITE_DIR, "models_index.json")))
+        ms = idx.get("models") or []
+        out.update({"models": len(ms),
+                    "holes": sum(int(m.get("holes") or 0) for m in ms),
+                    "reports": sum(1 for m in ms if "report" in str(m.get("source") or "")),
+                    "generated": (idx.get("generated") or "")[:10] or None})
+    except Exception:
+        pass
+    try:
+        out["shared"] = store.db().one(
+            "select count(*) as n from projects where is_public")["n"]
+    except Exception:
+        pass
+    return out
+
+
 @app.get("/api/regional")
 def regional_table():
     return REG.table()
+
+
+# --------------------------------------------------------------- access control
+# What anyone may fetch without signing in: the landing page and what it needs, the
+# sign-in page itself, and the auth endpoints. Everything else — the gallery, the
+# model viewers, the model JSON — needs a session, unless PUBLIC_GALLERY is on.
+_OPEN_EXACT = {"/", "/index.html", "/favicon.ico", "/robots.txt",
+               "/app/", "/app/index.html", "/app/app.js", "/app/app.css", "/app/config.js"}
+_OPEN_PREFIX = ("/api/auth/", "/api/health", "/assets/", "/static/", "/.well-known/")
+_GALLERY_PREFIX = ("/models", "/models/")
+
+
+def _is_open(path):
+    if path in _OPEN_EXACT or path.startswith(_OPEN_PREFIX):
+        return True
+    if path == "/models_index.json":
+        return PUBLIC_GALLERY
+    if path.startswith("/models"):
+        return PUBLIC_GALLERY
+    return False
+
+
+@app.middleware("http")
+async def gate(request: Request, call_next):
+    path = request.url.path
+    if _is_open(path) or path.startswith("/api/"):
+        return await call_next(request)          # /api/* enforces its own auth
+    if me(request):
+        return await call_next(request)
+    if path.endswith((".json", ".js", ".css", ".map")):
+        return JSONResponse({"detail": "sign in first"}, status_code=401)
+    nxt = path + (("?" + request.url.query) if request.url.query else "")
+    return RedirectResponse("/app/index.html?next=" + urllib.parse.quote(nxt, safe=""), status_code=302)
 
 
 # ------------------------------------------------------------------ the site

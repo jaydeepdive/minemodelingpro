@@ -1,0 +1,67 @@
+# Deploy the current main to DigitalOcean App Platform.
+#
+# Cloud-only: GitHub Actions calls the DO API directly. Nothing runs on a local
+# machine. Runs after the daily gallery build and on any push that changes the app,
+# and can be run by hand from the Actions tab.
+#
+# Needs one repository secret: DO_DEPLOY_TOKEN (a DigitalOcean API token with app
+# read/write). If the secret is absent the job exits quietly, so forks and PRs are
+# unaffected. DO_APP_ID below is not a secret.
+#
+# If the repo is connected to DigitalOcean through its GitHub integration, this
+# workflow is unnecessary — DO deploys on push by itself.
+name: mmp-do-deploy
+
+on:
+  workflow_run:
+    workflows: ["mmp-daily-build"]
+    types: [completed]
+  push:
+    branches: [main]
+    paths:
+      - "Dockerfile"
+      - "studio/**"
+      - "src/**"
+      - "site/**"
+      - ".do/**"
+  workflow_dispatch:
+
+concurrency:
+  group: do-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger a deployment
+        env:
+          TOKEN: ${{ secrets.DO_DEPLOY_TOKEN }}
+          APP_ID: d8920ba3-ecb3-47a8-a9a0-b5ead409277e
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "DO_DEPLOY_TOKEN is not set — skipping (DigitalOcean may be deploying on push instead)."
+            exit 0
+          fi
+          API="https://api.digitalocean.com/v2/apps/$APP_ID"
+          AUTH="Authorization: Bearer $TOKEN"
+          phase=$(curl -fsS -H "$AUTH" "$API" | python3 -c \
+            "import sys,json;a=json.load(sys.stdin)['app'];d=a.get('in_progress_deployment');print(d['phase'] if d else 'IDLE')")
+          if [ "$phase" != "IDLE" ]; then
+            echo "A deployment is already $phase — leaving it alone."; exit 0
+          fi
+          id=$(curl -fsS -X POST -H "$AUTH" -H "Content-Type: application/json" \
+               "$API/deployments" -d '{"force_build":true}' | python3 -c \
+               "import sys,json;print(json.load(sys.stdin)['deployment']['id'])")
+          echo "Deployment $id started."
+          for i in $(seq 1 60); do
+            sleep 20
+            p=$(curl -fsS -H "$AUTH" "$API/deployments/$id" | python3 -c \
+                "import sys,json;print(json.load(sys.stdin)['deployment']['phase'])")
+            echo "  $p"
+            case "$p" in
+              ACTIVE) echo "Deployed."; exit 0 ;;
+              ERROR|CANCELED) echo "Deployment $p"; exit 1 ;;
+            esac
+          done
+          echo "Still deploying after 20 minutes — check the DO console."; exit 1

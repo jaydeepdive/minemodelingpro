@@ -2,95 +2,302 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>3D deposit models · MineModelingPro</title>
+<title>Model library · MineModelingPro</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 __FONTS__
 <style>
 __THEME_CSS__
-.hero h1{font-size:30px;letter-spacing:-.3px}
-.hero p{color:var(--mut);max-width:820px;margin:12px 0 0}
-.tools{position:sticky;top:0;z-index:20;background:#fff;padding:14px 0 12px;margin-top:18px;border-bottom:1px solid var(--line);
-  display:flex;flex-wrap:wrap;gap:10px;align-items:center}
-.tools input[type=search]{flex:1 1 260px;min-width:200px;border:1px solid var(--line);border-radius:9px;padding:9px 12px;font-size:14px;font-family:inherit}
-.tools input[type=search]:focus{outline:2px solid var(--red);outline-offset:1px}
-.tools select{border:1px solid var(--line);border-radius:9px;padding:8px 10px;font-size:13.5px;font-family:inherit;background:#fff;color:var(--ink)}
-.count{font-size:13px;color:var(--mut);margin:14px 0 0}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:14px;margin-top:12px}
-.card{display:flex;flex-direction:column;gap:10px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;color:var(--ink);
-  text-decoration:none;transition:border-color .15s,box-shadow .15s,transform .15s}
-.card:hover{border-color:var(--red);box-shadow:0 8px 22px rgba(0,0,0,.07);transform:translateY(-2px);text-decoration:none}
-.card h3{font-size:18px;line-height:1.2;margin:0}
-.co{font-size:12.5px;color:var(--mut);margin-top:3px;font-weight:500}
-.chips{display:flex;flex-wrap:wrap;gap:5px}
-.c{font-size:10.5px;font-weight:700;letter-spacing:.04em;padding:2px 7px;border-radius:5px;background:#eef1f6;color:#4a525c}
-.c.el{background:#fdecec;color:var(--red)}
-.c.rep{background:#eaf0fb;color:#274b8f}
-.c.news{background:#fff4e0;color:#8a5a00}
-.st{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:auto}
-.st div{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
-.st b{display:block;font-family:'Bitter',serif;font-size:15.5px;font-variant-numeric:tabular-nums;line-height:1.15}
-.st span{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut)}
-.meta{font-size:11.5px;color:var(--mut)}
-.empty{color:var(--mut);padding:30px 0}
-.note{margin-top:40px;color:var(--mut);font-size:12.5px;line-height:1.6;border-top:1px solid var(--line);padding-top:16px}
-@media (max-width:640px){.hero h1{font-size:24px}.tools{position:static;display:grid;grid-template-columns:1fr 1fr;gap:8px}.tools input[type=search]{grid-column:1/-1;min-width:0}.tools select{min-width:0;width:100%;font-size:13px;padding:8px 6px}.grid{grid-template-columns:1fr}}
+/* ---- layout: a filter rail beside a dense library, not a wall of cards ---- */
+.tablewrap{overflow-x:auto;max-width:100%;border-radius:12px;-webkit-overflow-scrolling:touch}
+.libhead{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;padding-top:22px}
+.libhead h1{font-size:27px;letter-spacing:-.3px}
+.libhead p{color:var(--mut);max-width:620px;margin:10px 0 0;font-size:14px}
+.layout{display:grid;grid-template-columns:232px minmax(0,1fr);gap:26px;align-items:start;margin:20px 0 40px}
+.layout>*{min-width:0}
+.rail{position:sticky;top:14px;display:flex;flex-direction:column;gap:18px}
+.rail>summary{display:none}
+@media (max-width:900px){
+  .rail{display:block;border:1px solid var(--line);border-radius:10px;background:#fff;padding:0}
+  .rail>summary{display:block;cursor:pointer;list-style:none;padding:11px 14px;font-weight:600;font-size:14px}
+  .rail>summary::-webkit-details-marker{display:none}
+  .rail>summary:after{content:" ▾";color:var(--mut)}
+  .rail[open]>summary:after{content:" ▴"}
+  .rail>div{padding:0 14px 12px}
+}
+.rail h4{font-size:10.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--mut);margin:0 0 8px;font-weight:700;font-family:'Roboto',sans-serif}
+.facet{display:flex;flex-direction:column;gap:2px;max-height:252px;overflow:auto}
+.facet button{all:unset;cursor:pointer;box-sizing:border-box;width:100%;display:flex;justify-content:space-between;gap:8px;align-items:center;
+  padding:5px 8px;border-radius:7px;font-size:13.2px;color:var(--ink)}
+.facet button:hover{background:var(--panel)}
+.facet button[aria-pressed=true]{background:var(--chip);color:var(--red);font-weight:600}
+.facet button i{font-style:normal;font-size:11px;color:var(--mut);font-variant-numeric:tabular-nums}
+.facet button[aria-pressed=true] i{color:var(--red)}
+.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.bar input[type=search]{flex:1 1 240px;min-width:170px;border:1px solid var(--line);border-radius:9px;padding:9px 12px;font-size:14px;font-family:inherit}
+.bar input[type=search]:focus{outline:none;border-color:var(--red);box-shadow:0 0 0 3px rgba(215,25,32,.09)}
+.bar select{border:1px solid var(--line);border-radius:9px;padding:9px 10px;font-size:13.5px;font-family:inherit;background:#fff}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.seg button{all:unset;cursor:pointer;padding:8px 12px;font-size:13px;color:var(--mut)}
+.seg button[aria-pressed=true]{background:var(--ink);color:#fff}
+.count{font-size:12.5px;color:var(--mut);margin:0 0 10px}
+.active-filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.active-filters button{all:unset;cursor:pointer;font-size:12px;background:var(--chip);color:var(--red);
+  border-radius:20px;padding:3px 10px;font-weight:600}
+.active-filters button:after{content:" ×"}
+
+/* ---- list view ---- */
+table.lib{width:100%;border-collapse:separate;border-spacing:0;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+table.lib th{position:sticky;top:0;z-index:5;background:#fff;text-align:left;font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--mut);font-weight:700;padding:10px 10px;border-bottom:1px solid var(--line);white-space:nowrap;cursor:pointer;user-select:none}
+table.lib th:hover{color:var(--red)}
+table.lib th[data-dir]:after{content:" ↓";color:var(--red)}
+table.lib th[data-dir=asc]:after{content:" ↑"}
+table.lib th.num,table.lib td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+table.lib td{padding:9px 10px;border-bottom:1px solid #f0f2f5;vertical-align:middle;font-size:13.6px}
+table.lib tr:last-child td{border-bottom:0}
+table.lib tbody tr{cursor:pointer}
+table.lib tbody tr:hover{background:#fafbfd}
+.thumb{width:108px;height:58px;border-radius:6px;border:1px solid var(--line);background:#f7f9fb;display:block;object-fit:cover}
+.pname{font-weight:600;color:var(--ink);line-height:1.25}
+.pco{font-size:12px;color:var(--mut)}
+.els{display:flex;gap:4px;flex-wrap:nowrap}
+.el{font-size:10.5px;font-weight:700;padding:2px 6px;border-radius:5px;background:#fdecec;color:var(--red)}
+.el.sec{background:#eef1f6;color:#4a525c}
+.src{font-size:10.5px;font-weight:700;padding:2px 6px;border-radius:5px}
+.src.rep{background:#eaf0fb;color:#274b8f}
+.src.news{background:#fff4e0;color:#8a5a00}
+.muted{color:var(--mut)}
+.pub{font-size:11.5px;color:var(--mut);display:block}
+
+/* ---- card view ---- */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(246px,1fr));gap:14px}
+.card{display:flex;flex-direction:column;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden;
+  color:var(--ink);text-decoration:none;transition:border-color .15s,box-shadow .15s,transform .15s}
+.card:hover{border-color:var(--red);box-shadow:0 10px 24px rgba(0,0,0,.08);transform:translateY(-2px);text-decoration:none}
+.card img{width:100%;height:124px;object-fit:cover;background:#f7f9fb;border-bottom:1px solid var(--line);display:block}
+.card .body{padding:13px 14px 14px;display:flex;flex-direction:column;gap:7px;flex:1}
+.card h3{font-size:16.5px;line-height:1.2;margin:0}
+.card .figs{display:flex;gap:14px;margin-top:auto;padding-top:8px;border-top:1px solid #f0f2f5}
+.card .figs div b{display:block;font-family:'Bitter',serif;font-size:15px;font-variant-numeric:tabular-nums;line-height:1.2}
+.card .figs div span{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut)}
+.empty{color:var(--mut);padding:34px 0}
+.note{margin-top:28px;color:var(--mut);font-size:12.5px;line-height:1.6;border-top:1px solid var(--line);padding-top:14px}
+.more{display:block;width:100%;margin-top:14px;padding:11px;border:1px solid var(--line);border-radius:9px;background:#fff;
+  font-family:inherit;font-size:13.5px;color:var(--ink);cursor:pointer}
+.more:hover{border-color:var(--red);color:var(--red)}
+@media (max-width:1400px){
+  table.lib td.hide2,table.lib th.hide2{display:none}
+}
+@media (max-width:900px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:14px}
+  .rail{position:static;flex-direction:row;flex-wrap:wrap;gap:12px}
+  .rail>div{flex:1 1 180px}
+  .facet{max-height:150px}
+  table.lib td.hide,table.lib th.hide{display:none}
+  .thumb{width:76px;height:42px}
+}
 </style>
 </head>
 <body>
 __HEADER__
 <div class="wrap">
-  <div class="hero">
-    <h1>3D deposit models</h1>
-    <div class="rule"></div>
-    <p>One model per project, built from every NI 43-101 technical report and drill-result release we hold for it — collars and intercepts in 3D on real terrain, drill intervals coloured by grade, an inverse-distance block model on the report's own block size, and contained metal checked against the published resource.</p>
+  <div class="libhead">
+    <div>
+      <h1>Model library</h1>
+      <div class="rule"></div>
+      <p>One model per project, built from every NI 43-101 technical report and drill-result release held for it.
+         Ordered by how much drilling stands behind each one.</p>
+    </div>
+    <div class="seg" role="group" aria-label="View">
+      <button id="vlist" aria-pressed="true">List</button>
+      <button id="vgrid" aria-pressed="false">Cards</button>
+    </div>
   </div>
-  <div class="tools">
-    <input type="search" id="q" placeholder="Search project, company, commodity, region…" aria-label="Search models">
-    <select id="fel" aria-label="Commodity"><option value="">All commodities</option></select>
-    <select id="freg" aria-label="Region"><option value="">All regions</option></select>
-    <select id="fsrc" aria-label="Data source"><option value="">All data sources</option><option value="report">Has 43-101 data</option><option value="news">Has news releases</option><option value="both">43-101 + news</option></select>
-    <select id="sort" aria-label="Sort"><option value="name">Sort: Project A–Z</option><option value="company">Sort: Company A–Z</option><option value="holes">Sort: Most holes</option><option value="updated">Sort: Recently updated</option><option value="resource">Sort: Largest published resource</option></select>
+
+  <div class="layout">
+    <details class="rail" id="railwrap">
+      <summary>Filters</summary>
+      <div><h4>Commodity</h4><div class="facet" id="fel"></div></div>
+      <div><h4>Region</h4><div class="facet" id="freg"></div></div>
+      <div><h4>Built from</h4><div class="facet" id="fsrc"></div></div>
+    </details>
+
+    <div>
+      <div class="bar">
+        <input type="search" id="q" placeholder="Search project, company, commodity, region…" aria-label="Search models">
+        <select id="sort" aria-label="Sort">
+          <option value="score">Sort: Most data</option>
+          <option value="contained">Sort: Contained metal</option>
+          <option value="holes">Sort: Most holes</option>
+          <option value="updated">Sort: Recently updated</option>
+          <option value="name">Sort: Project A–Z</option>
+          <option value="company">Sort: Company A–Z</option>
+        </select>
+      </div>
+      <div class="active-filters" id="active"></div>
+      <p class="count" id="count"></p>
+      <div id="view"></div>
+      <button class="more" id="more" style="display:none">Show more</button>
+      <p class="note">Grades are inverse-distance estimates for <b>visualisation</b>, not a mineral resource estimate.
+        Every model page lists the exact reports and releases it was built from — verify figures against those filings
+        before relying on them.</p>
+    </div>
   </div>
-  <p class="count" id="count"></p>
-  <div class="grid" id="grid"></div>
-  <p class="note">Grades are inverse-distance estimates for <b>visualisation</b>, not a mineral resource estimate. Every model page lists the exact reports and releases it was built from — verify figures against those filings before relying on them.</p>
 </div>
 __FOOTER__
 <script id="cards" type="application/json">__CARDS_JSON__</script>
 <script>
-"use strict";
-const C=JSON.parse(document.getElementById("cards").textContent);
-const $=id=>document.getElementById(id);
-const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-function fmtC(v,u){if(!v)return"–";if(u==="oz")return v>=1e6?(v/1e6).toFixed(2)+" Moz":(v/1e3).toFixed(0)+" koz";
-  if(u==="lb")return v>=1e9?(v/1e9).toFixed(2)+" Blb":(v/1e6).toFixed(0)+" Mlb";return v>=1e6?(v/1e6).toFixed(1)+" Mt":(v/1e3).toFixed(0)+" kt";}
-const els=[...new Set(C.map(c=>c.element))].sort(),regs=[...new Set(C.map(c=>c.region).filter(Boolean))].sort();
-els.forEach(e=>$("fel").insertAdjacentHTML("beforeend",`<option>${esc(e)}</option>`));
-regs.forEach(r=>$("freg").insertAdjacentHTML("beforeend",`<option>${esc(r)}</option>`));
-const st={};try{Object.assign(st,JSON.parse(sessionStorage.getItem("mmp-gallery")||"{}"));}catch(e){}
-["q","fel","freg","fsrc","sort"].forEach(k=>{if(st[k]!=null)$(k).value=st[k];$(k).addEventListener("input",render);});
-function card(c){const k=c.kinds||[];const src=(k.includes("report")?'<span class="c rep">43-101</span>':"")+(k.includes("news")?'<span class="c news">News</span>':"");
-  const els=(c.elements||[c.element]).map(e=>`<span class="c el">${esc(e)}</span>`).join("");
-  const res=c.resource&&c.resource.contained?fmtC(c.resource.contained,c.resource.unit):"–";
-  return `<a class="card" href="models/${esc(c.slug)}.html"><div><h3>${esc(c.project)}</h3>${c.company?`<div class="co">${esc(c.company)}</div>`:""}</div>
-   <div class="chips">${els}${src}${c.region?`<span class="c">${esc(c.region)}</span>`:""}</div>
-   <div class="st"><div><b>${c.counts.holes.toLocaleString()}</b><span>Holes</span></div><div><b>${c.counts.intervals.toLocaleString()}</b><span>Intervals</span></div>
-   <div><b>${res}</b><span>Published</span></div></div>
-   <div class="meta">${c.counts.reports?c.counts.reports+" report"+(c.counts.reports>1?"s":""):""}${c.counts.reports&&c.counts.releases?" · ":""}${c.counts.releases?c.counts.releases+" release"+(c.counts.releases>1?"s":""):""}${c.updated?" · to "+esc(String(c.updated).slice(0,10)):""}</div></a>`;}
-function render(){const q=$("q").value.trim().toLowerCase(),fe=$("fel").value,fr=$("freg").value,fs=$("fsrc").value,so=$("sort").value;
-  try{sessionStorage.setItem("mmp-gallery",JSON.stringify({q:$("q").value,fel:fe,freg:fr,fsrc:fs,sort:so}));}catch(e){}
-  let L=C.filter(c=>{const k=c.kinds||[];
-    if(fe&&c.element!==fe&&!(c.elements||[]).includes(fe))return false;if(fr&&c.region!==fr)return false;
-    if(fs==="report"&&!k.includes("report"))return false;if(fs==="news"&&!k.includes("news"))return false;if(fs==="both"&&!(k.includes("report")&&k.includes("news")))return false;
-    if(q){const hay=[c.project,c.company,c.region,c.element,...(c.elements||[])].join(" ").toLowerCase();return q.split(/\s+/).every(t=>hay.includes(t));}return true;});
-  const nm=c=>(c.project||"").toLowerCase();
-  const S={name:(a,b)=>nm(a).localeCompare(nm(b)),company:(a,b)=>(a.company||a.project||"").toLowerCase().localeCompare((b.company||b.project||"").toLowerCase())||nm(a).localeCompare(nm(b)),
-    holes:(a,b)=>b.counts.holes-a.counts.holes,updated:(a,b)=>String(b.updated||"").localeCompare(String(a.updated||"")),
-    resource:(a,b)=>((b.resource||{}).contained||0)-((a.resource||{}).contained||0)};
-  L.sort(S[so]||S.name);
-  $("count").textContent=L.length+" of "+C.length+" project models";
-  $("grid").innerHTML=L.length?L.map(card).join(""):'<p class="empty">No models match these filters.</p>';}
-render();
+const C = JSON.parse(document.getElementById("cards").textContent);
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fmt = n => n == null ? "–" : Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 });
+const fmtT = t => !t ? "–" : t >= 1e9 ? (t / 1e9).toFixed(2) + " Bt" : t >= 1e6 ? (t / 1e6).toFixed(1) + " Mt"
+  : t >= 1e3 ? (t / 1e3).toFixed(0) + " kt" : Math.round(t) + " t";
+const fmtC = (v, u) => v == null ? "–"
+  : u === "oz" ? (v >= 1e6 ? (v / 1e6).toFixed(2) + " Moz" : v >= 1e3 ? (v / 1e3).toFixed(0) + " koz" : Math.round(v) + " oz")
+  : u === "lb" ? (v >= 1e9 ? (v / 1e9).toFixed(2) + " Blb" : v >= 1e6 ? (v / 1e6).toFixed(0) + " Mlb" : Math.round(v) + " lb")
+  : fmtT(v);
+const url = c => "models/" + c.slug + ".html";
+const fmtG = (g, u) => g == null ? "–" : (g >= 100 ? Math.round(g) : g >= 10 ? g.toFixed(1) : g.toFixed(2)) + " " + (u || "");
+
+/* ---------- state ---------- */
+const S = { q: "", el: "", reg: "", src: "", sort: "score", dir: {},
+            view: localStorage.getItem("mmp.view") || (matchMedia("(max-width:760px)").matches ? "grid" : "list"), page: 1 };
+const PER = 40;
+
+/* ---------- facets ---------- */
+function counts(key, pool) {
+  const m = new Map();
+  pool.forEach(c => {
+    const vals = key === "el" ? (c.elements || [c.element]) : key === "reg" ? [c.region]
+      : (c.kinds || []);
+    vals.filter(Boolean).forEach(v => m.set(v, (m.get(v) || 0) + 1));
+  });
+  return [...m].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])));
+}
+const LABEL = { report: "NI 43-101 reports", news: "Drill-result news", import: "Imported data" };
+function drawFacet(id, key, sel) {
+  const pool = match({ ...S, [key]: "" });
+  $(id).innerHTML = counts(key, pool).map(([v, n]) =>
+    `<button data-k="${key}" data-v="${esc(v)}" aria-pressed="${sel === v}">
+       <span>${esc(LABEL[v] || v)}</span><i>${n}</i></button>`).join("") || `<p class="muted" style="font-size:12.5px">—</p>`;
+}
+
+/* ---------- filtering ---------- */
+function match(st) {
+  const q = st.q.trim().toLowerCase();
+  return C.filter(c => {
+    if (st.el && !(c.elements || [c.element]).includes(st.el)) return false;
+    if (st.reg && c.region !== st.reg) return false;
+    if (st.src && !(c.kinds || []).includes(st.src)) return false;
+    if (q) {
+      const hay = [c.project, c.company, c.region, c.element, ...(c.elements || [])].join(" ").toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+const SORTS = {
+  score: (a, b) => (b.score || 0) - (a.score || 0),
+  contained: (a, b) => (b.resource?.contained || b.contained || 0) - (a.resource?.contained || a.contained || 0),
+  holes: (a, b) => (b.counts.holes || 0) - (a.counts.holes || 0),
+  updated: (a, b) => String(b.updated || "").localeCompare(String(a.updated || "")),
+  name: (a, b) => a.project.localeCompare(b.project),
+  company: (a, b) => String(a.company || "~").localeCompare(String(b.company || "~")),
+};
+
+/* ---------- rows ---------- */
+function srcChips(c) {
+  const k = c.kinds || [];
+  return (k.includes("report") ? '<span class="src rep">43-101</span> ' : "")
+       + (k.includes("news") ? '<span class="src news">News</span>' : "");
+}
+function elChips(c) {
+  const els = c.elements || [c.element];
+  return `<span class="els">${els.slice(0, 3).map((e, i) =>
+    `<span class="el ${i ? "sec" : ""}">${esc(e)}</span>`).join("")}</span>`;
+}
+function row(c) {
+  const res = c.resource?.contained;
+  return `<tr data-href="${url(c)}">
+    <td><img class="thumb" src="models/${esc(c.slug)}.svg" alt="" loading="lazy"></td>
+    <td><div class="pname">${esc(c.project)}</div><div class="pco">${esc(c.company || "")}</div></td>
+    <td>${elChips(c)}</td>
+    <td class="hide">${esc(c.region || "—")}</td>
+    <td class="num">${fmt(c.counts.holes)}</td>
+    <td class="num hide2">${fmt(c.counts.intervals)}</td>
+    <td class="num">${fmtT(c.tonnes)}</td>
+    <td class="num hide">${fmtG(c.grade, c.unit)}</td>
+    <td class="num">${fmtC(c.contained, c.contained_unit)}${res ? `<span class="pub">${fmtC(res, c.resource.unit)} published</span>` : ""}</td>
+    <td class="hide2">${srcChips(c)}</td>
+    <td class="num hide muted">${esc((c.updated || "").slice(0, 7))}</td>
+  </tr>`;
+}
+function card(c) {
+  return `<a class="card" href="${url(c)}">
+    <img src="models/${esc(c.slug)}.svg" alt="" loading="lazy">
+    <div class="body">
+      <div><h3>${esc(c.project)}</h3><div class="pco">${esc(c.company || "")}</div></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${elChips(c)}${srcChips(c)}</div>
+      <div class="pco">${esc(c.region || "")}</div>
+      <div class="figs">
+        <div><b>${fmt(c.counts.holes)}</b><span>Holes</span></div>
+        <div><b>${fmtT(c.tonnes)}</b><span>Tonnes</span></div>
+        <div><b>${fmtC(c.contained, c.contained_unit)}</b><span>${esc(c.element)}</span></div>
+      </div>
+    </div></a>`;
+}
+
+/* ---------- render ---------- */
+function render() {
+  const list = match(S).sort(SORTS[S.sort] || SORTS.score);
+  const shown = list.slice(0, S.page * PER);
+  $("count").textContent = `${list.length} of ${C.length} project models`
+    + (list.length > shown.length ? ` · showing ${shown.length}` : "");
+  if (!list.length) {
+    $("view").innerHTML = `<p class="empty">No models match these filters.</p>`;
+  } else if (S.view === "list") {
+    $("view").innerHTML = `<div class="tablewrap"><table class="lib"><thead><tr>
+      <th style="width:120px"></th><th data-s="name">Project</th><th>Metals</th>
+      <th class="hide" data-s="name">Region</th><th class="num" data-s="holes">Holes</th>
+      <th class="num hide2">Intervals</th><th class="num">Tonnes</th>
+      <th class="num hide">Grade</th>
+      <th class="num" data-s="contained">Contained</th><th class="hide2">Built from</th>
+      <th class="num hide" data-s="updated">Updated</th></tr></thead>
+      <tbody>${shown.map(row).join("")}</tbody></table></div>`;
+    document.querySelectorAll("table.lib tbody tr").forEach(tr =>
+      tr.onclick = () => location.href = tr.dataset.href);
+    document.querySelectorAll("table.lib th[data-s]").forEach(th =>
+      th.onclick = () => { S.sort = th.dataset.s; $("sort").value = th.dataset.s; S.page = 1; render(); });
+  } else {
+    $("view").innerHTML = `<div class="grid">${shown.map(card).join("")}</div>`;
+  }
+  $("more").style.display = list.length > shown.length ? "block" : "none";
+  $("active").innerHTML = [["el", S.el], ["reg", S.reg], ["src", S.src]]
+    .filter(([, v]) => v).map(([k, v]) => `<button data-clear="${k}">${esc(LABEL[v] || v)}</button>`).join("");
+  $("active").querySelectorAll("button").forEach(b =>
+    b.onclick = () => { S[b.dataset.clear] = ""; S.page = 1; redraw(); });
+  drawFacet("fel", "el", S.el); drawFacet("freg", "reg", S.reg); drawFacet("fsrc", "src", S.src);
+  document.querySelectorAll(".facet button").forEach(b => b.onclick = () => {
+    const k = b.dataset.k, v = b.dataset.v;
+    S[k] = S[k] === v ? "" : v; S.page = 1; redraw();
+  });
+}
+function redraw() { render(); }
+
+$("q").oninput = e => { S.q = e.target.value; S.page = 1; render(); };
+$("sort").onchange = e => { S.sort = e.target.value; S.page = 1; render(); };
+$("more").onclick = () => { S.page++; render(); };
+$("vlist").onclick = () => setView("list");
+$("vgrid").onclick = () => setView("grid");
+function setView(v) {
+  S.view = v; S.page = 1; localStorage.setItem("mmp.view", v);
+  $("vlist").setAttribute("aria-pressed", v === "list");
+  $("vgrid").setAttribute("aria-pressed", v === "grid");
+  render();
+}
+document.getElementById("railwrap").open = window.innerWidth > 900;
+setView(S.view);
 </script>
 </body>
 </html>
