@@ -130,7 +130,7 @@ def do_build(job):
     d, F = store.db(), store.files()
     proj = d.one("select * from projects where id = %s", job["project_id"])
     rows = d.all("select * from datasets where project_id = %s and status = 'ready'", proj["id"])
-    if not rows:
+    if not rows and not proj.get("attach_to"):
         raise RuntimeError("no parsed data in this project yet")
     d.run("update projects set status = 'building', error = null where id = %s", proj["id"])
     datasets = [F.get_json(r["data_key"]) for r in rows if r.get("data_key")]

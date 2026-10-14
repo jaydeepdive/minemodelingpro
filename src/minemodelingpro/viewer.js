@@ -242,6 +242,10 @@ function drawRes(){const box=$("res"),R=M.resources||[];if(!R.length){$("ressec"
     return `<div class="res"><div class="kv" style="padding:0"><span>${esc(r.title||r.source)}</span></div>${cu2}
       <table>${rows}<tr style="border-top:1px solid var(--line)"><td><b>Total</b></td><td><b>${fmtT(r.tonnes)}</b></td><td></td><td><b>${fmtC(r.contained,u)}</b></td></tr></table>
       ${r.url?`<a href="${esc(r.url)}" target="_blank" rel="noopener">open report ↗</a>`:""}${r.page?` <span class="note">· p.${r.page}</span>`:""}</div>`;}).join("");}
+function wireAdopt(){const b=$("adopt");if(!b)return;
+  b.onclick=()=>{const u=new URL("../app/adopt.html",location.href);
+    u.searchParams.set("slug",M.slug);u.searchParams.set("name",M.project||"");
+    if(M.company)u.searchParams.set("company",M.company);location.href=u.toString();};}
 function drawParams(){const E=M.elements[EL],B=E.blocks,box=$("params");
   if(!B){box.innerHTML=`<p class="note">No block model for ${EL} (needs ≥4 assayed holes).</p>`;return;}const q=B.params;
   box.innerHTML=[["Block size",B.size.map(v=>+v.toFixed(2)).join(" × ")+" m"],["Block size from",q.block_source],["Estimator","Inverse distance²"],
@@ -250,7 +254,9 @@ function drawParams(){const E=M.elements[EL],B=E.blocks,box=$("params");
     ["Unsampled hole length",q.gap_fill===false?"not composited":"composited at zero grade"],["Blocks estimated",fmtN(B.n_total)]]
     .map(([k,v])=>`<div class="kv"><span>${k}</span><b>${esc(v)}</b></div>`).join("")
     +((q.custom&&q.custom.length)?`<p class="note">Set for this project: ${q.custom.map(esc).join(", ")}.</p>`:"")
-    +(q.coarsened>1?`<p class="note">Display grid coarsened ×${q.coarsened} (very large extent).</p>`:"");}
+    +(M.owner_project?"":`<p class="note" style="margin-top:8px"><button class="mini" id="adopt">Adjust these parameters</button> — opens your own private copy of this model in Studio, where block size, search radius, estimator, top-cut, density and cut-off are editable and the model rebuilds.</p>`)
+    +(q.coarsened>1?`<p class="note">Display grid coarsened ×${q.coarsened} (very large extent).</p>`:"");
+  wireAdopt();}
 function drawSources(){const S=M.sources||[],L=$("srclist");$("src-n").textContent="· "+S.length;
   L.innerHTML=S.map(s=>`<a class="${s.kind==="news release"?"":"rep"}" href="${esc(s.url||s.archive||"#")}" target="_blank" rel="noopener">${esc(s.title||s.kind)}<br><em>${esc(s.kind)}${s.date?" · "+esc(String(s.date).slice(0,10)):""}${s.intervals!=null?" · "+s.collars+" collars, "+s.intervals+" intervals":""}</em></a>`).join("");}
 /* ---------------- what drill data this model is built on ---------------- */

@@ -397,7 +397,8 @@ async def patch_project(pid: str, request: Request, u=Depends(require)):
 @app.post("/api/projects/{pid}/build")
 def build(pid: str, request: Request, u=Depends(require)):
     p = project_or_404(u, pid)
-    if not store.db().one("select id from datasets where project_id = %s and status = 'ready'", pid):
+    if not p.get("attach_to") and not store.db().one(
+            "select id from datasets where project_id = %s and status = 'ready'", pid):
         raise HTTPException(400, "upload and parse some data first")
     j = queue("build", p["owner"], p["id"])
     return {"job": jsonable(j)}
@@ -494,6 +495,29 @@ def project_model(pid: str, request: Request, u=Depends(require)):
         return _stream(store.files().get(p["model_key"]))
     except Exception:
         raise HTTPException(404, "the model file is missing — rebuild the project")
+
+
+@app.post("/api/adopt")
+async def adopt(request: Request, u=Depends(require)):
+    """Open one of MMP's own public models in Studio, so its parameters can be
+    changed and the model rebuilt — the public pages themselves are static."""
+    b = await request.json()
+    slug = re.sub(r"[^a-z0-9-]", "", (b.get("slug") or "").lower())[:64]
+    if not slug:
+        raise HTTPException(400, "which model?")
+    name = (b.get("name") or slug.replace("-", " ").title()).strip()[:120]
+    d = store.db()
+    mine = d.one("select * from projects where owner = %s and attach_to = %s", u["id"], slug)
+    if mine:
+        return {"project": jsonable(mine), "existing": True}
+    base = slug if not d.one("select id from projects where owner = %s and slug = %s", u["id"], slug) else slug
+    p = d.one("insert into projects (owner, slug, name, company, attach_to, params, commodity) "
+              "values (%s,%s,%s,%s,%s,%s,%s) returning *",
+              u["id"], f"{slug}-mine", name, (b.get("company") or "").strip() or None, base,
+              json.dumps(PARAMS.validate(b.get("params") or {})[0]), (b.get("commodity") or "").strip() or None)
+    queue("build", u["id"], p["id"])
+    event(u["id"], "project.adopt", project=str(p["id"]), slug=slug)
+    return {"project": jsonable(p), "existing": False}
 
 
 @app.get("/api/public/projects")

@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Adjust parameters · MineModelingPro Studio</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Bitter:wght@500;700;800&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+<script src="config.js"></script>
+</head>
+<body>
+<div class="topbar" id="topbar"></div>
+<div class="wrap" style="max-width:720px">
+  <h1 id="h">Adjust this model's parameters</h1><div class="rule"></div>
+  <p class="lead" id="lead">Public model pages are built nightly and are the same for everyone.
+    To change the block size, search radius, estimator, top-cut or density, MineModelingPro opens
+    its own copy of the model in your account — the same drilling, your parameters, rebuilt on demand.
+    Nothing about your copy is visible to anyone else.</p>
+  <div id="msg"></div>
+  <div class="card" style="margin-top:16px">
+    <div class="row"><button class="btn" id="go">Open my copy</button>
+      <a class="btn ghost" id="back" href="../models.html">Back to the model</a></div>
+    <p class="note" style="margin-top:10px" id="note"></p>
+  </div>
+</div>
+<footer class="site"><b>MineModelingPro Studio</b> — your copy is private to your account.</footer>
+<script type="module">
+import { chrome, requireUser, $, banner, api } from "./app.js";
+await chrome("dashboard");
+const user = await requireUser(); if (!user) throw new Error("redirecting");
+const q = new URLSearchParams(location.search);
+const slug = q.get("slug") || "", name = q.get("name") || "";
+$("#h").textContent = name ? `Adjust ${name}` : "Adjust this model's parameters";
+$("#back").href = slug ? `../models/${slug}.html` : "../models.html";
+if (!slug) banner("No model was named — open this from a model page.");
+$("#go").onclick = async () => {
+  $("#go").disabled = true; banner("");
+  try {
+    const r = await api("/adopt", { method: "POST", body: { slug, name, company: q.get("company") || "" } });
+    location.href = "project.html?id=" + r.project.id;
+  } catch (e) { banner(e.message || String(e)); $("#go").disabled = false; }
+};
+$("#note").textContent = "Your copy rebuilds in a minute or two; the public page is untouched.";
+</script>
+</body>
+</html>
