@@ -26,6 +26,27 @@ $("s-src").textContent=fmtN((M.sources||[]).length);
    :"Holes drawn straight on collar azimuth/dip (no downhole surveys published for this project).";
  document.querySelector("#pModel .stats").after(st);}
 
+/* ---------------- layout repair for pages built before the left column ----------
+   Model pages bake in their own markup, so this rebuilds the left column at runtime;
+   once a page is rebuilt the shell already has it and this does nothing. */
+(function fixLayout(){
+  const model=document.getElementById("pModel"),data=document.getElementById("pData");
+  if(!data||document.getElementById("leftcol"))return;
+  const col=document.createElement("div");col.id="leftcol";
+  model.parentNode.insertBefore(col,model);col.appendChild(model);col.appendChild(data);
+  data.classList.add("min");
+  const css=document.createElement("style");
+  css.textContent=`#leftcol{position:fixed;z-index:20;top:calc(var(--bar) + 12px);left:12px;width:306px;display:flex;
+    flex-direction:column;gap:10px;max-height:calc(100vh - var(--bar) - 86px);pointer-events:none}
+   #leftcol>.panel{position:static;width:auto;max-height:none;pointer-events:auto;flex:0 1 auto;min-height:0}
+   #leftcol>.panel .pbody{max-height:42vh}
+   #holetbl table,table.bd{table-layout:fixed}
+   #holetbl td{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+   @media (max-width:760px){#leftcol{display:contents}}
+   @media (max-height:560px) and (orientation:landscape){#leftcol{display:contents}}`;
+  document.head.appendChild(css);
+})();
+
 /* ---------------- panels (minimise / mobile sheets) ---------------- */
 document.querySelectorAll(".phead").forEach(h=>{const p=h.parentElement,id=p.id;
   if(!MOBILE&&store.get("min:"+id,false))p.classList.add("min");
@@ -230,8 +251,9 @@ function drawBreakdown(){
     return `<tr data-el="${esc(e)}"${e===EL?' class="on"':''}><td>${esc(e)}</td><td class="n">≥ ${fmtG(r[0],E.unit)}</td>`+
       `<td class="n">${fmtT(r[1])}</td><td class="n">${fmtG(r[2],E.unit)}</td><td class="n"><b>${fmtC(r[3],E.contained_unit)}</b></td>`+
       `<td class="n">${p?fmtC(p.contained,p.contained_unit):"–"}</td></tr>`;}).join("");
-  box.innerHTML=`<table class="bd"><thead><tr><th>Metal</th><th class="n">Cut-off</th><th class="n">Tonnes</th>`+
-    `<th class="n">Grade</th><th class="n">MMP contained</th><th class="n">Published</th></tr></thead><tbody>${rows}</tbody></table>`+
+  box.innerHTML=`<table class="bd"><colgroup><col style="width:13%"><col style="width:19%"><col style="width:17%"><col style="width:17%"><col style="width:19%"><col style="width:15%"></colgroup>`+
+    `<thead><tr><th>Metal</th><th class="n">Cut-off</th><th class="n">Tonnes</th>`+
+    `<th class="n">Grade</th><th class="n">MMP</th><th class="n">Pub.</th></tr></thead><tbody>${rows}</tbody></table>`+
     `<p class="note">Each row is this model at that metal's own cut-off — move a metal's slider and its row follows. Estimates, not a resource.</p>`;
   box.querySelectorAll("tr[data-el]").forEach(tr=>tr.onclick=()=>setEl(tr.dataset.el));
 }
@@ -241,7 +263,7 @@ function drawRes(){const box=$("res"),R=M.resources||[];if(!R.length){$("ressec"
     const cu2=r.cutoff!=null?`<div class="note">reported at ${String(r.cutoff_unit||"").match(/\/t/)?(+r.cutoff).toLocaleString()+" "+esc(r.cutoff_unit):fmtG(+r.cutoff,r.cutoff_unit)} cut-off</div>`:"";
     return `<div class="res"><div class="kv" style="padding:0"><span>${esc(r.title||r.source)}</span></div>${cu2}
       <table>${rows}<tr style="border-top:1px solid var(--line)"><td><b>Total</b></td><td><b>${fmtT(r.tonnes)}</b></td><td></td><td><b>${fmtC(r.contained,u)}</b></td></tr></table>
-      ${r.url?`<a href="${esc(r.url)}" target="_blank" rel="noopener">open report ↗</a>`:""}${r.page?` <span class="note">· p.${r.page}</span>`:""}</div>`;}).join("");}
+      ${bestUrl(r)?`<a href="${esc(bestUrl(r))}" target="_blank" rel="noopener">open report ↗</a>`:""}${r.page?` <span class="note">· p.${r.page}</span>`:""}</div>`;}).join("");}
 function wireAdopt(){const b=$("adopt");if(!b)return;
   b.onclick=()=>{const u=new URL("../app/adopt.html",location.href);
     u.searchParams.set("slug",M.slug);u.searchParams.set("name",M.project||"");
@@ -257,8 +279,14 @@ function drawParams(){const E=M.elements[EL],B=E.blocks,box=$("params");
     +(M.owner_project?"":`<p class="note" style="margin-top:8px"><button class="mini" id="adopt">Adjust these parameters</button> — opens your own private copy of this model in Studio, where block size, search radius, estimator, top-cut, density and cut-off are editable and the model rebuilds.</p>`)
     +(q.coarsened>1?`<p class="note">Display grid coarsened ×${q.coarsened} (very large extent).</p>`:"");
   wireAdopt();}
+/* SEDAR+ hands out session-scoped document URLs that expire to its home page, so the
+   archived PDF is the link that actually opens the filing. */
+function stale(u){return /sedarplus\.ca\/csa-party\/viewInstance|drmKey=|sedar\.com\/GetFile/i.test(String(u||""));}
+function bestUrl(o){const u=o&&o.url,a=o&&o.archive;return (!u||stale(u))&&a?a:(u||a||"");}
 function drawSources(){const S=M.sources||[],L=$("srclist");$("src-n").textContent="· "+S.length;
-  L.innerHTML=S.map(s=>`<a class="${s.kind==="news release"?"":"rep"}" href="${esc(s.url||s.archive||"#")}" target="_blank" rel="noopener">${esc(s.title||s.kind)}<br><em>${esc(s.kind)}${s.date?" · "+esc(String(s.date).slice(0,10)):""}${s.intervals!=null?" · "+s.collars+" collars, "+s.intervals+" intervals":""}</em></a>`).join("");}
+  L.innerHTML=S.map(s=>{const href=bestUrl(s),pdf=href&&href===s.archive;
+    const extra=pdf&&s.url&&!stale(s.url)?` · <a href="${esc(s.url)}" target="_blank" rel="noopener">listing</a>`:"";
+    return `<a class="${s.kind==="news release"?"":"rep"}" href="${esc(href||"#")}" target="_blank" rel="noopener">${esc(s.title||s.kind)}<br><em>${esc(s.kind)}${s.date?" · "+esc(String(s.date).slice(0,10)):""}${s.intervals!=null?" · "+s.collars+" collars, "+s.intervals+" intervals":""}${pdf?" · opens the filed PDF":""}${extra}</em></a>`;}).join("");}
 /* ---------------- what drill data this model is built on ---------------- */
 function drawData(){
   const C=M.counts||{},box=$("datasum");
@@ -273,13 +301,15 @@ function drawData(){
     +(holes&&assayed/holes<0.6?`<p class="note">Only ${fmtN(assayed)} of ${fmtN(holes)} holes carry assay intervals in the filings we hold — technical reports usually publish a <em>significant intercepts</em> table rather than the full assay file. The block model is therefore estimated around those holes only; the rest are drawn as traces so you can see where the drilling actually is.</p>`:"");
   // every hole, searchable, click to fly to it
   const byHole={};IV.forEach(x=>{const k=x.h.id;(byHole[k]=byHole[k]||[]).push(x);});
-  const draw=(q)=>{const list=HO.filter(h=>!q||h.id.toLowerCase().includes(q)).slice(0,400);
-    $("hole-n").textContent="· "+fmtN(HO.length);
-    $("holetbl").innerHTML=`<table><thead><tr><th>Hole</th><th class="n">Depth</th><th class="n">${esc(EL)}</th><th class="n">Best</th></tr></thead><tbody>`+
+  const draw=(q)=>{const list=HO.filter(h=>!q||h.id.toLowerCase().includes(q));
+    $("hole-n").textContent="· "+fmtN(HO.length)+(q?" · "+fmtN(list.length)+" shown":"");
+    const unit=M.elements[EL].unit;
+    $("holetbl").innerHTML=`<table><colgroup><col style="width:38%"><col style="width:20%"><col style="width:18%"><col style="width:24%"></colgroup>`+
+      `<thead><tr><th>Hole</th><th class="n">Depth</th><th class="n">Intervals</th><th class="n">Best ${esc(EL)}</th></tr></thead><tbody>`+
       list.map(h=>{const iv=byHole[h.id]||[];const best=iv.length?Math.max(...iv.map(x=>x.g)):null;
-        return `<tr data-h="${esc(h.id)}"><td>${esc(h.id)}</td><td class="n">${h.depth?Math.round(h.depth)+" m":"–"}</td>`+
-               `<td class="n">${iv.length||"–"}</td><td class="n">${best!=null?fmtG(best,M.elements[EL].unit):"–"}</td></tr>`;}).join("")+
-      `</tbody></table>`+(HO.length>400?`<p class="note" style="padding:6px 8px">Showing the first 400 — filter to narrow.</p>`:"");
+        return `<tr data-h="${esc(h.id)}"><td title="${esc(h.id)}">${esc(h.id)}</td><td class="n">${h.depth?Math.round(h.depth)+" m":"–"}</td>`+
+               `<td class="n">${iv.length||"–"}</td><td class="n">${best!=null?fmtG(best,unit):"–"}</td></tr>`;}).join("")+
+      `</tbody></table>`+(list.length?"":`<p class="note" style="padding:6px 8px">No hole matches “${esc(q)}”.</p>`);
     $("holetbl").querySelectorAll("tr[data-h]").forEach(tr=>tr.onclick=()=>{
       const h=HO.find(x=>x.id===tr.dataset.h);if(!h)return;
       const mid=at(h,(h.depth||0)/2),L=Math.max(h.depth||100,120);

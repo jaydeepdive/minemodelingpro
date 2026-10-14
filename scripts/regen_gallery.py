@@ -33,6 +33,14 @@ def main(site="site"):
         except Exception as e:
             print(f"  skip {fn}: {type(e).__name__}: {str(e)[:90]}")
     M3._write_gallery(cards, os.path.join(site, "models.html"))
+    # the pages load these two from site/models/ — they are copies of the templates,
+    # and forgetting to refresh them ships an old viewer to every model page
+    import shutil
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for src, dst in ((os.path.join(here, "src", "minemodelingpro", "viewer.js"), "viewer.js"),
+                     (os.path.join(here, "src", "minemodelingpro", "model3d_viewer.html"), "_shell.html")):
+        shutil.copy(src, os.path.join(out, dst))
+    print("refreshed site/models/viewer.js and _shell.html")
     print(f"gallery: {len(cards)} models, {sum(1 for c in cards if c.get('resource'))} with a published resource")
 
 
