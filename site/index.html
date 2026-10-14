@@ -227,6 +227,23 @@ footer.site{border-top:1px solid var(--line);color:var(--mut);font-size:13px;pad
 
 <script>
 /* live counts from the gallery index */
+/* the front page knows whether you are signed in */
+fetch("/api/me", { credentials: "same-origin" }).then(r => r.json()).then(d => {
+  if (!d || !d.user) return;
+  const nav = document.querySelector("nav.menu");
+  if (nav) nav.innerHTML = `<a href="#what">What it does</a>
+    <a href="models.html">Model library</a>
+    <a class="cta" href="app/dashboard.html">My projects</a>`;
+  const btns = document.querySelector(".hero .btns");
+  if (btns) btns.innerHTML = `<a class="btn" href="models.html">Open the model library</a>
+    <a class="btn ghost" href="app/dashboard.html">My projects</a>`;
+  const cta = document.querySelector("#access .btns");
+  if (cta) cta.innerHTML = `<a class="btn" href="models.html">Open the model library</a>
+    <a class="btn ghost" href="app/account.html">Your account</a>`;
+  const ctaTitle = document.querySelector("#access h2");
+  if (ctaTitle) ctaTitle.textContent = "Model your own drilling";
+}).catch(() => {});
+
 fetch("/api/stats").then(r => r.json()).then(d => {
   const n = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   n("n-models", (d.models || 0).toLocaleString());

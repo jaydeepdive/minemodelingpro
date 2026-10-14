@@ -36,11 +36,9 @@ FONTS = ('<link rel="preconnect" href="https://fonts.googleapis.com">'
          '<link href="https://fonts.googleapis.com/css2?family=Bitter:wght@500;700;800&'
          'family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">')
 
-# Closeology's public radar (sister product). Left as an external courtesy link.
-CLOSEOLOGY_URL = "https://jaydeepdive.github.io/closeology/"
-
-
 def header(active=""):
+    """Site chrome. The nav's right-hand slot is filled in by the browser from
+    /api/me, so a signed-in reader is not told to sign in again on a static page."""
     home_active = " active" if active in ("models.html", "") else ""
     return (
         '<div class="topbar"><div class="topwrap">'
@@ -50,11 +48,15 @@ def header(active=""):
         '</a>'
         '<nav class="menu">'
         f'<a href="models.html" class="{("active" if home_active else "").strip()}">Model library</a>'
-        f'<a href="app/index.html" class="{("active" if active == "app" else "")}">Studio</a>'
-        f'<a class="ext" href="{CLOSEOLOGY_URL}" target="_blank" rel="noopener">Closeology radar &#8599;</a>'
-        '<a class="signin" href="app/index.html">Sign in</a>'
+        f'<a href="app/dashboard.html" class="{("active" if active == "app" else "")}">Studio</a>'
+        '<span id="navauth"><a class="signin" href="app/index.html">Sign in</a></span>'
         '</nav>'
-        '</div></div>')
+        '</div></div>'
+        '<script>fetch("/api/me",{credentials:"same-origin"}).then(r=>r.json()).then(d=>{'
+        'var s=document.getElementById("navauth");if(!s||!d||!d.user)return;'
+        'var e=String(d.user.email||"").replace(/[&<>"]/g,"");'
+        's.innerHTML=\'<a href="app/account.html">\'+e+\'</a>\';'
+        '}).catch(function(){});</script>')
 
 
 def footer():
