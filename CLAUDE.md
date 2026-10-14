@@ -126,6 +126,11 @@ runs entirely on DigitalOcean — no third-party auth, no keys in the browser.
   invites at `/app/admin.html`.
 - `studio/worker.py` — jobs: `import` (parse files → dataset JSON → build), `build`,
   `publish`, `delete`. Claims jobs with `FOR UPDATE SKIP LOCKED`.
+- `studio/autodeploy.py` — **deploys are automatic**: a thread in the worker watches
+  the tip of `main` on GitHub every 5 minutes and asks the DO Apps API for a
+  deployment when it moves (code push, or the nightly gallery build committing
+  `site/`). No webhook, no GitHub secret, no console clicking. Needs `DO_APP_ID` +
+  `DO_DEPLOY_TOKEN` in the app environment (set); `MMP_AUTODEPLOY=0` disables it.
 - `studio/store.py` — the only place that talks to Postgres (psycopg3) or object
   storage (Spaces via boto3; a local directory when `SPACES_*` is unset).
 - `studio/schema_pg.sql` — users, invites, projects, datasets, jobs, events. Applied

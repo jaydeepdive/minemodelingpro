@@ -44,10 +44,7 @@ APP=<app-id>
 curl -s -H "$A" https://api.digitalocean.com/v2/apps/$APP | jq '.app.live_url, .app.active_deployment.phase'
 curl -s -H "$A" "https://api.digitalocean.com/v2/apps/$APP/deployments?per_page=5" | jq '.deployments[] | {id, phase, created_at}'
 
-# deploy the current main. The app is wired to the PUBLIC git url, which DigitalOcean
-# cannot receive webhooks for, so a deployment is triggered explicitly — including
-# after the daily GitHub Actions gallery rebuild. (Connecting the repo through DO's
-# GitHub integration in the console would make deploys automatic on push.)
+# deploy the current main by hand (the app normally does this itself — see below)
 curl -s -X POST -H "$A" https://api.digitalocean.com/v2/apps/$APP/deployments -d '{"force_build":true}'
 
 # logs
@@ -57,6 +54,27 @@ curl -s -H "$A" "https://api.digitalocean.com/v2/apps/$APP/components/modeler/lo
 
 `.do/app.yaml` is the reference copy of the spec. To change the shape of the app,
 edit it and `PUT /v2/apps/$APP` with `{"spec": …}` (or `doctl apps update`).
+
+## Deploys happen by themselves
+
+The app builds from the public GitHub URL, which DigitalOcean cannot receive push
+webhooks for, and an existing component's source cannot be switched to the GitHub
+integration from the console. So the app watches the repository itself:
+`studio/autodeploy.py` runs as a thread inside the `modeler` worker, checks the tip
+of `main` every five minutes, and asks the Apps API for a deployment whenever it has
+moved — a code push, or the nightly gallery build committing `site/`. Each attempt is
+recorded in `events` (kind `autodeploy`), so it never asks twice for the same commit,
+never while a deployment is running, and at most once per ten minutes.
+
+It needs `DO_APP_ID` and `DO_DEPLOY_TOKEN` (an app read/write API token, SECRET) in
+the app environment, which are already set. `MMP_AUTODEPLOY=0` turns it off;
+`MMP_AUTODEPLOY_SECONDS` and `MMP_AUTODEPLOY_MIN` change the cadence. Watch it with:
+
+```bash
+curl -s -H "$AUTH" "$API/components/modeler/logs?type=RUN&follow=false" | jq -r .url | xargs curl -s | grep autodeploy
+```
+
+Rotating the API token therefore means updating `DO_DEPLOY_TOKEN` as well.
 
 ## Database
 

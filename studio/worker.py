@@ -294,7 +294,12 @@ def run_once():
 
 
 def main():
-    store.wait_for_db()
+    d = store.wait_for_db()
+    try:                                   # keep the live app on the latest main
+        from studio import autodeploy
+        autodeploy.start(d)
+    except Exception as e:
+        print(f"[worker] autodeploy unavailable: {str(e)[:120]}", flush=True)
     try:
         store.db().init_schema()
     except Exception as e:
