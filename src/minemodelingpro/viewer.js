@@ -470,11 +470,20 @@ function wireAdopt(){const b=$("adopt");if(!b)return;
     if(M.company)u.searchParams.set("company",M.company);location.href=u.toString();};}
 function drawParams(){const E=M.elements[EL],B=E.blocks,box=$("params");
   if(!B){box.innerHTML=`<p class="note">No block model for ${EL} (needs ≥4 assayed holes).</p>`;return;}const q=B.params;
-  box.innerHTML=[["Block size",B.size.map(v=>+v.toFixed(2)).join(" × ")+" m"],["Block size from",q.block_source],["Estimator","Inverse distance²"],
+  const ST=M.style||{};
+  box.innerHTML=[["Deposit style",ST.label?ST.label+(ST.confidence==="report"?"":" *"):"—"],
+    ["Block size",B.size.map(v=>+v.toFixed(2)).join(" × ")+" m"],["Block size from",q.block_source],["Estimator","Inverse distance²"],
     ["Composites",q.composite_m+" m (gaps between intercepts = 0)"],["Drill spacing",q.spacing_m+" m"],["Max distance to data",q.max_gap_m+" m"],
-    ["Search radius",q.radius_m+" m, ≥"+(q.min_holes||2)+" holes"],["Top-cut",fmtG(q.top_cut,E.unit)],["Density",B.density+" t/m³"],
+    ["Search radius",q.radius_m+" m, ≥"+(q.min_holes||2)+" holes"],["Top-cut",fmtG(q.top_cut,E.unit)],["Density",B.density+" t/m³"],["Density from",q.density_source||"—"],
+    ["Mineralisation carried",(ST.halo_m!=null?ST.halo_m+" m past each intercept":"—")
+      +(ST.median_intercept_m?" (intercepts median "+ST.median_intercept_m+" m)":"")],
+    ["Search shape",q.anisotropy?("along the body "+q.anisotropy[0]+" · across "+q.anisotropy[2]):"isotropic"],
     ["Unsampled hole length",q.gap_fill===false?"not composited":"composited at zero grade"],["Blocks estimated",fmtN(B.n_total)]]
     .map(([k,v])=>`<div class="kv"><span>${k}</span><b>${esc(v)}</b></div>`).join("")
+    +(ST.label?`<p class="note">${ST.why?esc(ST.why[0].toUpperCase()+ST.why.slice(1))+". ":""}${ST.note?esc(ST.note)+" ":""}
+       The style sets the density, how far mineralisation is carried from an intercept and how big a block may be —
+       a narrow vein and a massive sulphide lens are not the same rock and cannot be modelled as though they were.
+       ${ST.confidence==="report"?"":"<b>*</b> read from the drilling, not stated in a report."}</p>`:"")
     +((q.custom&&q.custom.length)?`<p class="note">Set for this project: ${q.custom.map(esc).join(", ")}.</p>`:"")
     +(M.owner_project?"":`<p class="note" style="margin-top:8px"><button class="mini" id="adopt">Adjust these parameters</button> — opens your own private copy of this model in Studio, where block size, search radius, estimator, top-cut, density and cut-off are editable and the model rebuilds.</p>`)
     +(q.coarsened>1?`<p class="note">Display grid coarsened ×${q.coarsened} (very large extent).</p>`:"");

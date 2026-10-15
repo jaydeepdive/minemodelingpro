@@ -1344,6 +1344,15 @@ def extract_model_params(pages_text):
             out["nsr"] = f
     except Exception:
         pass
+    # what the report calls the deposit — the strongest evidence there is for how
+    # it should be modelled, and the report usually says it outright
+    try:
+        from minemodelingpro import deposit_style as _dsty
+        k, _why = _dsty.from_text(pages_text)
+        if k:
+            out["deposit_style"] = k
+    except Exception:
+        pass
     # and the dollar cut-off it was reported at — a value cut-off is not a grade,
     # so it has its own key rather than being squeezed into default_cutoff
     vals = []

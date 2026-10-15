@@ -829,6 +829,7 @@ def _materialise(p, news_holes, news_ivs, ov):
             "frame": frame, "holes": holes, "intervals": intervals, "sources": sources,
             "resources": res,
             "report_params": rp or None, "report_params_from": rp_from or None,
+            "report_style": rp.get("deposit_style"),
             "report_block": rp.get("block"),
             "commodities": [c for c in (str(r.get("commodity") or "").split("-")[0] for r in reports) if c],
             "report_density": rp.get("density"),

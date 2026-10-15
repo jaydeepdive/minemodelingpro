@@ -32,6 +32,9 @@ Keys (all optional; anything absent falls back to the data-driven default):
   elements         restrict/order the elements modelled
   max_elements     how many elements to model (default 3)
   bins             grade-legend breaks for the primary element
+  deposit_style    "vein" | "vms" | "porphyry" | "orogenic" | "skarn" | "sedex" |
+                   "iron" | "pegmatite" | "laterite" | "phosphate" | "bulk" — sets the
+                   density, how far mineralisation carries, and the block size
   nsr              net-smelter-return formula {"factors": {"Cu": 81, ...}, "units": …},
                    so a polymetallic deposit can be cut in dollars per tonne rather
                    than on one metal's grade (the report's own formula by default)
@@ -53,7 +56,7 @@ NUMERIC = {"composite_m", "radius_m", "max_gap_m", "spacing_m", "power", "top_cu
 INTEGER = {"min_holes", "min_samples", "max_elements"}
 BOOLEAN = {"gap_fill"}
 LISTS = {"block", "elements", "bins"}
-STRINGS = {"method", "name", "company", "note"}
+STRINGS = {"method", "name", "company", "note", "deposit_style"}
 # the net-smelter-return formula: {"factors": {el: $/t per unit grade}, "units": ...}.
 # Not a number and not a list, so it travels as an object of its own.
 OBJECTS = {"nsr"}

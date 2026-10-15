@@ -223,6 +223,36 @@ def _passes(radius, max_gap, min_holes, min_samples, given=None):
     return [(radius, max_gap * 0.75, max(3, min_holes + 1), 3),
             (radius, max_gap, max(2, min_holes), 2),
             (radius, max_gap, 1, 2)]
+def anisotropy(pts, g, ratios):
+    """The deposit's own frame, and the search ellipsoid in it.
+
+    A vein is continuous along strike and down dip and stops abruptly across it. An
+    isotropic search cannot express that: any reach long enough to follow the vein
+    also bridges to the next one through barren rock, which is how a 1.4 m vein
+    system came to be modelled over ninety-five times the volume of its filed
+    resource. So the mineralised composites are given their own axes — principal
+    components of the above-zero cloud, longest first — and the search is stretched
+    along them by the style's ratios.
+
+    Returns a matrix that maps world coordinates into a space where the search
+    ellipsoid is the unit sphere, or None when the cloud has no usable shape."""
+    try:
+        P = np.asarray(pts, float)[np.asarray(g, float) > 0]
+        if len(P) < 12:
+            return None, None
+        P = P - P.mean(0)
+        _u, sv, vt = np.linalg.svd(P, full_matrices=False)
+        if sv[0] <= 0 or not np.isfinite(sv).all():
+            return None, None
+        a = np.asarray(ratios, float)
+        if a.min() <= 0:
+            return None, None
+        # rows of vt are the body's axes, longest first; scale each by its ratio
+        return vt, a
+    except Exception:
+        return None, None
+
+
 def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None):
     """Grade estimate on a regular grid of `block` (bx,by,bz) cells, only within
     max_gap of real composites and informed by >= min_holes holes. Returns
@@ -243,6 +273,10 @@ def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None)
     power = float(o.get("power") if o.get("power") is not None else 2.0)
     method = o.get("method") or "idw"
     passes = _passes(radius, max_gap, min_holes, min_samples, o.get("passes"))
+    # the deposit's own frame: searching a vein in world axes bridges between veins
+    rot, aniso = (None, None)
+    if o.get("anisotropy"):
+        rot, aniso = anisotropy(pts, g, o["anisotropy"])
     lo = pts.min(0) - max_gap
     hi = pts.max(0) + max_gap
     dims = np.ceil((hi - lo) / [bx, by, bz]).astype(int) + 1
@@ -265,7 +299,13 @@ def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None)
     cand_c = np.argwhere(dist <= max_gap + cdiag)
     # expand to fine cells
     off = np.stack(np.meshgrid(np.arange(f), np.arange(f), np.arange(f), indexing="ij"), -1).reshape(-1, 3)
-    tree = cKDTree(pts)
+    if rot is not None:
+        # map into the space where the search ellipsoid is a sphere of radius `radius`
+        W = (rot.T / aniso) @ rot          # symmetric: world -> search space
+        tree = cKDTree(pts @ W.T)
+    else:
+        W = None
+        tree = cKDTree(pts)
     ijk_out, g_out, c_out = [], [], []
     CH = max(1, 400_000 // len(off))
     for s in range(0, len(cand_c), CH):
@@ -273,7 +313,8 @@ def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None)
         fine = (cc[:, None, :] * f + off[None, :, :]).reshape(-1, 3)
         fine = fine[(fine < dims).all(1)]
         ctr = lo + (fine + 0.5) * [bx, by, bz]
-        dd, ii = tree.query(ctr, k=24, distance_upper_bound=radius)
+        dd, ii = tree.query(ctr @ W.T if W is not None else ctr, k=24,
+                            distance_upper_bound=radius)
         near = np.isfinite(dd)
         iis0 = np.where(near, ii, 0)
         hh = np.where(near, hid[iis0], -1)
@@ -315,6 +356,7 @@ def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None)
     params = {"block": [bx, by, bz], "radius_m": round(radius, 1), "max_gap_m": round(max_gap, 1),
               "spacing_m": round(spacing, 1), "power": power, "min_holes": min_holes,
               "min_samples": min_samples, "method": method, "coarsened": coarsened,
+              "anisotropy": [round(float(x), 2) for x in aniso] if aniso is not None else None,
               "passes": [{"range_m": round(r, 1), "max_gap_m": round(gp, 1),
                           "min_holes": mh, "min_samples": ms, "class": CLASSES[i]}
                          for i, (r, gp, mh, ms) in enumerate(passes)]}
@@ -800,12 +842,43 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
     if geo:
         lat0 = lat0 + cy / fr["mN"]; lon0 = lon0 + cx / fr["mE"]
 
-    # how far the zero-filled gaps may run past a reported interval: about one
-    # drill spacing, measured from the collars, so the barren envelope reaches
-    # roughly as far as the estimator does and no further
+    # ---- what kind of deposit is this? Settle it before anything that depends on
+    # it, because the style sets the density, how far mineralisation is carried from
+    # an intercept, and how big a block may be. Treating a 1 m vein as a bulk body
+    # invented tonnage and destroyed grade in the same step.
+    from minemodelingpro import deposit_style as DSTY
+    _pe = els[0] if els else next(iter(by_el), None)
+    _iv = by_el.get(_pe) or []
+    _w = [float(x["to"]) - float(x["from"]) for x in _iv
+          if x.get("to") is not None and x.get("from") is not None]
+    _g = [float(x.get("grade") or 0) for x in _iv]
+    _from_report = (ds.get("report_params") or {}).get("deposit_style")
+    _stated = PS.get("deposit_style") or _from_report
+    skey, sdef, swhy, sconf = DSTY.classify(_w, _g, set(by_el), stated=_stated)
+    # PORIGIN says where the value came from: "auto" means the report supplied it,
+    # anything else means a person set it for this project
+    if _stated and skey == _from_report and PORIGIN.get("deposit_style", "auto") == "auto":
+        # it came from the technical report's own words, which is evidence, not a
+        # hand setting — the page says which, so the distinction has to be right
+        sconf, swhy = "report", f"the technical report describes a {sdef['label']}"
+    med_w = float(np.median([x for x in _w if x > 0])) if any(x > 0 for x in _w) else None
+    mean_by_el = {}
+    for _e, _xs in by_el.items():
+        _vals = [float(x.get("grade") or 0) for x in _xs]
+        _vals = [v for v in _vals if v > 0]
+        if _vals:
+            mean_by_el[_e] = round(float(np.mean(_vals)), 4)
+    style_info = DSTY.describe(skey, swhy, sconf)
+
+    # how far the zero-filled gaps may run past a reported intercept. One drill
+    # spacing suits a massive sulphide lens; for a vein it inflates the modelled
+    # volume by the ratio of the spacing to the vein width, which is where the
+    # worst errors measured against filed statements came from.
     collar_sp = _spacing([[h["x"], h["y"]] for h in H])
     gap_margin = (float(PS["gap_fill_margin_m"]) if PS.get("gap_fill_margin_m")
-                  else float(np.clip(collar_sp, 15.0, 80.0)))
+                  else DSTY.halo_for(skey, med_w, collar_sp))
+    style_info["halo_m"] = gap_margin
+    style_info["median_intercept_m"] = round(med_w, 2) if med_w else None
 
     # --- per element: segments, composites, blocks, GT curve
     elements = {}
@@ -815,8 +888,9 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
         per_hole = defaultdict(list)
         for x in by_el[el]:
             per_hole[key2i[x["key"]]].append(x)
-        # block size: whoever set it (see auto_params for where it starts)
-        blk = PS.get("block") or DEFAULT_BLOCK.get(el) or [10, 10, 5]
+        # block size: whoever set it (see auto_params for where it starts), and
+        # failing that one the deposit's own bodies can contain
+        blk = PS.get("block") or DSTY.block_for(skey, med_w) or DEFAULT_BLOCK.get(el) or [10, 10, 5]
         blk = [float(v) for v in blk]
         clen = float(PS.get("composite_m") or max(1.0, min(blk[2], 5.0)))
         segs_out, comp_p, comp_g, comp_h, cent = _composite_el(
@@ -844,7 +918,9 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                                               if (g > 0).sum() > 20 else float(g.max())))
             g = np.minimum(g, top)
             spacing = float(PS.get("spacing_m") or _spacing(cent))
-            lo, bsz, ijk, gr, params, bcls = estimate_blocks(pts, g, hid, blk, spacing, opts=PS)
+            eopts = dict(PS)
+            eopts.setdefault("anisotropy", sdef.get("anisotropy"))
+            lo, bsz, ijk, gr, params, bcls = estimate_blocks(pts, g, hid, blk, spacing, opts=eopts)
             grids[el] = {"lo": lo, "bsz": bsz, "ijk": ijk, "gr": gr, "clen": clen,
                          "opts": {k: v for k, v in params.items() if k != "passes"},
                          "bins": list(bins), "cls": bcls}
@@ -858,9 +934,13 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
             params["custom"] = sorted(k for k in PS if k in PARAMS.ALL
                                       and PORIGIN.get(k) != "auto")
             params["auto"] = {k: v for k, v in base_src.items() if PORIGIN.get(k) == "auto"}
-            dens = PS.get("density")
-            if not dens or not (1.0 <= dens <= 8.0):
-                dens = DENSITY.get(el, 2.7)
+            # density follows the WHOLE rock, not just the element being drawn: a
+            # massive sulphide is dense because of its combined sulphide content, so
+            # the copper model and the zinc model must use the same tonnes per cubic
+            # metre or the deposit weighs different amounts depending which metal
+            # you are looking at
+            dens, dens_why = DSTY.density_for(skey, mean_by_el, stated=PS.get("density"))
+            params["density_source"] = dens_why
             bt = bsz[0] * bsz[1] * bsz[2] * dens
             # grade-tonnage curve over all estimated blocks
             gmax = float(np.percentile(gr, 99.5)) if len(gr) else 0.0
@@ -940,7 +1020,7 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
         "frame": {"kind": fr["kind"], "lat0": round(lat0, 6) if geo else None, "lon0": round(lon0, 6) if geo else None,
                   "grid": fr.get("grid")},
         "holes": hole_rows, "elements": elements, "primary": primary, "by_metal": by_metal,
-        "track_record": _validation(),
+        "style": style_info, "track_record": _validation(),
         "settings": {k: v for k, v in PS.items() if k in PARAMS.ALL},
         "param_sources": {k: (base_src.get(k) if o == "auto" else o)
                           for k, o in PORIGIN.items() if k in PARAMS.ALL},

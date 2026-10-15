@@ -406,7 +406,7 @@ function drawBreakdown(){
     (val&&order.some(e=>V.metals[e]&&V.metals[e].priced===false)
       ? `<p class="note">* in the rock, but paid nothing in this formula — the report prices only
          ${esc(Object.keys(V.factors||{}).join(", "))}.</p>` : "")+
-    tiers+cmp;
+    tiers+cmp+trackRecord();
   box.querySelectorAll("button[data-bm]").forEach(b=>b.onclick=()=>{BMCUT=+b.dataset.bm;BMUSER=true;drawBreakdown();});
   box.querySelectorAll("button[data-basis]").forEach(b=>b.onclick=()=>{
     BMBASIS=b.dataset.basis;BMCUT=null;BMUSER=false;drawBreakdown();});
@@ -416,6 +416,28 @@ function drawBreakdown(){
     BMCUT=best;BMUSER=true;drawBreakdown();};
   box.querySelectorAll("tr[data-el]").forEach(tr=>tr.onclick=()=>{if(M.elements[tr.dataset.el])setEl(tr.dataset.el);});
 }
+/* What this method is worth where the answer is known.
+
+   A model of a deposit with no filed resource cannot be checked against anything,
+   so the only honest basis for trusting it is how the same pipeline scores on the
+   deposits that do have one. That record is measured by scripts/validate.py over
+   every project whose filings carry a statement, at each statement's own cut-off,
+   and is stamped into every model. It is a small sample and is quoted as one. */
+function trackRecord(){const R=M.track_record;if(!R||!R.n)return"";
+  const pub=(M.resources||[]).some(r=>r.tonnes>0);
+  const t=R.tiers;
+  return `<div class="bdhead" style="margin-top:8px">How far off is MMP, where we can check?</div>`+
+    `<div class="kv"><span>Deposits with a filed statement</span><b>${R.n}</b></div>`+
+    `<div class="kv"><span>Median MMP ÷ filed tonnage</span><b>${R.median_ratio}×</b></div>`+
+    `<div class="kv"><span>Within 1.5× of filed</span><b>${R.within_1_5x} of ${R.n}</b></div>`+
+    (t?`<div class="kv"><span>Filed measured + indicated</span><b>${Math.round(t.filed_mi_share*100)}% of tonnes</b></div>`+
+       `<div class="kv"><span>MMP's top two tiers</span><b>${Math.round(t.mmp_top2_share*100)}% of tonnes</b></div>`:"")+
+    `<p class="note">${pub?"This project has a filed statement, compared above."
+      :"<b>This deposit has no filed resource</b>, so nothing here can be checked against one directly."}
+      The figures above are how the same pipeline scores across every project whose filings do carry a statement,
+      each at its own cut-off. ${t?`Our tiers stay deliberately short of the filed categories — we hold a fraction of the
+      assay data a qualified person had — so read the top tier as "well supported by the public drilling", not as measured.`:""}
+      A small sample, and an estimate of an estimate.</p>`;}
 /* models built before the one-tonnage pass: each metal on its own blocks */
 function drawBreakdownLegacy(box){
   const els=Object.keys(M.elements||{}).filter(e=>M.elements[e].gt&&M.elements[e].gt.length);
@@ -448,11 +470,20 @@ function wireAdopt(){const b=$("adopt");if(!b)return;
     if(M.company)u.searchParams.set("company",M.company);location.href=u.toString();};}
 function drawParams(){const E=M.elements[EL],B=E.blocks,box=$("params");
   if(!B){box.innerHTML=`<p class="note">No block model for ${EL} (needs ≥4 assayed holes).</p>`;return;}const q=B.params;
-  box.innerHTML=[["Block size",B.size.map(v=>+v.toFixed(2)).join(" × ")+" m"],["Block size from",q.block_source],["Estimator","Inverse distance²"],
+  const ST=M.style||{};
+  box.innerHTML=[["Deposit style",ST.label?ST.label+(ST.confidence==="report"?"":" *"):"—"],
+    ["Block size",B.size.map(v=>+v.toFixed(2)).join(" × ")+" m"],["Block size from",q.block_source],["Estimator","Inverse distance²"],
     ["Composites",q.composite_m+" m (gaps between intercepts = 0)"],["Drill spacing",q.spacing_m+" m"],["Max distance to data",q.max_gap_m+" m"],
-    ["Search radius",q.radius_m+" m, ≥"+(q.min_holes||2)+" holes"],["Top-cut",fmtG(q.top_cut,E.unit)],["Density",B.density+" t/m³"],
+    ["Search radius",q.radius_m+" m, ≥"+(q.min_holes||2)+" holes"],["Top-cut",fmtG(q.top_cut,E.unit)],["Density",B.density+" t/m³"],["Density from",q.density_source||"—"],
+    ["Mineralisation carried",(ST.halo_m!=null?ST.halo_m+" m past each intercept":"—")
+      +(ST.median_intercept_m?" (intercepts median "+ST.median_intercept_m+" m)":"")],
+    ["Search shape",q.anisotropy?("along the body "+q.anisotropy[0]+" · across "+q.anisotropy[2]):"isotropic"],
     ["Unsampled hole length",q.gap_fill===false?"not composited":"composited at zero grade"],["Blocks estimated",fmtN(B.n_total)]]
     .map(([k,v])=>`<div class="kv"><span>${k}</span><b>${esc(v)}</b></div>`).join("")
+    +(ST.label?`<p class="note">${ST.why?esc(ST.why[0].toUpperCase()+ST.why.slice(1))+". ":""}${ST.note?esc(ST.note)+" ":""}
+       The style sets the density, how far mineralisation is carried from an intercept and how big a block may be —
+       a narrow vein and a massive sulphide lens are not the same rock and cannot be modelled as though they were.
+       ${ST.confidence==="report"?"":"<b>*</b> read from the drilling, not stated in a report."}</p>`:"")
     +((q.custom&&q.custom.length)?`<p class="note">Set for this project: ${q.custom.map(esc).join(", ")}.</p>`:"")
     +(M.owner_project?"":`<p class="note" style="margin-top:8px"><button class="mini" id="adopt">Adjust these parameters</button> — opens your own private copy of this model in Studio, where block size, search radius, estimator, top-cut, density and cut-off are editable and the model rebuilds.</p>`)
     +(q.coarsened>1?`<p class="note">Display grid coarsened ×${q.coarsened} (very large extent).</p>`:"");
