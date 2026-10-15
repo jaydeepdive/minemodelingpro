@@ -214,23 +214,37 @@ def _alpha_faces(uv, reach):
     return np.asarray(keep, int) if keep else np.zeros((0, 3), int)
 
 
+_LATTICE = {}
+
+
+def _lattice(n):
+    """The barycentric grid of a triangle at n divisions, computed once per n."""
+    got = _LATTICE.get(n)
+    if got is None:
+        ii, jj = np.meshgrid(np.arange(n + 1), np.arange(n + 1), indexing="ij")
+        m = (ii + jj) <= n
+        got = _LATTICE[n] = (ii[m] / n, jj[m] / n)
+    return got
+
+
 def _fill_triangle(P, W, step, layers, normal):
-    """Points covering one triangle of the sheet, at its own thickness."""
-    out = []
+    """Points covering one triangle of the sheet, at its own thickness.
+
+    Written against arrays rather than three nested Python loops: a wireframe of
+    a few hundred triangles at a few thousand points each is most of a model's
+    build time otherwise, and it doubled the time to render the larger deposits."""
     a, b, c = P
-    L = max(np.linalg.norm(b - a), np.linalg.norm(c - a), np.linalg.norm(c - b))
+    L = max(float(np.linalg.norm(b - a)), float(np.linalg.norm(c - a)),
+            float(np.linalg.norm(c - b)))
     n = int(np.clip(L / max(step, 1.0), 1, 90))
-    for i in range(n + 1):
-        for j in range(n + 1 - i):
-            u, v = i / n, j / n
-            base = a + u * (b - a) + v * (c - a)
-            t = W[0] + u * (W[1] - W[0]) + v * (W[2] - W[0])
-            if layers <= 1:
-                out.append(base)
-                continue
-            for k in np.linspace(-0.5, 0.5, layers):
-                out.append(base + normal * (k * t))
-    return out
+    u, v = _lattice(n)
+    base = a + u[:, None] * (b - a) + v[:, None] * (c - a)
+    if layers <= 1:
+        return base
+    t = W[0] + u * (W[1] - W[0]) + v * (W[2] - W[0])
+    ks = np.linspace(-0.5, 0.5, layers)
+    off = (ks[:, None] * t[None, :])[:, :, None] * np.asarray(normal, float)
+    return (base[None, :, :] + off).reshape(-1, 3)
 
 
 def wireframe(pts, g, hid, threshold, rot=None, aniso=None, reach=120.0, step=8.0,
@@ -275,7 +289,7 @@ def wireframe(pts, g, hid, threshold, rot=None, aniso=None, reach=120.0, step=8.
         th = [max(t, w) for t, w in zip(th, wid)]
         layers = 3
         for f in faces:
-            pts_out.extend(_fill_triangle(cent[f], [th[i] for i in f], step, layers, nrm))
+            pts_out.append(_fill_triangle(cent[f], [th[i] for i in f], step, layers, nrm))
         if not len(faces):
             # the intercepts lie on one line — a single drill section, or a body
             # tested down one fence of holes. There is no surface to triangulate,
@@ -286,7 +300,7 @@ def wireframe(pts, g, hid, threshold, rot=None, aniso=None, reach=120.0, step=8.
             info["links"] = int(len(ed))
             for a, b in ed:
                 P = np.stack([cent[a], cent[b], cent[b] + nrm * 1e-6])
-                pts_out.extend(_fill_triangle(
+                pts_out.append(_fill_triangle(
                     P, [th[a], th[b], th[b]], step, layers, nrm))
     else:
         from scipy.spatial import Delaunay
@@ -302,20 +316,19 @@ def wireframe(pts, g, hid, threshold, rot=None, aniso=None, reach=120.0, step=8.
             info["cells"] = len(cells)
             for sx in cells:
                 V = cent[sx]
-                L = max(np.linalg.norm(V[i] - V[j]) for i in range(4) for j in range(i + 1, 4))
+                L = max(np.linalg.norm(V[i] - V[j]) for i in range(4)
+                        for j in range(i + 1, 4))
                 n = int(np.clip(L / max(step, 1.0), 1, 24))
-                for i in range(n + 1):
-                    for j in range(n + 1 - i):
-                        for k in range(n + 1 - i - j):
-                            u, v, w = i / n, j / n, k / n
-                            pts_out.append(V[0] + u * (V[1] - V[0]) + v * (V[2] - V[0])
-                                           + w * (V[3] - V[0]))
+                ii, jj, kk = np.meshgrid(*(np.arange(n + 1),) * 3, indexing="ij")
+                m = (ii + jj + kk) <= n
+                u, v, w = ii[m] / n, jj[m] / n, kk[m] / n
+                pts_out.append(V[0] + u[:, None] * (V[1] - V[0])
+                               + v[:, None] * (V[2] - V[0])
+                               + w[:, None] * (V[3] - V[0]))
         except Exception:
             info["cells"] = 0
-    S = np.concatenate([np.atleast_2d(x) for x in
-                        ([pts_out[0]] + [np.asarray(pts_out[1:], float)]
-                         if len(pts_out) > 1 else pts_out)]) \
-        if len(pts_out) > 1 else cent
+    S = (np.concatenate([np.atleast_2d(x) for x in pts_out])
+         if len(pts_out) > 1 else cent)
     if len(S) > max_points:
         S = S[np.linspace(0, len(S) - 1, max_points).astype(int)]
     info["points"] = int(len(S))
