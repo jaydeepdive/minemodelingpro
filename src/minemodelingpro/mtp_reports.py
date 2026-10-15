@@ -160,13 +160,35 @@ def changes_since(stamp):
     return [_norm(i) for i in items]
 
 
+_LONG_RUN = re.compile(r"[ \t]{31,}")
+_TRAIL = re.compile(r"[ \t]+$", re.M)
+PAGE_CAP = int(os.environ.get("MTP_PAGE_CAP", "1500000"))
+
+
+def _tidy(t):
+    """Layout text, minus the padding.
+
+    A page of a filed report is a few thousand characters. A handful are SIX
+    MILLION, because a wide appendix table is rendered as columns of text
+    separated by hundreds of spaces, and every reader that flattens whitespace or
+    rebuilds columns then does megabytes of work per page — one such report took
+    forty-six seconds where its neighbours took two. Runs of spaces longer than
+    any real column gutter are shortened and trailing padding dropped, which
+    leaves the column structure the table readers depend on intact."""
+    if not t:
+        return ""
+    if len(t) > 20000:
+        t = _TRAIL.sub("", _LONG_RUN.sub(" " * 30, t))
+    return t[:PAGE_CAP]
+
+
 def report_text(rid, cache=True):
     """A report's pages, as layout-preserved text, from the cache when it is there."""
     fn = os.path.join(TEXT_CACHE, f"{rid}.json.gz")
     if cache and os.path.exists(fn):
         try:
             with gzip.open(fn, "rt", encoding="utf-8") as f:
-                return json.load(f)
+                return [_tidy(t) for t in json.load(f)]
         except Exception:
             pass
     d = api(f"/tech-reports/{urllib.parse.quote(str(rid))}/text")
@@ -180,7 +202,7 @@ def report_text(rid, cache=True):
             os.replace(tmp, fn)
         except Exception:
             pass
-    return pages
+    return [_tidy(t) for t in pages]
 
 
 def cached_ids():

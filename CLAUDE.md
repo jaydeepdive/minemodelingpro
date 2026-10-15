@@ -21,9 +21,20 @@ plus per-deposit viewers.
 1. **Government drill-hole backbone + geochemistry** — provincial collars/assays
    (`mmp-backbone`, `mmp-geochem` workflows) → size-capped parquet shards under
    `data/keep/mmp/` (committed).
-2. **NI 43-101 technical reports** — resource/economics/methodology extracted
-   from SEDAR PDFs (`mmp-reports` workflow; `ceo_sedar` collects the manifest and
-   the PDFs hourly from ceo.ca's public feed — the SEDAR+ scraper is retired).
+2. **NI 43-101 technical reports** — two sources, one extractor.
+   - **The MineTerminalPro partner catalogue** (`mtp_reports.py`): 4,687 reports
+     from 920 companies filed since 2010. `/tech-reports` lists them,
+     `/tech-reports/{id}/text` serves the whole report as layout-preserved text
+     (`pdftotext -layout`), which every MMP extractor reads — so a report is read
+     without downloading its PDF. The key lives ONLY in `MTP_API_KEY`; this repo
+     is public and a leaked key is revoked, not recovered. Commands: `survey`,
+     `refresh` (rebuild the catalogue), `fetch` (download text into
+     `data/cache/mtp_text/`, gitignored, ~535 MB), `ingest` (fetch + extract),
+     `reextract` (re-read everything cached — free, no API calls), `since <stamp>`.
+     Downloading and extracting are deliberately separate: the extractor changes
+     far more often than a filed report does, so improving it costs a local pass
+     rather than four thousand requests against a 20,000/day limit.
+   - **ceo.ca's public feed** (`ceo_sedar`), hourly, for new filings as they appear.
 3. **Drill-result news** — recent full-assay releases from Closeology's drill
    bank, synced in at build time (see below), rendered as live, densifying models.
 
@@ -39,7 +50,9 @@ plus per-deposit viewers.
     - `model3d_viewer.html` — viewer template (three.js r128): screen-space-width drill intervals coloured by discrete grade bins, collapsible panels (bottom sheets on mobile), touch controls, double-click/double-tap pivot, zoom-to-cursor, go-to-hole, plan/section views, terrain with hillshade + contours + opacity, grade/tonnes/metal panel with the published-resource cross-check.
     - `gallery.html` — gallery template: search, commodity/region/source filters, sort (project A–Z default).
     - `terrain.py` — AWS Terrain Tiles DEM (cached in `data/cache/dem`, gitignored) + `region_of()` (province/state/country from `data/geo/admin_regions.json`, simplified Natural Earth).
-    - `drill_tables.py` — **full drill-data extraction from 43-101 PDFs** by word positions (PyMuPDF): collar tables, intercept/assay tables (multi-page, continuation pages, "incl."/"and" rows, ft→m, ppm/oz/t→std units), CRS/UTM zone (text, EPSG codes, then collar-elevation↔DEM matching), resource statement (rows validated by tonnes×grade≈contained, latest effective date wins), parent block size, density, project name from the cover. One JSON per report in `data/keep/mmp_reports/` (committed). `python -m minemodelingpro.drill_tables all` processes every archived report (both release archives).
+    - `drill_tables.py` — **full drill-data extraction from 43-101s**, from PDF word positions (PyMuPDF) or from layout text (`extract_report_text`, `TextDoc`): collar tables, intercept/assay tables (multi-page, continuation pages, "incl."/"and" rows, ft→m, ppm/oz/t→std units), CRS/UTM zone (text, EPSG codes, then collar-elevation↔DEM matching), resource statement, parent block size, density, stated deposit extent, project name from the cover. One JSON per report in `data/keep/mmp_reports/` (committed). `python -m minemodelingpro.drill_tables all` processes every archived PDF; `mtp_reports reextract` re-reads the cached catalogue text. **Resource tables are read by their own column headers** (`_res_by_header`) and only fall back to arithmetic triples where no header speaks — `tonnes × grade = contained` is scale-invariant, so a header reading "Tonnage (000)" is the only thing that distinguishes 26 Mt from 50,000 t. Three tables on a page are three statements (`tbl`), the deposit's own metal is preferred over its equivalents (`primary`), and a resource has a floor in tonnes (`_RES_MIN_T`) and in grade (`res_grade_ok`) so a contact-ratio table is not read as ore.
+    - `domain.py` — **the wireframe**: a surface triangulated through the mineralised intercepts in the body's own plane (principal axes), inflated to the thickness those intercepts show; a filled 3-D Delaunay for bodies with no plane to them. The alpha criterion drops any patch wider than the drill pattern, so the body ends where the drilling ends. On by default (`domain` setting); it moved every filed-statement project towards its filed tonnage and none away (Aurmac 0.83→1.01, Empire 0.89→1.07, Murray Brook 0.70→0.74).
+    - `extent.py` — the body's dimensions as the report states them in prose ("traced over 1,200 m of strike, to 450 m depth, true widths of 2 to 15 m"). The qualified person's wireframe stated in words, and the only check on whether a model reaches its deposit that needs no filed tonnage. `model3d._coverage` turns it into the share of the described body each model covers; reported, never applied.
     - `model3d_legacy.py` was removed — the old per-source/per-cluster builder (git history if needed).
   - `export.py` — merge all sources → shards; `shards.py` — the sharded parquet store; `store.py` — working sqlite.
   - `gov_drillholes.py`, `gov_samples.py` — government backbone/geochem ingest.
@@ -182,6 +195,32 @@ runs entirely on DigitalOcean — no third-party auth, no keys in the browser.
 `model3d.auto_params(ds)` returns both the values and a human label for each; the
 model carries `param_sources`, and the block panel says "block source: technical
 report (2021)" or "typical for Au in Québec (7 reports)".
+
+## What limits accuracy now (measured 2026-10-15)
+
+The scoreboard is in `data/keep/mmp_validation.json` and stamped into every page.
+The error is driven by **reach, not grade**: across the projects with a filed
+statement it correlates +0.91 with the share of the deposit's volume the model
+covers. Two separate causes, and only one of them is a modelling problem.
+
+1. **Scope mismatch — the larger cause, and not fixable in the estimator.** A
+   filed statement rests on the company's whole drill database; a technical report
+   publishes a summary of it, and many publish no drill table at all (Diablillos
+   references 977 holes and tabulates none). Goldboro's holes span 162 m and 50 m
+   deep against a filed 21 Mt deposit a kilometre long; Mont-Sorcier publishes 5
+   mineralised intercepts of 678 Mt. The wireframe correctly adds nothing there.
+   What those projects need is more drilling in the model — more reports, more
+   releases — not a longer search. `coverage` on each model says how much of the
+   described body it reaches, and `headline()` reports `covered_median` separately
+   from the all-projects median for exactly this reason.
+2. **Sparse-but-spanning** — a wide footprint tested by few holes, where the ground
+   between holes is most of the deposit. This is the wireframe's case and it works
+   here.
+
+Of the committed reports, roughly a fifth carry collars but no assays (a report's
+intercept table is usually *significant intercepts*, not the assay file), and a
+further fifth carry neither. A model needs ≥4 assayed holes, so those projects
+show drill traces and no blocks.
 
 ## Reasonable backlog / ideas
 

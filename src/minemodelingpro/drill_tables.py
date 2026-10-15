@@ -961,7 +961,8 @@ def _unit_hints(text):
     if re.search(r"\bmt\b|million tonnes|tonnes? \(m\)|\(mt\)|mtonnes|m tonnes|tonnage \(m", low):
         tm = 1e6
     elif re.search(r"\bkt\b|\(000\s?t|000's|'000|000s\b|x ?1,?000|thousand tonnes|"
-                    r"tonn(?:es?|age) ?\(0?00|tonnes? \(k\)|ktonnes|\(000\)|\(k ?t\)", low):
+                    r"tonn(?:es?|age) ?\(0?00|tonnes? \(k\)|ktonnes|\(,?000\)|\(k ?t\)|"
+                    r"\(x ?1,?000\)", low):
         tm = 1e3
     cm = {}
     if re.search(r"\bmoz\b|million (troy )?ounces|oz \(m\)", low):
@@ -989,6 +990,31 @@ _RES_MIN_G = {"Au": 0.08, "AuEq": 0.08, "Ag": 3.0, "AgEq": 3.0, "Pt": 0.05, "Pd"
               "U3O8": 0.005, "Li2O": 0.1, "P2O5": 1.0, "Fe": 5.0}
 
 
+# What one deposit can physically hold. These are upper bounds set by the largest
+# deposits known, not by what is ordinary: Grasberg and Pebble each carry about a
+# hundred million ounces of gold, Chuquicamata about a hundred million tonnes of
+# copper, and the biggest molybdenum deposits a couple of million tonnes of
+# molybdenum. A statement above these is a mis-read column, and the arithmetic
+# cannot catch it because multiplying tonnes and contained metal by the same
+# thousand keeps the row internally consistent. Iron, phosphate and the bulk
+# commodities get no ceiling: billions of tonnes of ore is ordinary for them.
+_MAX_CONTAINED_T = {"Au": 6_000.0, "AuEq": 8_000.0, "Ag": 120_000.0, "AgEq": 150_000.0,
+                    "Pt": 3_000.0, "Pd": 3_000.0, "PGM": 6_000.0, "PGE": 6_000.0,
+                    "3E": 6_000.0,
+                    "Cu": 2.0e8, "Zn": 1.0e8, "Pb": 6.0e7, "Ni": 6.0e7,
+                    "Co": 1.0e7, "Mo": 1.0e7, "Sn": 1.0e7, "WO3": 5.0e6,
+                    "U3O8": 3.0e6, "Li2O": 2.0e8}
+_CUNIT_T = {"oz": 1.0 / 32_150.7, "lb": 1.0 / 2204.62262, "t": 1.0}
+
+
+def contained_plausible(el, contained, cunit):
+    """Whether a statement's contained metal is within what a deposit can hold."""
+    cap = _MAX_CONTAINED_T.get(el)
+    if not cap or not contained:
+        return True
+    return float(contained) * _CUNIT_T.get(cunit, 1.0) <= cap
+
+
 def res_grade_ok(el, grade, unit):
     """Whether a row's grade is high enough to be ore of that metal at all."""
     if not el or grade is None:
@@ -1010,6 +1036,8 @@ def res_grade_ok(el, grade, unit):
 _RH_T = re.compile(r"\b(tonn?es?|tonnage|tonnes?|tons?|kt|mt|ore|quantity|mass)\b", re.I)
 _RH_C = re.compile(r"contained|recoverable|\b(oz|ozs|ounces|koz|moz|lbs?|klbs?|mlbs?|"
                    r"blbs?|tonnes? of metal|metal)\b", re.I)
+_RH_GRADE_U = re.compile(r"g\s*/\s*t|gram\s*/\s*tonne|grade|ppm|ppb|oz\s*/\s*t|"
+                         r"per\s+tonne|%", re.I)
 _RH_SKIP = re.compile(r"recovery|recover(ed|ies)|cut-?off|dilut|density|specific gravity|"
                       r"strip|waste|npv|irr|cost|capex|price|\$|年", re.I)
 
@@ -1061,8 +1089,15 @@ def _res_header(lines, i0, look=4):
         txt = re.sub(r"\s+", " ", c["t"]).strip()
         role, el, unit, mul, kind = None, None, None, 1.0, None
         eu = _elem_of(txt)
+        # A grade column is tested FIRST, because "Gold Grade gram/tonne" contains
+        # the word tonne: reading it as the tonnage column left the table with no
+        # grade in it and the whole statement unread.
         if _RH_SKIP.search(txt):
             role = None
+        elif eu and not _RH_C.search(txt):
+            role, el, unit = "grade", eu[0], eu[1]
+        elif _RH_GRADE_U.search(txt) and not _RH_C.search(txt):
+            role = None                            # a grade column of no known metal
         elif _RH_T.search(txt) and not _RH_C.search(txt):
             role = "tonnes"
             tm, _ = _unit_hints(txt)
@@ -1076,10 +1111,6 @@ def _res_header(lines, i0, look=4):
             mul = cmh.get(kind, 1.0)
             if eu:
                 el = eu[0]
-        elif eu and eu[1]:
-            role, el, unit = "grade", eu[0], eu[1]
-        elif eu:
-            role, el, unit = "grade", eu[0], None
         out.append({**c, "label": txt, "role": role, "el": el, "unit": unit,
                     "mul": float(mul), "kind": kind})
     if not any(c["role"] == "tonnes" for c in out):
@@ -1109,71 +1140,83 @@ def _res_assign(line, cols):
     return got
 
 
+def _res_blocks(lines):
+    """Contiguous runs of data rows — one table body each.
+
+    The header has to be found above the FIRST row of a table, not above whichever
+    row happened to be noticed first: a table of four zones with the total last
+    puts its header five lines up, and looking back four lines from the total row
+    finds only more data."""
+    out, i, n = [], 0, len(lines)
+    while i < n:
+        if not _is_data_line(lines[i], 2):
+            i += 1
+            continue
+        j = i
+        while j + 1 < n:
+            nxt = lines[j + 1]
+            if _is_data_line(nxt, 2):
+                j += 1
+                continue
+            lab = " ".join(c["t"] for c in nxt["cells"])
+            if lab.strip() and _cat_of(lab) and len(lab) < 40:
+                j += 1                       # a bare category heading inside a table
+                continue
+            break
+        out.append((i, j))
+        i = j + 1
+    return out
+
+
 def _res_by_header(lines, ctx):
     """Resource rows read from a page's own table headers."""
-    rows, i, tbl = [], 0, 0
-    while i < len(lines):
-        if not _is_data_line(lines[i], 2) or not _cat_of(
-                " ".join(c["t"] for c in lines[i]["cells"] if not _is_num(c["t"]))):
-            i += 1
+    rows, tbl = [], 0
+    for i0, i1 in _res_blocks(lines):
+        body_lines = lines[i0:i1 + 1]
+        labels = [" ".join(c["t"] for c in ln["cells"] if not _is_num(c["t"]))
+                  for ln in body_lines]
+        if not any(_cat_of(x) or re.search(r"total|combined|all zones|global", x, re.I)
+                   for x in labels):
             continue
-        cols = _res_header(lines, i)
+        cols = _res_header(lines, i0)
         if not cols:
-            i += 1
             continue
-        ti = next(k for k, c in enumerate(cols) if c["role"] == "tonnes")
+        ti = next((k for k, c in enumerate(cols) if c["role"] == "tonnes"), None)
         gi = [k for k, c in enumerate(cols) if c["role"] == "grade"]
         ci = [k for k, c in enumerate(cols) if c["role"] == "contained"]
-        body = []
-        while i < len(lines):
-            ln = lines[i]
-            label = " ".join(c["t"] for c in ln["cells"] if not _is_num(c["t"]))
-            cat = _cat_of(label)
-            if not _is_data_line(ln, 2):
-                if label.strip() and not cat:
-                    break                   # a caption or prose line ends the table
-                i += 1
-                continue
-            got = _res_assign(ln, cols)
-            if ti not in got:
-                break
-            body.append((cat, label, got))
-            i += 1
-        if not body:
-            i += 1
+        if ti is None or not gi:
             continue
-        tbl += 1
         # A resource table carries a column per metal and often an equivalent
         # beside each. The deposit's own metal is the one the table leads with,
         # and an equivalent is a derived figure, not a metal — so prefer the
         # leftmost column that names a real element.
         pref_k = next((k for k in gi if cols[k]["el"]
-                       and not re.search(r"eq$", cols[k]["el"], re.I)), gi[0] if gi else None)
-        # the page's units are the fallback where a column names none
+                       and not re.search(r"eq$", cols[k]["el"], re.I)), gi[0])
+        got_any = False
         tmp, cmp_ = ctx["tm_hint"], ctx["cm_hint"]
-        for cat, label, got in body:
-            if not cat:
+        for ln, label in zip(body_lines, labels):
+            got = _res_assign(ln, cols)
+            if ti not in got:
                 continue
+            cat = _cat_of(label)
+            is_total = bool(re.search(r"total|[+]|combined|all zones|global|overall",
+                                      label, re.I))
+            if not cat and not is_total:
+                continue
+            cat = cat or "Total"
             T = got[ti] * (cols[ti]["mul"] if cols[ti]["mul"] != 1.0 else (tmp or 1.0))
             if not (_RES_MIN_T <= T <= 2e10):
                 continue
-            is_total = bool(re.search(r"total|\+|combined|all zones|global|overall",
-                                      label, re.I))
-            for k in (gi or [None]):
-                if k is None:
-                    continue
+            for k in gi:
                 G = got.get(k)
                 if G is None or G <= 0:
                     continue
                 el = cols[k]["el"]
                 unit = cols[k]["unit"] or _DEFAULT_UNIT.get(el, "%")
-                # the contained column for this element, where the table has one
                 cc = next((c for c in ci if cols[c]["el"] in (el, None)), None)
                 kind = cols[cc]["kind"] if cc is not None else (
                     "t" if unit == "%" else "oz")
                 f = {"oz": 31.1034768, "lb": 100.0 / 2204.62262, "t": 100.0}[kind]
-                if unit == "ppm":
-                    G, unit = G / 1.0, "g/t"
                 calc = T * G / f
                 if cc is not None and got.get(cc) is not None:
                     C = got[cc] * (cols[cc]["mul"] if cols[cc]["mul"] != 1.0
@@ -1183,6 +1226,8 @@ def _res_by_header(lines, ctx):
                 else:
                     C = calc
                 if not res_grade_ok(el, G, unit):
+                    continue
+                if not contained_plausible(el, C, kind):
                     continue
                 if kind == "oz" and C > 1.5e8:
                     continue
@@ -1194,8 +1239,11 @@ def _res_by_header(lines, ctx):
                              "pscore": ctx["pscore"] + 2, "year": ctx["pyear"],
                              "total": is_total, "el": el,
                              "grade_unit": unit, "scope": ctx["pscope"],
-                             "byhdr": True, "tbl": tbl, "primary": k == pref_k,
+                             "byhdr": True, "tbl": tbl + 1, "primary": k == pref_k,
                              "text": label[:160]})
+                got_any = True
+        if got_any:
+            tbl += 1
     return rows
 
 
@@ -1259,6 +1307,14 @@ def extract_resources(doc, pages_text):
                 cat = "Total" if is_total else "Zone"
             if len(nums) < 3:
                 continue
+            if not label.strip():
+                # Every row of a filed statement is named — a category, a zone, a
+                # total. A row with no name at all and a number in its first column
+                # is a cut-off row of a grade-tonnage table, and inheriting the
+                # category from a heading further up the page turned Stuhini's
+                # molybdenum sensitivity into "Measured 16,997 Mt" and Cruz de
+                # Plata's into "Inferred 3,389 Mt of gold ore".
+                continue
             tr = _consistent_triples(nums)
             if not tr:
                 continue
@@ -1290,6 +1346,8 @@ def extract_resources(doc, pages_text):
                 continue
             _el0 = _page_element(t, kind, G)
             if not res_grade_ok(_el0, G, grade_unit_for(kind)):
+                continue
+            if not contained_plausible(_el0, C * cmul, kind):
                 continue
             if kind == "oz" and (C * cmul > 1.5e8 or G > 60):
                 continue
@@ -1641,6 +1699,7 @@ def headline_resource(rows):
     if el and els[el] < 0.6 * sum(els.values()):
         el = None                        # the rows disagree about the metal
     return {"page": page, "contained_unit": cunit, "categories": cats, "year": rs[0].get("year"),
+            "by_header": bool(rs[0].get("byhdr")),
             "cutoff": cog, "cutoff_unit": cogu, "grade_unit": gu,
             "scope": next((r.get("scope") for r in rs if r.get("scope")), None),
             "element": el, **tot}
@@ -1733,12 +1792,22 @@ def _ft(v, unit):
     return v * 0.3048 if (unit or "").lower().startswith(("ft", "foot", "feet")) else v
 
 
+_MP_ANY = re.compile(r"block|densit|specific gravity|composit|search|cap|cut-?off|"
+                     r"krig|inverse distance|nearest neighbour|nearest neighbor|"
+                     r"t/m|g/cm|tonnes? per cubic", re.I)
+
+
 def extract_model_params(pages_text):
     """The estimation parameters the report states: parent block size, density,
     composite length, search radius, grade cap, reporting cut-off, estimator."""
     votes = Counter(); dens = Counter(); comp = Counter(); rad = []
     caps = []; cogs = []; meth = Counter()
     for t in pages_text:
+        # Nine patterns over every page of an eight-hundred-page report is most of
+        # the cost of reading one, and almost every page says none of these words.
+        # One cheap test first leaves the nine to the pages that might answer.
+        if not _MP_ANY.search(t):
+            continue
         for m in _BLOCKCTX.finditer(t):
             win = t[m.start(): m.start() + 260]
             b = _BLOCK3.search(win)

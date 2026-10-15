@@ -468,12 +468,18 @@ function trackRecord(){const R=M.track_record;if(!R||!R.n)return"";
     `<div class="kv"><span>Deposits with a filed statement</span><b>${R.n}</b></div>`+
     `<div class="kv"><span>Median MMP ÷ filed tonnage</span><b>${R.median_ratio}×</b></div>`+
     `<div class="kv"><span>Within 1.5× of filed</span><b>${R.within_1_5x} of ${R.n}</b></div>`+
+    (R.covered_n?`<div class="kv"><span>Where we hold the whole deposit</span><b>${R.covered_median}× · ${R.covered_within_1_5x} of ${R.covered_n} within 1.5×</b></div>`:"")+
     (t?`<div class="kv"><span>Filed measured + indicated</span><b>${Math.round(t.filed_mi_share*100)}% of tonnes</b></div>`+
        `<div class="kv"><span>MMP's top two tiers</span><b>${Math.round(t.mmp_top2_share*100)}% of tonnes</b></div>`:"")+
     `<p class="note">${pub?"This project has a filed statement, compared above."
       :"<b>This deposit has no filed resource</b>, so nothing here can be checked against one directly."}
       The figures above are how the same pipeline scores across every project whose filings do carry a statement,
-      each at its own cut-off. ${t?`Our tiers stay deliberately short of the filed categories — we hold a fraction of the
+      each at its own cut-off.
+      ${R.covered_n?`The second figure is the same test restricted to the projects whose own reports describe a body
+      this model reaches most of. A filed statement rests on a company's whole drill database and a technical report
+      publishes a summary of it, so where we hold a fraction of the drilling the gap measures what is missing from the
+      data rather than how well the method interpolates.`:""}
+      ${t?`Our tiers stay deliberately short of the filed categories — we hold a fraction of the
       assay data a qualified person had — so read the top tier as "well supported by the public drilling", not as measured.`:""}
       A small sample, and an estimate of an estimate.</p>`;}
 /* models built before the one-tonnage pass: each metal on its own blocks */

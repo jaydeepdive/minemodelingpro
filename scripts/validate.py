@@ -51,6 +51,9 @@ def _is_value_cut(unit):
 # than a real deposit, and one bad extraction swamps a median taken over ten
 # projects. They are reported separately rather than silently dropped.
 MIN_FILED_T = 100_000
+# How much of the body a report describes a model must reach before its tonnage is
+# compared like for like with the filed statement.
+COVERED_MIN = 0.5
 
 
 def published(m):
@@ -314,6 +317,8 @@ def score(site="site"):
                "grade_matched_clamped": (gm or {}).get("clamped"),
                "element_scored": prim, "element_named": p.get("element"),
                "scope": scope,
+               "coverage_ratio": (m.get("coverage") or {}).get("volume_ratio"),
+               "stated_extent": (m.get("coverage") or {}).get("stated_text"),
                "curve_n": (curve or {}).get("n"),
                "curve_median": (curve or {}).get("median"),
                "curve_span": (curve or {}).get("span"),
@@ -352,6 +357,25 @@ def headline(rows):
                     "grade_matched_median": round(statistics.median(gm), 3),
                     "grade_matched_within_1_5x": within(gm, 1.5),
                     "grade_matched_within_2x": within(gm, 2.0)})
+    # The same score restricted to the projects where we actually hold the deposit.
+    # A filed statement rests on the company's whole drill database; a technical
+    # report publishes a summary of it. Where the report's own description of the
+    # body says the model covers a twentieth of it, the gap measures how much
+    # drilling we are missing, not how well the estimator interpolates — and
+    # averaging the two together measures neither. Both numbers are published,
+    # because the first is what a reader of a thinly published project gets and
+    # the second is what the method is worth.
+    cov = [x for x in ok if x.get("grade_matched_ratio")
+           and not x.get("grade_matched_clamped")
+           and (x.get("coverage_ratio") or 0) >= COVERED_MIN]
+    if cov:
+        g2 = [x["grade_matched_ratio"] for x in cov]
+        out.update({"covered_n": len(cov),
+                    "covered_median": round(statistics.median(g2), 3),
+                    "covered_within_1_5x": within(g2, 1.5),
+                    "covered_within_2x": within(g2, 2.0),
+                    "covered_min_coverage": COVERED_MIN})
+    out["coverage_n"] = sum(1 for x in rows if x.get("coverage_ratio") is not None)
     return out
 
 
