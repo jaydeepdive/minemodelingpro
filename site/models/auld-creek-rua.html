@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Auld Creek — RUA · 3D model · MineModelingPro</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bitter:wght@600;700;800&family=Roboto:wght@400;500;700&display=swap">
+<style>
+:root{
+  --red:#D71920; --ink:#111418; --mut:#5f6670; --line:#e3e6ea; --panel:#f5f7fa; --card:#ffffff;
+  --bg:#e9edf2; --chip:#fdecec; --shadow:0 6px 24px rgba(17,20,24,.12);
+  --serif:'Bitter',Georgia,serif; --sans:'Roboto',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --bar:52px;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);overflow:hidden;
+  -webkit-text-size-adjust:100%;touch-action:none}
+#scene{position:fixed;left:0;right:0;bottom:0;top:var(--bar);z-index:0}
+#scene canvas{display:block;width:100%;height:100%;touch-action:none}
+/* ---------- top bar ---------- */
+#bar{position:fixed;top:0;left:0;right:0;height:var(--bar);z-index:30;background:#fff;border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:12px;padding:0 14px}
+#bar a.back{font-size:13px;font-weight:500;color:var(--red);text-decoration:none;white-space:nowrap}
+#bar .ttl{min-width:0;flex:1;display:flex;flex-direction:column;line-height:1.15}
+#bar .ttl b{font-family:var(--serif);font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#bar .ttl span{font-size:11.5px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#bar .brand{font-family:var(--serif);font-weight:800;font-size:13px;color:var(--ink);text-decoration:none;white-space:nowrap}
+#bar .brand em{color:var(--red);font-style:normal}
+/* ---------- panels ---------- */
+.panel{position:fixed;z-index:20;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);
+  display:flex;flex-direction:column;max-height:calc(100vh - var(--bar) - 28px);overflow:hidden}
+.phead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px 10px 14px;cursor:pointer;
+  user-select:none;border-bottom:1px solid var(--line)}
+.phead h2{font-family:var(--serif);font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--ink);margin:0}
+.pbtn{border:1px solid var(--line);background:var(--panel);border-radius:7px;width:28px;height:26px;display:grid;place-items:center;
+  cursor:pointer;color:var(--mut);font-size:15px;line-height:1;padding:0;flex:none}
+.pbtn:hover{border-color:var(--red);color:var(--red)}
+.pbody{padding:12px 14px 14px;overflow-y:auto;overscroll-behavior:contain}
+.panel.min .pbody{display:none}
+.panel.min .phead{border-bottom:0}
+#leftcol{position:fixed;z-index:20;top:calc(var(--bar) + 12px);left:12px;width:306px;display:flex;flex-direction:column;gap:10px;
+  max-height:calc(100vh - var(--bar) - 86px);pointer-events:none}
+#leftcol>.panel{position:static;width:auto;max-height:none;pointer-events:auto;flex:0 1 auto;min-height:0}
+#leftcol>.panel .pbody{max-height:42vh}
+#pModel{top:calc(var(--bar) + 12px);left:12px;width:306px}
+#pGrade{top:calc(var(--bar) + 12px);right:12px;width:318px}
+#pLegend{bottom:14px;left:330px;width:236px}
+@media (max-width:1180px) and (min-width:761px){#pLegend{left:12px}#pModel{max-height:calc(100vh - var(--bar) - 300px)}}
+/* ---------- controls ---------- */
+.sec{border-top:1px solid var(--line);padding-top:11px;margin-top:11px}
+.sec:first-child{border-top:0;padding-top:0;margin-top:0}
+.lab{font-family:var(--serif);font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);margin:0 0 7px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+.stat b{display:block;font-family:var(--serif);font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
+.stat span{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:4px 11px;font-size:12.5px;font-weight:700;cursor:pointer;color:var(--ink)}
+.chip.on{background:var(--red);border-color:var(--red);color:#fff}
+.tg{display:flex;align-items:center;gap:9px;padding:4px 0;cursor:pointer;user-select:none;font-size:13.5px}
+.tg input{appearance:none;-webkit-appearance:none;width:32px;height:18px;border-radius:10px;background:#cfd6e0;position:relative;cursor:pointer;
+  transition:background .15s;flex:none;margin:0}
+.tg input:checked{background:var(--red)}
+.tg input::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:transform .15s;
+  box-shadow:0 1px 2px rgba(0,0,0,.25)}
+.tg input:checked::after{transform:translateX(14px)}
+.tg input:disabled{opacity:.4}
+.tg small{color:var(--mut);font-size:11px;margin-left:auto}
+.rng{margin:6px 0 2px}
+.rng .row{display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;margin-bottom:5px}
+.rng .v{font-weight:700;color:var(--red);font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;-webkit-appearance:none;appearance:none;height:5px;border-radius:3px;background:#d7dde5;outline:none;margin:6px 0}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:#fff;border:2px solid var(--red);
+  cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.3)}
+input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:#fff;border:2px solid var(--red);cursor:pointer}
+.btns{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.btn{padding:7px 4px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font-size:12px;font-weight:500;border-radius:8px;cursor:pointer;
+  font-family:var(--sans)}
+.btn:hover{background:var(--chip);border-color:var(--red);color:var(--red)}
+.find{display:flex;gap:6px}
+.find input{flex:1;min-width:0;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:13px;font-family:var(--sans)}
+.hint{font-size:11.5px;color:var(--mut);line-height:1.45;margin:8px 0 0}
+.kv{display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:13px;color:var(--mut)}
+.kv b{color:var(--ink);font-weight:700;font-variant-numeric:tabular-nums;text-align:right}
+.big{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin:4px 0 2px}
+.big div{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:7px 8px}
+.big b{display:block;font-family:var(--serif);font-size:15.5px;font-weight:700;font-variant-numeric:tabular-nums}
+.big span{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut)}
+.big div.hl{background:#fff5f5;border-color:#f3c9cb}
+.cmp{margin-top:6px}
+.cmpbar{height:10px;border-radius:5px;background:#eef1f5;position:relative;overflow:hidden;margin:3px 0 7px}
+.cmpbar i{position:absolute;left:0;top:0;bottom:0;background:var(--red);border-radius:5px}
+.cmpbar.pub i{background:#274b8f}
+.note{font-size:11.5px;color:var(--mut);line-height:1.5;margin:6px 0 0}
+.res{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:6px;font-size:12.5px}
+.res a{color:var(--red);text-decoration:none;font-size:11.5px}
+.res table{width:100%;border-collapse:collapse;margin-top:4px;font-variant-numeric:tabular-nums}
+.res td{padding:2px 0;font-size:12px}
+.res td:nth-child(n+2){text-align:right}
+.src{display:flex;flex-direction:column;gap:6px;max-height:190px;overflow-y:auto}
+.src a{display:block;font-size:12px;line-height:1.35;color:var(--ink);text-decoration:none;padding-left:12px;position:relative}
+.src a::before{content:"";position:absolute;left:0;top:6px;width:6px;height:6px;border-radius:50%;background:var(--red)}
+.src a.rep::before{background:#274b8f;border-radius:1px}
+.src a:hover{color:var(--red)}
+.src a em{font-style:normal;color:var(--mut);font-size:10.5px}
+svg.gt{width:100%;height:110px;display:block;margin-top:4px}
+/* legend */
+.lg{display:flex;flex-direction:column;gap:3px}
+.lg div{display:flex;align-items:center;gap:8px;font-size:12px;font-variant-numeric:tabular-nums}
+.lg i{width:22px;height:9px;border-radius:3px;flex:none}
+.lg i.lo{background:#c3cad4;height:3px}
+/* overlays */
+table.bd{width:100%;table-layout:fixed;border-collapse:collapse;font-size:11px;font-variant-numeric:tabular-nums;margin-top:4px}
+table.bd th{text-align:left;font-size:9px;letter-spacing:.04em;text-transform:uppercase;color:var(--mut);padding:4px 4px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.bd td{padding:5px 4px;border-bottom:1px solid #f1f3f6;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+table.bd td.n,table.bd th.n{text-align:right}
+table.bd tr.on td{background:var(--chip)}
+table.bd tr:hover td{color:var(--red)}
+table.bd td em{font-style:normal;font-size:9px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
+table.bd td.thin{color:var(--mut)}
+.bdhead{font-size:12px;padding:6px 0 2px;border-bottom:1px solid var(--line)}
+.bdhead b{font-size:15px}
+.bdcuts{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 2px}
+.bdcuts .mini{font-size:10px;padding:3px 7px}
+.bdcuts .mini.on{background:var(--red);border-color:var(--red);color:#fff}
+.disc{margin-top:10px;padding:9px 10px;border:1px solid var(--line);border-radius:7px;background:#fbfcfd}
+.disc p{margin:4px 0;font-size:11px;line-height:1.5}
+.disc ul{margin:4px 0 4px 15px;padding:0;font-size:11px;line-height:1.5}
+.disc li{margin:2px 0}
+.warn{margin:8px 0;padding:9px 10px;border:1px solid #d9534f;border-left:3px solid #d9534f;
+  border-radius:7px;background:#fdf4f4;font-size:11px;line-height:1.5}
+.warn ul{margin:4px 0 4px 15px;padding:0}
+.warn span{color:var(--mut)}
+.fixnote{margin:8px 0;padding:8px 10px;border:1px solid var(--line);border-radius:7px;
+  background:#fafbfc;font-size:10.5px;line-height:1.5;color:var(--mut)}
+.fixnote ul{margin:3px 0 3px 15px;padding:0}
+#holetbl{max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:8px;margin-top:6px}
+#holetbl table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:11.5px;font-variant-numeric:tabular-nums}
+#holetbl th{position:sticky;top:0;background:#fff;text-align:left;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--mut);padding:5px 7px;border-bottom:1px solid var(--line)}
+#holetbl td{padding:4px 7px;border-bottom:1px solid #f1f3f6;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#holetbl tr:hover td{background:var(--panel);color:var(--red)}
+#holetbl td.n{text-align:right}
+#hfilter{width:100%;border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:12.5px;font-family:var(--sans);margin-top:4px}
+button.mini{border:1px solid var(--line);background:#fff;border-radius:6px;font-family:var(--sans);font-size:10.5px;font-weight:700;
+  color:var(--red);padding:2px 7px;cursor:pointer;margin-left:6px}
+button.mini:hover{background:var(--chip)}
+#tip{position:fixed;z-index:40;pointer-events:none;background:#fff;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:12px;
+  display:none;box-shadow:0 8px 24px rgba(17,20,24,.18);line-height:1.5;font-variant-numeric:tabular-nums;max-width:260px}
+#tip .g{font-weight:700}
+#hud2{position:fixed;z-index:15;bottom:14px;right:12px;display:flex;align-items:flex-end;gap:10px;pointer-events:none}
+#scalebar{display:flex;align-items:center;gap:8px;font-size:11px;background:rgba(255,255,255,.9);border:1px solid var(--line);border-radius:8px;padding:4px 9px}
+#scalebar .sb{height:8px;border-left:2px solid var(--ink);border-right:2px solid var(--ink);display:flex;align-items:center;width:90px}
+#scalebar .sb span{display:block;height:2px;width:100%;background:var(--ink)}
+#compass{width:46px;height:46px;border-radius:50%;background:rgba(255,255,255,.9);border:1px solid var(--line);display:grid;place-items:center}
+#compass svg{width:34px;height:34px;transition:none}
+#nav{position:fixed;z-index:18;bottom:14px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:4px;
+  background:rgba(255,255,255,.94);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:4px}
+#nav .nb{display:flex;align-items:center;gap:6px;border:0;background:transparent;border-radius:9px;padding:7px 10px;cursor:pointer;
+  color:var(--ink);font-family:var(--sans);font-size:12.5px;font-weight:700}
+#nav .nb svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round}
+#nav .nb:hover{background:var(--panel)}
+#nav .nb.on{background:var(--chip);color:var(--red)}
+#nav .nb.sq{padding:7px 11px;font-size:15px;line-height:1;font-weight:700;color:var(--mut)}
+#nav .sep{width:1px;height:20px;background:var(--line);margin:0 3px}
+@media (max-width:760px){#nav{bottom:66px;padding:3px}#nav .nb{padding:8px 9px;font-size:12px}#nav .nb b{display:none}#nav .nb.sq{padding:8px 11px}
+  /* the scale bar and compass move out from under the controls */
+  #hud2{bottom:auto;top:calc(var(--bar) + 8px);right:8px;flex-direction:column;align-items:flex-end;gap:6px}
+  #compass{width:38px;height:38px}#compass svg{width:28px;height:28px}
+  #scalebar{font-size:10.5px;padding:3px 7px}#scalebar .sb{width:62px}}
+
+/* A phone on its side has ~350 px of height: a bottom sheet would cover the model,
+   so the open panel docks to the right and the controls shrink. */
+@media (max-height:560px) and (orientation:landscape){
+  #leftcol{display:contents}
+  :root{--bar:40px}
+  #bar .ttl span{display:none}
+  .panel{left:auto!important;right:8px!important;width:300px!important;max-width:46vw;
+    top:calc(var(--bar) + 6px)!important;bottom:8px!important;max-height:none;border-radius:12px}
+  .panel.open{display:flex}
+  #mtools{left:auto;right:316px;bottom:auto;top:calc(var(--bar) + 6px);width:auto;flex-direction:column;gap:4px;padding:4px}
+  #mtools button{flex:none;padding:7px 10px;font-size:11.5px}
+  #nav{bottom:10px;left:12px;transform:none;padding:3px}
+  #nav .nb{padding:7px 8px;font-size:11.5px}#nav .nb b{display:none}
+  #hud2{top:calc(var(--bar) + 6px);right:auto;left:12px;bottom:auto;flex-direction:column;align-items:flex-start;gap:6px}
+  #compass{width:34px;height:34px}#compass svg{width:26px;height:26px}
+  #scalebar{font-size:10px;padding:3px 6px}#scalebar .sb{width:56px}
+  svg.gt{height:78px}
+}
+#pivot{position:fixed;z-index:14;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;border:2px solid var(--red);background:rgba(215,25,32,.18);
+  pointer-events:none;opacity:0;transition:opacity .4s}
+#toast{position:fixed;z-index:35;left:50%;top:calc(var(--bar) + 12px);transform:translateX(-50%);background:rgba(17,20,24,.86);color:#fff;
+  font-size:12.5px;padding:7px 13px;border-radius:20px;opacity:0;transition:opacity .4s;pointer-events:none;white-space:nowrap}
+#labels{position:fixed;inset:0;top:var(--bar);pointer-events:none;z-index:12;overflow:hidden}
+#labels span{position:absolute;font-size:10.5px;font-weight:500;color:#1d2530;background:rgba(255,255,255,.78);padding:0 4px;border-radius:3px;
+  transform:translate(6px,-50%);white-space:nowrap}
+#mtools{display:none}
+@media (max-width:760px){
+  #leftcol{display:contents}
+  :root{--bar:48px}
+  #bar .brand{display:none}
+  #bar .ttl b{font-size:14.5px}
+  .panel{left:8px!important;right:8px!important;width:auto!important;top:auto!important;bottom:62px!important;max-height:58vh;display:none;
+    border-radius:14px}
+  .panel.open{display:flex}
+  .panel.min .pbody{display:block}
+  .phead{cursor:default}
+  #mtools{display:flex;position:fixed;z-index:25;bottom:10px;left:8px;right:8px;gap:6px;background:#fff;border:1px solid var(--line);
+    border-radius:14px;box-shadow:var(--shadow);padding:5px}
+  #mtools button{flex:1;border:0;background:transparent;font-family:var(--sans);font-size:12px;font-weight:700;color:var(--ink);padding:9px 2px;border-radius:10px}
+  #mtools button.on{background:var(--chip);color:var(--red)}
+  #hud2{bottom:66px;right:8px}
+  #compass{width:40px;height:40px}
+  #toast{white-space:normal;text-align:center;max-width:90vw}
+}
+</style>
+</head>
+<body>
+<div id="bar">
+  <a class="back" href="../models.html">← Models</a>
+  <div class="ttl"><b id="t-name">Auld Creek</b><span id="t-sub"></span></div>
+  <a class="brand" href="../models.html">Mine<em>Modeling</em>Pro</a>
+</div>
+<div id="scene"></div>
+<div id="labels"></div>
+<div id="pivot"></div>
+<div id="toast"></div>
+
+<div id="leftcol">
+<section id="pModel" class="panel">
+  <div class="phead" data-p="pModel"><h2>Model</h2><button class="pbtn" aria-label="Minimise">–</button></div>
+  <div class="pbody">
+    <div class="sec">
+      <div class="stats">
+        <div class="stat"><b id="s-holes">–</b><span>Holes</span></div>
+        <div class="stat"><b id="s-int">–</b><span>Intervals</span></div>
+        <div class="stat"><b id="s-src">–</b><span>Sources</span></div>
+      </div>
+      <p class="lab" style="margin-top:10px">Size</p><div id="sizebox"></div>
+    </div>
+    <div class="sec" id="elsec"><p class="lab">Colour by</p><div class="chips" id="els"></div></div>
+    <div class="sec">
+      <p class="lab">Layers</p>
+      <label class="tg"><input type="checkbox" id="L-int" checked>Drill intervals by grade</label>
+      <label class="tg"><input type="checkbox" id="L-trace" checked>Drill traces &amp; collars</label>
+      <label class="tg"><input type="checkbox" id="L-blocks" checked>Block model<small id="blk-note"></small></label>
+      <label class="tg"><input type="checkbox" id="L-terrain">Terrain<small id="ter-note"></small></label>
+      <label class="tg"><input type="checkbox" id="L-labels">Hole labels</label>
+      <div class="rng" id="ter-op-row"><div class="row"><span>Terrain opacity</span><span class="v" id="ter-op-v">45%</span></div>
+        <input type="range" id="ter-op" min="10" max="100" value="45"></div>
+      <div class="rng"><div class="row"><span>Block opacity</span><span class="v" id="blk-op-v">35%</span></div>
+        <input type="range" id="blk-op" min="10" max="100" value="35"></div>
+    </div>
+    <div class="sec">
+      <p class="lab">View</p>
+      <div class="btns">
+        <button class="btn" id="v-3d">3D</button><button class="btn" id="v-plan">Plan</button>
+        <button class="btn" id="v-ns" title="Section looking east">Sec E</button><button class="btn" id="v-ew" title="Section looking north">Sec N</button>
+      </div>
+      <div class="find" style="margin-top:8px"><input id="find" list="holelist" placeholder="Go to hole…" autocomplete="off"><button class="btn" id="find-go" style="width:52px">Go</button></div>
+      <datalist id="holelist"></datalist>
+      <p class="hint" id="navhint">Drag to orbit · <b>Pan</b> button (or hold space / right-drag) to move around · scroll to zoom at the cursor · double-click anything to pivot around it · arrow keys or WASD pan, Q/E up-down.</p>
+    </div>
+  </div>
+</section>
+
+<section id="pData" class="panel min">
+  <div class="phead" data-p="pData"><h2>Drill data</h2><button class="pbtn" aria-label="Minimise">–</button></div>
+  <div class="pbody">
+    <div class="sec"><div id="datasum"></div></div>
+    <div class="sec"><p class="lab">Holes <span id="hole-n" style="font-weight:400"></span></p>
+      <input type="search" id="hfilter" placeholder="Filter holes…" aria-label="Filter holes">
+      <div id="holetbl"></div></div>
+    <div class="sec"><p class="lab">Data sources <span id="src-n" style="font-weight:400"></span></p><div class="src" id="srclist"></div></div>
+  </div>
+</section>
+</div>
+
+
+<section id="pGrade" class="panel">
+  <div class="phead" data-p="pGrade"><h2>Grade, tonnes &amp; metal</h2><button class="pbtn" aria-label="Minimise">–</button></div>
+  <div class="pbody">
+    <div class="sec" id="gtsec">
+      <div class="rng"><div class="row"><span>Cut-off grade</span><span class="v"><span id="cut-v">–</span></span></div>
+        <input type="range" id="cut" min="0" max="10" value="0" step="1"></div>
+      <p class="lab" style="margin-top:6px">MMP block model above cut-off</p>
+      <div class="big">
+        <div><b id="g-t">–</b><span>Tonnes</span></div>
+        <div><b id="g-g">–</b><span>Grade</span></div>
+        <div class="hl"><b id="g-c">–</b><span id="g-cu">Contained</span></div>
+      </div>
+      <svg class="gt" id="gtchart" viewBox="0 0 300 110" preserveAspectRatio="none"></svg>
+      <div id="cmp"></div>
+    </div>
+    <div class="sec" id="nogt" hidden><p class="note" id="nogt-msg"></p></div>
+    <div class="sec"><div id="intbox"></div><div id="metbox"></div></div>
+    <div class="sec"><p class="lab">One deposit, every metal</p><div id="bdown"></div></div>
+    <div class="sec" id="ressec"><p class="lab">Published resource</p><div id="res"></div></div>
+    <div class="sec"><p class="lab">Block model parameters</p><div id="params"></div></div>
+    <div class="sec"><p class="note">Grades are inverse-distance estimates for <b>visualisation only</b> — not a mineral resource estimate. Verify every figure against the source filings.</p></div>
+  </div>
+</section>
+
+
+<section id="pLegend" class="panel">
+  <div class="phead" data-p="pLegend"><h2 id="lg-h">Grade</h2><button class="pbtn" aria-label="Minimise">–</button></div>
+  <div class="pbody"><div class="lg" id="legend"></div></div>
+</section>
+
+<div id="mtools">
+  <button data-open="pModel">Model</button><button data-open="pGrade">Grade</button><button data-open="pData">Data</button><button data-open="pLegend">Legend</button>
+</div>
+<div id="hud2">
+  <div id="scalebar"><div class="sb"><span></span></div><b id="sb-l"></b></div>
+  <div id="compass" title="North"><svg viewBox="-20 -20 40 40"><g id="needle"><path d="M0,-16 L5,2 L0,-2 L-5,2Z" fill="#D71920"/><path d="M0,16 L5,2 L0,-2 L-5,2Z" fill="#9aa3ae"/><text x="0" y="-9" font-size="0" fill="#fff">N</text></g></svg></div>
+</div>
+<div id="tip"></div>
+
+<script id="model" type="application/json">{"slug":"auld-creek-rua","project":"Auld Creek","company":"RUA","region":null,"kinds":["report"],"updated":"2026-06-19","generated":"2026-10-15T22:58:01Z","frame":{"kind":"local","lat0":null,"lon0":null,"grid":"mtp:7c43300646dd6e9b"},"holes":[["AXCH001",523.8,-225.0,563.2,0.0,-90.0,16.0],["AXCH002",525.9,-202.8,543.6,0.0,-90.0,3.5],["AXCH003",536.2,-152.4,504.0,0.0,-90.0,9.0],["AXCH004",547.7,-118.3,496.0,0.0,-90.0,5.0],["AXCH005",565.0,-87.7,521.7,0.0,-90.0,3.0],["AXTR006",407.1,-486.5,715.0,0.0,-90.0,6.1],["SGCS001",-4875.3,6446.7,663.0,0.0,-90.0,55.0],["SGTR001",-4860.5,6623.9,652.5,0.0,-90.0,5.0],["SGTR002",-4726.7,6781.9,678.3,0.0,-90.0,4.5],["SGTR003",-4679.9,6808.7,667.9,0.0,-90.0,7.4],["SGTR005",-4781.6,6925.9,723.0,0.0,-90.0,13.0],["BRCH001",-3359.1,9070.7,755.0,0.0,-90.0,8.0],["BRCH021",-3366.1,9075.7,765.0,0.0,-90.0,2.5],["BRCH020",-3364.1,9088.7,763.0,0.0,-90.0,14.0],["GTTR001",-4204.0,14716.8,626.0,0.0,-90.0,2.8],["GTTR002",-4203.5,14716.5,626.5,0.0,-90.0,4.3],["GTTR003",-4212.5,14771.2,597.5,0.0,-90.0,1.1],["GTTR004",-4212.3,14774.8,597.0,0.0,-90.0,2.9],["AXDDH008",270.3,-552.6,779.4,320.0,-60.0,96.7],["AXDDH009",270.8,-553.2,779.1,320.0,-82.0,110.0],["AXDDH010",8.5,-684.8,737.6,320.0,-60.0,61.2],["AXDDH011",8.5,-685.0,737.7,320.0,-80.0,70.3],["AXDDH012",7.9,-684.2,737.6,320.0,-50.0,35.5],["AXDDH013",100.5,-661.3,732.2,320.0,-60.0,52.8],["AXDDH014",102.6,-662.3,733.1,320.0,-85.0,84.4],["AXDDH015",101.4,-662.3,732.6,320.0,-75.0,94.0],["AXDDH016",-66.2,-728.0,742.8,275.0,-60.0,76.5],["AXDDH017",-63.7,-729.2,744.3,38.0,-90.0,122.5],["AXDDH018",-184.2,-768.8,763.3,310.0,-82.0,69.6],["AXDDH019",-185.0,-768.1,762.7,300.0,-60.0,47.1],["AXDDH020",-234.9,-834.7,794.6,300.0,-60.0,64.2],["AXDDH021",-233.8,-835.5,794.7,296.0,-85.0,85.6],["AXDDH022",215.1,-598.5,769.2,320.0,-60.0,74.2],["AXDDH023",215.7,-599.2,769.8,320.0,-75.0,112.8],["AXDDH024",340.2,-512.9,754.4,155.0,-90.0,43.5],["AXDDH025",341.1,-514.7,753.9,155.0,-60.0,70.3],["AXDDH026",401.4,-470.8,711.1,130.0,-90.0,51.2],["AXDDH027",457.1,-294.5,623.3,110.0,-65.0,89.4],["AXDDH028",455.5,-293.9,624.4,110.0,-85.0,117.6],["AXDDH029",455.1,-293.7,624.7,110.0,-90.0,157.9],["AXDDH030",457.9,-294.8,622.8,110.0,-52.0,96.5],["AXDDH031",503.0,-231.1,586.6,110.0,-90.0,49.0],["AXDDH032",-143.1,-843.6,809.5,320.0,-63.0,156.1],["AXDDH033",-143.6,-843.1,809.3,320.0,-50.0,130.0],["AXDDH034",504.2,-231.7,586.6,290.0,-74.0,88.0],["AXDDH035",495.1,-181.2,553.7,115.0,-60.0,68.0],["AXDDH036",496.9,-182.1,552.5,115.0,-90.0,82.6],["AXDDH037",495.9,-181.8,553.2,295.0,-74.0,156.3],["AXDDH038",548.0,-42.2,481.3,110.0,-70.0,33.9],["AXDDH039",543.9,-41.3,480.7,290.0,-70.0,165.1],["AXDDH040",390.4,-635.9,804.3,320.0,-66.0,120.5],["AXDDH041",390.1,-635.4,804.0,320.0,-50.0,239.5],["AXDDH042",546.4,-41.8,481.0,290.0,-90.0,85.7],["AXDDH043",546.9,-42.0,481.1,110.0,-60.0,72.3],["AXDDH044",390.8,-636.4,804.6,320.0,-70.0,343.2],["AXDDH045",541.9,-123.3,496.3,320.0,-90.0,42.4],["AXDDH046",295.9,-384.8,710.7,154.0,-64.0,235.0],["AXDDH047",540.9,-122.3,496.3,320.0,-75.0,94.8],["AXDDH048",295.8,-385.0,710.8,177.0,-74.0,355.1],["AXDDH049",295.2,-384.5,710.8,170.0,-54.0,280.8],["AXDDH050",541.7,-121.4,496.2,110.0,-55.0,40.6],["AXDDH051",532.9,1.7,477.8,110.0,-55.0,137.6],["AXDDH052",293.8,-384.6,711.6,350.0,-65.0,282.1],["AXDDH053",532.4,2.2,478.0,110.0,-85.0,86.1],["AXDDH054",297.1,-385.0,710.4,167.0,-63.0,37.8],["AXDDH054a",297.0,-384.9,710.4,167.0,-63.0,12.0],["AXDDH054b",296.5,-384.8,710.4,177.0,-63.0,248.5],["AXDDH055",297.8,-383.8,709.5,115.0,-72.0,271.5],["AXDDH056",531.5,1.3,479.0,290.0,-80.0,144.6],["AXDDH057",-114.5,-813.2,801.6,340.0,-55.0,142.5],["AXDDH058",296.9,-383.8,709.8,115.0,-60.0,92.6],["AXDDH058A",297.1,-383.5,709.6,115.0,-60.0,243.0],["AXDDH059",-113.6,-814.6,803.8,340.0,-71.0,141.6],["AXDDH060",297.5,-383.4,709.5,110.0,-81.0,253.0],["AXDDH061",296.4,-383.1,709.7,110.0,-90.0,311.8],["AXDDH062",-113.8,-815.7,802.4,340.0,-90.0,225.9],["AXDDH063",270.7,-251.9,676.4,140.0,-63.0,291.4],["AXDDH064",-114.0,-815.5,803.8,340.0,-82.0,173.0],["AXDDH065",270.7,-251.5,676.5,135.0,-53.0,265.9],["AXDDH066",-2.1,-713.1,761.8,340.0,-82.0,74.1],["AXDDH067",-1.2,-713.4,761.8,320.0,-83.0,128.3],["AXDDH068",270.9,-251.3,675.8,135.0,-90.0,30.0],["AXDDH068A",270.4,-251.4,675.8,135.0,-90.0,414.2],["AXDDH069",-0.7,-713.7,761.8,320.0,-79.0,124.5],["AXDDH070",0.6,-714.0,761.8,140.0,-75.0,52.3],["AXDDH071",440.6,-21.0,547.0,140.0,-56.0,217.6],["AXDDH072",270.1,-251.7,675.8,145.0,-76.0,344.6],["AXDDH073",439.9,-20.4,547.0,150.0,-71.0,226.7],["AXDDH074",271.5,-251.5,675.8,95.0,-74.0,350.9],["AXDDH075",272.2,-251.5,675.8,95.0,-66.0,311.8],["AXDDH076",439.7,-17.8,547.0,0.0,-78.0,313.6],["AXDDH077",270.6,-250.4,675.8,85.0,-82.0,376.6],["AXDDH078",439.2,-18.1,547.0,185.0,-80.0,251.2],["AXDDH079",88.7,-813.7,825.0,335.0,-65.0,278.9],["AXDDH080",367.0,-132.8,597.0,160.0,-72.0,272.8],["AXDDH081",87.3,-815.0,825.0,310.0,-60.0,269.9],["AXDDH082",368.2,-131.3,597.0,145.0,-72.0,247.2],["AXDDH083",88.7,-815.2,825.0,10.0,-66.0,359.6],["AXDDH084",367.7,-130.9,597.0,25.0,-85.0,291.1],["AXDDH085",367.9,-133.8,597.0,310.0,-86.0,296.3],["AXDDH086",87.6,-814.9,825.0,340.0,-55.0,271.9],["AXDDH087",366.8,-132.3,597.0,120.0,-82.0,284.3],["AXDDH088",87.5,-815.7,825.0,330.0,-71.0,217.0],["AXDDH089",269.1,-0.8,575.6,100.0,-69.0,328.3],["AXDDH090",90.0,-813.6,825.0,15.0,-61.0,311.9],["AXDDH091",268.2,0.0,575.6,60.0,-61.0,403.6],["AXDDH092a",89.0,-814.6,825.0,10.0,-55.0,161.8],["AXDDH093",267.0,-1.6,575.6,165.0,-68.0,16.0],["AXDDH093a",266.8,-0.9,575.6,165.0,-68.0,402.2],["AXDDH094",268.8,0.5,575.6,115.0,-64.0,339.3],["AXDDH095",366.8,-131.6,597.0,115.0,-84.0,287.2],["AXDDH096",440.1,-16.8,547.0,90.0,-60.0,174.4],["AXDDH097",440.5,-19.1,547.0,45.0,-50.0,220.2],["AXDDH098",366.4,-132.7,597.0,175.0,-82.0,79.0],["AXDDH098A",366.7,-132.7,597.0,180.0,-82.0,290.9],["AXDDH099",268.6,0.1,575.6,100.0,-62.0,325.6],["AXDDH100",267.4,0.6,575.6,110.0,-75.0,337.7],["AXDDH101",268.8,0.0,575.6,70.0,-63.0,391.5],["AXDDH102",266.8,-1.8,575.6,187.0,-57.0,438.3],["AXDDH103",266.9,-0.7,575.6,180.0,-69.0,383.2],["AXDDH104",267.3,-1.1,575.6,195.0,-70.0,431.0],["AXDDH105",266.9,-0.4,575.6,140.0,-85.0,392.2],["AXDDH106",128.0,-319.9,710.0,100.0,-77.0,437.4],["BRDDH020",-3344.8,9072.7,757.7,0.0,-90.0,50.5],["BRDDH021",-3318.8,9055.4,754.8,0.0,-90.0,122.5],["BRDDH022",-3336.7,9101.9,759.7,0.0,-90.0,68.3],["BRDDH023",-3295.6,9099.2,762.8,0.0,-90.0,82.5],["BRDDH024",-3266.3,9104.9,764.5,0.0,-90.0,113.2],["BRDDH025",-3057.1,9074.2,785.3,0.0,-90.0,148.5],["BRDDH026",-3055.9,9073.6,785.4,0.0,-90.0,135.1],["BRDDH027",-3055.2,9073.9,784.8,0.0,-90.0,163.0],["BRDDH028",-3056.0,9072.5,785.3,0.0,-90.0,151.4],["BRDDH029",-3056.9,9074.2,785.4,0.0,-90.0,281.2],["BRDDH030",-3265.8,9105.3,764.6,0.0,-90.0,83.0],["BRDDH031",-3265.0,9103.8,764.5,0.0,-90.0,87.9],["BRDDH032",-3180.9,9199.3,787.3,0.0,-90.0,257.3],["BRDDH033",-3180.5,9198.1,787.4,0.0,-90.0,146.3],["BRDDH034",-2892.7,9136.6,730.0,0.0,-90.0,407.4],["BRDDH035",-2891.6,9136.7,730.0,0.0,-90.0,444.6],["BRDDH036",-3184.3,9197.7,787.5,0.0,-90.0,230.5],["BRDDH037",-3183.7,9198.3,787.5,0.0,-90.0,302.7],["BRDDH038",-3184.0,9198.4,787.6,0.0,-90.0,248.2],["BRDDH039",-3184.0,9198.2,787.5,0.0,-90.0,338.5],["BRDDH040",-3183.6,9199.3,787.3,0.0,-90.0,314.7],["BRDDH041",-3184.1,9198.4,787.5,0.0,-90.0,15.0],["BRDDH041A",-3184.0,9198.3,787.4,0.0,-90.0,326.6],["BRDDH042",-3184.4,9198.1,787.4,0.0,-90.0,269.1],["BRDDH043",-3176.8,9339.1,746.9,0.0,-90.0,398.1],["BRDDH044",-2891.6,9136.7,730.0,0.0,-90.0,452.8],["BRDDH045",-2892.7,9137.2,730.2,0.0,-90.0,359.1],["DD_KID_001",-4295.1,20809.7,212.6,76.0,-80.0,140.9],["DD_PAC_001",0.0,27747.7,541.0,257.0,-50.0,224.0],["DD_PAC_002",0.1,27747.7,541.0,280.0,-45.0,204.4],["DD_PAC_003",0.2,27747.7,541.0,279.0,-71.0,305.4],["DD_PAC_004",0.3,27747.7,541.0,213.0,-52.0,225.0],["DD_PAC_005",0.4,27747.7,541.0,213.0,-70.0,305.6],["DD_PAC_006",-0.1,27748.3,541.0,304.0,-42.0,189.7],["DD_PAC_007",-0.1,27748.4,541.0,201.0,-43.0,299.0],["DD_PAC_007A",-0.1,27748.5,541.0,202.0,-42.0,37.5],["DD_PAC_008",103.9,27515.7,505.3,297.0,-42.0,312.3],["DD_PAC_009",103.9,27515.8,505.3,268.0,-50.0,284.6],["DD_PAC_010",103.9,27515.8,505.3,230.0,-60.0,330.2],["DD_PAC_011",0.2,27747.7,540.9,224.0,-41.0,178.9],["DD_PAC_014",-57.1,27716.7,503.9,250.0,-60.0,45.0],["DD_PAC_015",-57.1,27716.7,503.9,250.0,-70.0,89.0],["DD_PAC_016",-57.1,27716.7,503.9,250.0,-45.0,63.7],["DD_PAC_017",-61.1,27686.7,500.0,250.0,-45.0,75.6],["DD_PAC_018",-61.1,27686.7,500.0,250.0,-60.0,81.9],["DD_PAC_019",-61.1,27686.7,500.0,250.0,-70.0,92.3],["DD_PAC_020",-46.1,27652.7,500.0,250.0,-55.0,96.7],["DD_PAC_021",-46.1,27652.7,500.0,250.0,-70.0,100.0],["DD_PAC_022",-91.1,27810.7,500.0,250.0,-55.0,87.3],["DD_PAC_023",-91.1,27810.7,500.0,250.0,-70.0,107.7],["DD_PAC_024",-91.1,27810.7,500.0,250.0,-45.0,85.9],["DD_PAC_025",-81.1,27764.7,506.0,250.0,-55.0,91.2],["DD_PAC_026",-81.1,27764.7,506.0,250.0,-70.0,90.0],["DD_WEL_012",-272.1,28746.7,613.3,299.0,-60.0,290.5],["DD_WEL_013",-272.1,28746.7,613.3,263.0,-46.0,177.4],["DD_GT_027",-2961.2,21829.2,675.8,101.0,-70.0,0.0],["DD_GT_028",-2961.2,21829.2,675.8,85.0,-50.0,0.0],["DD_GT_029",-2980.1,22143.7,675.8,85.0,-50.0,0.0],["DD_GT_030",-3065.1,21851.7,675.8,85.0,-60.0,0.0],["DD_VIC_041",-3048.1,22892.7,682.0,130.0,-55.0,361.0],["DD_VIC_042",-3048.1,22892.7,682.0,110.0,-68.0,463.0],["DD_VIC_042A",-3048.1,22892.7,682.0,110.0,-68.0,428.2],["DD_VIC_046",-3048.1,22892.7,682.0,100.0,-75.0,299.0],["DD_VIC_042B",-3048.1,22892.7,682.0,110.0,-68.0,404.2],["DD_VIC_042C",-3048.1,22892.7,682.0,110.0,-68.0,400.6],["DD_VIC_042D",-3048.1,22892.7,682.0,110.0,-68.0,423.8],["DD_VIC_046A",-3048.1,22892.7,682.0,100.0,-75.0,481.3],["DD_VIC_046B",-3048.1,22892.7,682.0,100.0,-75.0,476.7],["DD_VIC_046C",-3048.1,22892.7,682.0,100.0,-75.0,505.3],["DD_VIC_046D",-3048.1,22892.7,682.0,100.0,-75.0,439.9],["CUDDH001",-4239.1,14717.7,618.0,92.0,-46.0,89.9],["CUDDH002",-4239.1,14717.7,618.0,92.0,-69.0,104.8],["CUDDH003",-4239.1,14717.7,618.0,40.0,-57.0,157.8],["CUDDH004",-4239.1,14717.7,618.0,92.0,-78.0,194.5],["CUDDH005",-4239.1,14717.7,618.0,135.0,-45.0,133.7],["CUDDH006",-4239.1,14717.7,618.0,140.0,-60.0,47.6],["CUDDH007",-4239.1,14717.7,618.0,136.0,-63.0,149.6],["CUDDH008",-4223.1,14589.7,500.0,140.0,-45.0,169.9],["CUDDH009",-4223.1,14589.7,500.0,124.0,-45.0,146.0],["CUDDH010",-4223.1,14589.7,500.0,88.0,-59.0,120.0],["DD_REF_043",-925.1,27848.7,277.0,270.0,-55.0,60.9],["DD_REF_044",-925.1,27848.7,277.0,307.0,-47.0,45.5],["DD_REF_044T",-925.1,27848.7,277.0,307.0,-49.0,34.1],["DD_REF_045",-925.1,27848.7,277.0,200.0,-57.0,64.8],["DD_REF_047",-925.1,27848.7,277.0,327.0,-45.0,53.0],["DD_REF_048",-925.1,27848.7,277.0,340.0,-82.0,76.0]],"elements":{"Au":{"unit":"g/t","bins":[0.1,0.3,0.5,1,2,5,10],"colors":["#3b4cc0","#2c9fd0","#9bcf3c","#f2cf1d","#f39a1f","#b8123a","#7a0b6e"],"segments":[[18,23.3,28.0,2.77],[20,28.15,35.34,6.27],[22,24.1,34.3,8.25],[26,63.0,69.0,3.04],[28,21.2,28.8,1.5],[28,28.8,29.8,4.18],[34,22.84,24.31,10.14],[40,52.52,54.34,7.28],[42,125.8,131.57,1.8],[43,117.0,120.0,6.07],[43,120.0,125.0,2.56],[44,42.95,45.0,15.19],[46,62.7,65.1,8.52],[55,31.0,31.45,28.8171],[55,31.45,32.35,50.6],[55,32.35,32.6,28.8171],[56,208.6,210.0,2.36],[59,198.5,202.57,12.53],[60,4.25,12.0,4.35],[67,214.6,217.0,6.14],[72,127.0,133.75,3.3],[73,221.03,222.67,4.93],[73,222.67,223.47,4.89],[76,264.1,264.8,41.3],[76,264.8,265.5,9.06],[76,265.5,272.0,3.47],[78,226.0,231.0,2.77],[79,58.0,74.1,2.41],[82,373.0,384.85,1.62],[88,312.75,314.36,11.03],[89,277.0,281.6,1.89],[91,337.37,338.37,2.51],[93,256.0,264.95,2.09],[94,252.18,253.35,12.73],[94,253.35,254.15,1.78],[95,253.5,254.75,1.57],[96,235.22,237.77,1.52],[98,275.4,277.3,0.0],[98,277.3,277.9,1460.0],[99,277.24,279.0,14.87],[101,251.0,256.68,1.51],[103,293.25,295.5,9.8],[109,298.32,299.05,5.33],[110,268.85,269.78,16.7],[114,277.6,279.0,4.01],[123,24.0,31.0,3.21],[125,38.0,39.44,2.01],[128,71.0,73.0,2.29],[128,88.0,89.0,1.74],[129,107.75,109.6,1.86],[129,112.1,113.0,2.81],[130,141.0,148.2,4.22],[130,150.0,153.8,1.9],[132,233.8,234.41,2.0],[137,358.0,373.85,1.67],[138,374.75,382.3,2.81],[140,213.23,218.4,6.83],[143,280.1,281.77,1.55],[146,189.0,191.0,2.08],[149,292.0,294.0,1.64],[149,337.0,346.0,1.79],[151,132.5,135.0,4.75],[152,133.0,138.0,6.28],[154,183.0,195.0,9.41],[155,218.0,223.0,2.24],[155,258.0,260.0,5.26],[157,214.0,219.0,2.92],[157,244.0,246.0,1.71],[160,219.0,221.0,4.4],[161,221.0,225.0,2.69],[164,76.0,81.0,3.13],[165,41.0,43.0,2.77],[167,43.0,46.0,2.75],[167,58.0,60.0,3.11],[171,54.0,56.0,8.2],[174,33.0,35.0,3.53]],"n_holes":60,"stats":{"max":1460.0,"mean":25.472,"p50":3.17},"check":{"idw_mean":2.3185,"nn_mean":0.4246,"bias_pct":446.1,"assay_mean":7.3734,"composite_mean":2.335,"dilution_pct":68.3},"blocks":{"cls":"AgICAgICAwMCAwIDAwMDAQMBAwMDAQMDAQMCAgEDAQMCAgICAQICAQICAgEBAQECAwEBAwMCAQEBAwICAgIDAwECAwMCAQIBAQMDAwMDAwMCAwMCAgIBAgMBAwEDAwICAQEBAgMBAwEDAQECAwMDAwIDAQIC","classes":["well drilled","moderately drilled","thinly drilled"],"origin":[-3414.8,-870.13,220.8],"size":[50.0,65.0,53.0],"ijk":"AACYAAkAAACZAAkAAQCYAAkAAQCZAAkAAgCYAAkAAgCZAAkAAwCaAAUABACaAAUABACaAAYABACbAAUABACbAAYABQCaAAUABQCaAAYABQCbAAUABQCbAAYABgCYAAgABgCYAAkABgCZAAgABgCZAAkABwCYAAYABwCYAAcABwCYAAgABwCYAAkABwCZAAcABwCZAAgABwCZAAkACQCZAAIACQCaAAIACgCZAAIACgCZAAMACgCaAAIACgCaAAMACwCZAAIACwCaAAIAPwABAAkAQAAAAAkAQAABAAkAQAACAAkAQQAAAAgAQQABAAgAQQABAAkAQQACAAgAQQC3AQQAQQC4AQQAQQC5AQQAQgABAAgAQgACAAgAQgC1AQMAQgC2AQEAQgC2AQMAQgC2AQQAQgC3AQEAQgC3AQIAQgC3AQMAQgC3AQQAQgC4AQQAQgC5AQQAQwACAAcAQwACAAkAQwADAAkAQwC0AQIAQwC1AQMAQwC2AQEAQwC2AQIAQwC2AQMAQwC2AQQAQwC3AQEAQwC3AQIAQwC3AQMAQwC3AQQARAACAAcARAACAAkARAADAAkARACzAQEARAC3AQEARQCzAQEASAAJAAEASQAIAAEASQAJAAEASQAKAAEASgAFAAUASgAFAAYASgAFAAkASgAGAAUASgAHAAUASgAJAAEASgAJAAIASwAFAAUASwAFAAkASwAGAAUASwAHAAQASwAHAAUASwAIAAMASwAIAAQASwAJAAIASwAJAAMASwAKAAIASwALAAIASwAMAAEASwANAAEATAAIAAQATAAJAAIATAAJAAMATAAKAAIATAAKAAMATAALAAIATAAMAAEATAANAAEATQAJAAUATQAKAAMATQAKAAQATQAKAAUATgAIAAYATgAKAAUATgALAAQATwAKAAQATwALAAQA","g":"8XSePwZVjz+ODJM/L78PP/LgnD8hfYg/gh0FP0VVAD8GSUtA8T4DP7CRUkAphAQ/hhVcQL+TBD8EjFxANLNFP4i1HT9dkkY/DYgdP+mIiz7z1ms/G/RMPxRcHj9cKmw/hBpBPw8mHj9y2wJAV4YCQBQ43T/ylZU/6OLYP56Zlz8xh9g/A+/XPxWMOUDVODZATmosQI3IKECBPvE/Jc3bP7byKEBA+ds/UfbrP8gtH0Do6TRAchnwP5jyzD9f8VZApDDjP+s1hkCPG5w/W9njP+2ujT+RJ4FAcNi7PyWXGEDE6ytAh//mPlQWlUCa9Z1AF+WFP8ZUTECnMOU/YRxVP4w5gkAfJ5M/L4ncP+hAiz/hc4dAvt3FP2v9Vj8PspJAgs6aQH4Gbz/M1uE/gXySPylczz8pXM8/KVzPPylczz9zQoY/yU/DQDMhU0AqDbU/I4rWP23Mmz8cSAhA6keJPwGtS0Cpybo/pOViQISN0j94gbE/5992QJPeJ0Dmipc/ETcxQO4U/T/pi19AM4xMQMQ2e0ArWT1AbM+dP+s0RkC+3as/igXUPw/aSECCkzVAQKerQA5Nrz9beAhBRO1lQHKUQ0AdOVlA1nUeQSL8EkF6bSNB","n":117,"n_total":117,"shown_from":0.1,"tonnes_per_block":492635.0,"density":2.86,"params":{"block":[50.0,65.0,53.0],"radius_m":140.0,"max_gap_m":70.0,"spacing_m":35.7,"power":2.0,"min_holes":2,"min_samples":3,"method":"idw","coarsened":1.0,"max_per_hole":4,"domain_radius_m":48.8,"domain_reach_m":140.0,"anisotropy":[1.0,0.9,0.22],"passes":[{"range_m":140.0,"max_gap_m":52.5,"min_holes":3,"min_samples":3,"class":"well drilled"},{"range_m":140.0,"max_gap_m":70.0,"min_holes":2,"min_samples":2,"class":"moderately drilled"},{"range_m":140.0,"max_gap_m":70.0,"min_holes":1,"min_samples":2,"class":"thinly drilled"}],"domain":{"intercepts":65,"reach_m":58.5,"intercept_spacing_m":36.6,"mode":"sheet","faces":48,"points":842,"thickness_m":48.8,"grade_reach_m":140.0},"top_cut":43.0,"composite_m":2.0,"block_source":"technical report (2026)","gap_fill":true,"gap_fill_margin_m":2.0,"custom":[],"auto":{"block":"technical report (2026)","density":"technical report (2026)","composite_m":"technical report (2026)","radius_m":"technical report (2026)","top_cut":"technical report (2026)","default_cutoff":"technical report (2026)","method":"technical report (2026)","power":"technical report (2026)","metallurgy":"technical report (2026)","deposit_style":"technical report (2026)"},"density_source":"stated in the technical report"}},"gt":[[0.0,57638295,2.3185,4296456],[0.1,57638295,2.3185,4296456],[0.2135,57638295,2.3185,4296456],[0.3,57145660,2.3361,4292140],[0.427,57145660,2.3361,4292140],[0.5,56653025,2.3525,4284994],[0.6405,51726675,2.5233,4196317],[0.854,48770865,2.628,4120686],[1,47292960,2.6811,4076696],[1.0675,45815055,2.7336,4026625],[1.281,38425530,3.035,3749448],[1.4944,35469720,3.1707,3615765],[1.7079,29558100,3.4768,3304102],[1.9214,24139115,3.8574,2993654],[2,23646480,3.8965,2962337],[2.1349,22168575,4.0182,2863924],[2.3484,22168575,4.0182,2863924],[2.5619,21183305,4.0918,2786768],[2.7754,18227495,4.3216,2532571],[2.9889,15764320,4.5478,2304988],[3.2024,12315875,4.9396,1955926],[3.4159,10345335,5.2452,1744614],[3.6294,7882160,5.7896,1467191],[3.8429,7882160,5.7896,1467191],[4.0564,6404255,6.2166,1279999],[4.2699,4926350,6.8319,1082072],[4.4833,4926350,6.8319,1082072],[4.6968,3941080,7.3844,935673],[4.9103,3448445,7.7483,859050],[5,2955810,8.2169,780867],[5.1238,2955810,8.2169,780867],[5.3373,2955810,8.2169,780867],[5.5508,2463175,8.7875,695907],[5.7643,2463175,8.7875,695907],[5.9778,2463175,8.7875,695907],[6.1913,1970540,9.4585,599236],[6.4048,1970540,9.4585,599236],[6.6183,1970540,9.4585,599236],[6.8318,1970540,9.4585,599236],[7.0453,1970540,9.4585,599236],[7.2588,1970540,9.4585,599236],[7.4722,1970540,9.4585,599236],[7.6857,1970540,9.4585,599236],[7.8992,1970540,9.4585,599236],[8.1127,1970540,9.4585,599236],[8.3262,1970540,9.4585,599236],[8.5397,1477905,9.7682,464143],[8.7532,1477905,9.7682,464143],[8.9667,1477905,9.7682,464143],[9.1802,1477905,9.7682,464143],[9.3937,985270,10.059,318641],[9.6072,985270,10.059,318641],[9.8207,985270,10.059,318641],[10,492635,10.2142,161779],[10.0342,492635,10.2142,161779]],"default_cutoff":1.5,"contained_unit":"oz"}},"primary":"Au","by_metal":{"basis":"Au","basis_unit":"g/t","cuts":[0.0,0.1,0.3,0.5,1.0,1.5,2.0,5.0,10.0],"tonnes":[57638295,57638295,57145660,56653025,47292960,35469720,23646480,2955810,492635],"density":2.86,"tonnes_per_block":492635.0,"order":["Au"],"metals":{"Au":{"unit":"g/t","contained_unit":"oz","grade":[2.3185,2.3185,2.3361,2.3525,2.6811,3.1707,3.8965,8.2169,10.2142],"contained":[4296456,4296456,4292140,4284994,4076695,3615766,2962337,780867,161779],"coverage":[1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0],"tonnes":[57638295,57638295,57145660,56653025,47292960,35469720,23646480,2955810,492635]}},"classes":{"well drilled":[15764320,15764320,15764320,15764320,13793780,12315875,7882160,492635,0],"moderately drilled":[19705400,19705400,19705400,19705400,18720130,12808510,9852700,985270,492635],"thinly drilled":[22168575,22168575,21675940,21183305,14779050,10345335,5911620,1477905,0]},"method":{"limit_m":105.0,"note":"Blocks within 105 m of surface are reported as open pit and the rest as underground, with the underground cut-off set 2.5x higher because underground tonnes cost more to mine. The depth is what a pit plausibly reaches on a vein \u2014 a geometric split, not a pit shell.","basis":"grade","open_pit":{"cutoff":0.1,"tonnes":22661210,"blocks":46,"metals":{"Au":{"grade":3.0794,"unit":"g/t","contained":2243557,"contained_unit":"oz","coverage":1.0}}},"underground":{"cutoff":0.25,"tonnes":34977085,"blocks":71,"metals":{"Au":{"grade":1.8255,"unit":"g/t","contained":2052899,"contained_unit":"oz","coverage":1.0}}}}},"style":{"key":"vein","label":"narrow vein system","why":"the technical report describes a narrow vein system","confidence":"report","note":"Narrow, high-contrast bodies. Mineralisation is not assumed to carry far from an intercept, because across strike it does not.","summary":"narrow vein system \u2014 the technical report describes a narrow vein system","halo_m":2.0,"median_intercept_m":2.25},"metallurgy":{"routes":["flotation","gravity","pox","cil_cip"],"traits":["refractory","arsenic"],"recoveries":{"Au":90.0},"summary":"refractory, arsenic-bearing; processed by flotation to concentrate, then gravity recovery, then pressure oxidation, then cyanide leach (CIL/CIP); stated recovery Au 90%"},"coverage":{"stated":{"dip":{"n":1,"min":80.0,"max":80.0,"median":80.0,"page":128,"text":"n dip and to the north. ACDDH031 intersected 1.7 m (true width) of mineralisation at 4.2 g/t Au and 10.4% Sb ~80 m down dip from the previous interpretation, demonstrating grade and g"}},"stated_text":"80 m down dip","stated_from":{"id":"mtp:6072d778bd51115b","date":"2026-06-19"},"model":{"volume_m3":20153250,"strike_m":28730.0,"diagonal_m":29007.1,"depth_m":477.0,"blocks":117}},"track_record":{"n":110,"median_ratio":0.942,"within_1_5x":22,"within_2x":35,"grade_matched_n":154,"grade_matched_median":0.865,"covered_n":36,"covered_median":1.26,"covered_within_1_5x":8,"tiers":{"n":84,"filed_mi_share":0.653,"mmp_top2_share":0.51}},"integrity":null,"settings":{"block":[50.0,65.0,53.0],"density":2.86,"composite_m":2.0,"radius_m":140.0,"top_cut":43.0,"default_cutoff":1.5,"method":"idw","power":2.0,"metallurgy":{"routes":["flotation","gravity","pox","cil_cip"],"traits":["refractory","arsenic"],"recoveries":{"Au":90.0},"summary":"refractory, arsenic-bearing; processed by flotation to concentrate, then gravity recovery, then pressure oxidation, then cyanide leach (CIL/CIP); stated recovery Au 90%"},"deposit_style":"vein"},"param_sources":{"block":"technical report (2026)","density":"technical report (2026)","composite_m":"technical report (2026)","radius_m":"technical report (2026)","top_cut":"technical report (2026)","default_cutoff":"technical report (2026)","method":"technical report (2026)","power":"technical report (2026)","metallurgy":"technical report (2026)","deposit_style":"technical report (2026)"},"terrain":null,"sources":[{"kind":"NI 43-101 technical report","id":"mtp:6072d778bd51115b","title":"NI 43-101 technical report \u2014 Auld Creek (RUA), 2026-06","url":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=6a35cad7496ff11d9d71dffd&type=PDFC&symbol=RUA%3ACA&companyName=Rua+Gold+Inc.&formType=002-002-001114-001003&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2026-06-19","archive":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=6a35cad7496ff11d9d71dffd&type=PDFC&symbol=RUA%3ACA&companyName=Rua+Gold+Inc.&formType=002-002-001114-001003&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2026-06-19","listing":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=6a35cad7496ff11d9d71dffd&type=PDFC&symbol=RUA%3ACA&companyName=Rua+Gold+Inc.&formType=002-002-001114-001003&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2026-06-19","date":"2026-06-19","collars":84,"intervals":55,"has_resource":true},{"kind":"NI 43-101 technical report","id":"mtp:7c43300646dd6e9b","title":"NI 43-101 technical report \u2014 Reefton (RUA), 2026-03","url":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=69a6ddc4d04248735965bca3&type=PDFC&symbol=RUA%3ACA&companyName=Rua+Gold+Inc.&formType=002-002-001114-001003&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2026-03-03","archive":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=69a6ddc4d04248735965bca3&type=PDFC&symbol=RUA%3ACA&companyName=Rua+Gold+Inc.&formType=002-002-001114-001003&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2026-03-03","listing":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=69a6ddc4d04248735965bca3&type=PDFC&symbol=RUA%3ACA&companyName=Rua+Gold+Inc.&formType=002-002-001114-001003&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2026-03-03","date":"2026-03-03","collars":315,"intervals":205,"has_resource":true},{"kind":"NI 43-101 technical report","id":"mtp:dac15b73911991e2","title":"NI 43-101 technical report \u2014 Reefton (RUA), 2024-07","url":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=66916a98496ddf494347dff3&type=PDFC&symbol=RUA%3ACA&companyName=Rua+Gold+Inc.&formType=002-001-001082-003036&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2024-07-12","archive":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=66916a98496ddf494347dff3&type=PDFC&symbol=RUA%3ACA&companyName=Rua+Gold+Inc.&formType=002-001-001082-003036&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2024-07-12","listing":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=66916a98496ddf494347dff3&type=PDFC&symbol=RUA%3ACA&companyName=Rua+Gold+Inc.&formType=002-001-001082-003036&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2024-07-12","date":"2024-07-12","collars":30,"intervals":43,"has_resource":true},{"kind":"NI 43-101 technical report","id":"mtp:f88251c24db78cfc","title":"NI 43-101 technical report \u2014 Reefton (RUA), 2024-11","url":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=6744c051bc3d6622ed68f272&type=PDFC&symbol=RUA%3ACA&companyName=Rua+Gold+Inc.&formType=002-002-001114-001003&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2024-11-25","archive":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=6744c051bc3d6622ed68f272&type=PDFC&symbol=RUA%3ACA&companyName=Rua+Gold+Inc.&formType=002-002-001114-001003&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2024-11-25","listing":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=6744c051bc3d6622ed68f272&type=PDFC&symbol=RUA%3ACA&companyName=Rua+Gold+Inc.&formType=002-002-001114-001003&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2024-11-25","date":"2024-11-25","collars":238,"intervals":98,"has_resource":true}],"resources":[{"source":"mtp:6072d778bd51115b","date":"2026-06-19","url":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=6a35cad7496ff11d9d71dffd&type=PDFC&symbol=RUA%3ACA&companyName=Rua+Gold+Inc.&formType=002-002-001114-001003&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2026-06-19","archive":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=6a35cad7496ff11d9d71dffd&type=PDFC&symbol=RUA%3ACA&companyName=Rua+Gold+Inc.&formType=002-002-001114-001003&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2026-06-19","title":"NI 43-101 technical report \u2014 Auld Creek (RUA), 2026-06","sensitivity":{"page":155,"cutoff_unit":null,"rows":[{"cutoff":1.5,"tonnes":19000000,"grade":3.56},{"cutoff":2.0,"tonnes":17000000,"grade":3.93},{"cutoff":2.5,"tonnes":14000000,"grade":4.33},{"cutoff":3.0,"tonnes":11000000,"grade":4.76},{"cutoff":3.65,"tonnes":900000,"grade":5.31}]},"page":27,"contained_unit":"oz","categories":{"Indicated":{"tonnes":350000,"grade":3.0,"contained":34000}},"year":2026,"by_header":true,"cutoff":1.5,"cutoff_unit":"g/t","grade_unit":"g/t","scope":null,"element":"Au","tonnes":350000,"contained":34000,"mi_tonnes":350000,"mi_contained":34000,"inf_tonnes":null,"inf_contained":null},{"source":"mtp:7c43300646dd6e9b","date":"2026-03-03","url":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=69a6ddc4d04248735965bca3&type=PDFC&symbol=RUA%3ACA&companyName=Rua+Gold+Inc.&formType=002-002-001114-001003&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2026-03-03","archive":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=69a6ddc4d04248735965bca3&type=PDFC&symbol=RUA%3ACA&companyName=Rua+Gold+Inc.&formType=002-002-001114-001003&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2026-03-03","title":"NI 43-101 technical report \u2014 Reefton (RUA), 2026-03","sensitivity":null,"page":24,"contained_unit":"oz","categories":{"Inferred":{"tonnes":1350000,"grade":3.6,"contained":156000}},"year":2026,"by_header":true,"cutoff":1.5,"cutoff_unit":"g/t","grade_unit":"g/t","scope":null,"element":"Au","tonnes":1350000,"contained":156000,"mi_tonnes":null,"mi_contained":null,"inf_tonnes":1350000,"inf_contained":156000},{"source":"mtp:f88251c24db78cfc","date":"2024-11-25","url":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=6744c051bc3d6622ed68f272&type=PDFC&symbol=RUA%3ACA&companyName=Rua+Gold+Inc.&formType=002-002-001114-001003&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2024-11-25","archive":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=6744c051bc3d6622ed68f272&type=PDFC&symbol=RUA%3ACA&companyName=Rua+Gold+Inc.&formType=002-002-001114-001003&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2024-11-25","title":"NI 43-101 technical report \u2014 Reefton (RUA), 2024-11","sensitivity":null,"page":203,"contained_unit":"oz","categories":{"Inferred":{"tonnes":1000000,"grade":4.1,"contained":130000}},"year":null,"by_header":true,"cutoff":2.2,"cutoff_unit":"g/t","grade_unit":"g/t","scope":null,"element":"Au","tonnes":1000000,"contained":130000,"mi_tonnes":null,"mi_contained":null,"inf_tonnes":1000000,"inf_contained":130000},{"source":"mtp:dac15b73911991e2","date":"2024-07-12","url":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=66916a98496ddf494347dff3&type=PDFC&symbol=RUA%3ACA&companyName=Rua+Gold+Inc.&formType=002-001-001082-003036&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2024-07-12","archive":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=66916a98496ddf494347dff3&type=PDFC&symbol=RUA%3ACA&companyName=Rua+Gold+Inc.&formType=002-001-001082-003036&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2024-07-12","title":"NI 43-101 technical report \u2014 Reefton (RUA), 2024-07","sensitivity":null,"page":160,"contained_unit":"oz","categories":{"Indicated":{"tonnes":3300000,"grade":2.8,"contained":295600}},"year":null,"by_header":true,"cutoff":null,"cutoff_unit":null,"grade_unit":"g/t","scope":"underground","element":"Au","tonnes":3300000,"contained":295600,"mi_tonnes":3300000,"mi_contained":295600,"inf_tonnes":null,"inf_contained":null}],"counts":{"holes":209,"assayed_holes":60,"intervals":76,"surveyed":0,"blocks":117,"reports":4,"releases":0},"ok":true}</script>
+<script src="three.min.js"></script>
+<script src="viewer.js?v=1792080639"></script>
+</body>
+</html>

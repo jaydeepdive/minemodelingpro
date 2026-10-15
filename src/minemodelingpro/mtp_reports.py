@@ -355,7 +355,14 @@ def ingest(rows=None, limit=None, max_seconds=None, verbose=True, skip_held=True
         rows = rows[:limit]
     n_w = int(workers or WORKERS)
     t0, got, failed, n = time.time(), 0, 0, 0
-    pool = cf.ProcessPoolExecutor(max_workers=n_w)
+    # Worker processes are recycled: handling thousand-page reports leaves a
+    # worker holding well over a gigabyte after a few hundred of them, and two of
+    # those in a seven-gigabyte container is how a run that was going to finish
+    # instead runs out of memory.
+    try:
+        pool = cf.ProcessPoolExecutor(max_workers=n_w, max_tasks_per_child=40)
+    except TypeError:                              # older Python
+        pool = cf.ProcessPoolExecutor(max_workers=n_w)
     try:
         futs = {}
         it = iter(rows)

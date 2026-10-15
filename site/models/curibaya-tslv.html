@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Curibaya — TSLV · 3D model · MineModelingPro</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bitter:wght@600;700;800&family=Roboto:wght@400;500;700&display=swap">
+<style>
+:root{
+  --red:#D71920; --ink:#111418; --mut:#5f6670; --line:#e3e6ea; --panel:#f5f7fa; --card:#ffffff;
+  --bg:#e9edf2; --chip:#fdecec; --shadow:0 6px 24px rgba(17,20,24,.12);
+  --serif:'Bitter',Georgia,serif; --sans:'Roboto',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --bar:52px;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);overflow:hidden;
+  -webkit-text-size-adjust:100%;touch-action:none}
+#scene{position:fixed;left:0;right:0;bottom:0;top:var(--bar);z-index:0}
+#scene canvas{display:block;width:100%;height:100%;touch-action:none}
+/* ---------- top bar ---------- */
+#bar{position:fixed;top:0;left:0;right:0;height:var(--bar);z-index:30;background:#fff;border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:12px;padding:0 14px}
+#bar a.back{font-size:13px;font-weight:500;color:var(--red);text-decoration:none;white-space:nowrap}
+#bar .ttl{min-width:0;flex:1;display:flex;flex-direction:column;line-height:1.15}
+#bar .ttl b{font-family:var(--serif);font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#bar .ttl span{font-size:11.5px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#bar .brand{font-family:var(--serif);font-weight:800;font-size:13px;color:var(--ink);text-decoration:none;white-space:nowrap}
+#bar .brand em{color:var(--red);font-style:normal}
+/* ---------- panels ---------- */
+.panel{position:fixed;z-index:20;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);
+  display:flex;flex-direction:column;max-height:calc(100vh - var(--bar) - 28px);overflow:hidden}
+.phead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px 10px 14px;cursor:pointer;
+  user-select:none;border-bottom:1px solid var(--line)}
+.phead h2{font-family:var(--serif);font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--ink);margin:0}
+.pbtn{border:1px solid var(--line);background:var(--panel);border-radius:7px;width:28px;height:26px;display:grid;place-items:center;
+  cursor:pointer;color:var(--mut);font-size:15px;line-height:1;padding:0;flex:none}
+.pbtn:hover{border-color:var(--red);color:var(--red)}
+.pbody{padding:12px 14px 14px;overflow-y:auto;overscroll-behavior:contain}
+.panel.min .pbody{display:none}
+.panel.min .phead{border-bottom:0}
+#leftcol{position:fixed;z-index:20;top:calc(var(--bar) + 12px);left:12px;width:306px;display:flex;flex-direction:column;gap:10px;
+  max-height:calc(100vh - var(--bar) - 86px);pointer-events:none}
+#leftcol>.panel{position:static;width:auto;max-height:none;pointer-events:auto;flex:0 1 auto;min-height:0}
+#leftcol>.panel .pbody{max-height:42vh}
+#pModel{top:calc(var(--bar) + 12px);left:12px;width:306px}
+#pGrade{top:calc(var(--bar) + 12px);right:12px;width:318px}
+#pLegend{bottom:14px;left:330px;width:236px}
+@media (max-width:1180px) and (min-width:761px){#pLegend{left:12px}#pModel{max-height:calc(100vh - var(--bar) - 300px)}}
+/* ---------- controls ---------- */
+.sec{border-top:1px solid var(--line);padding-top:11px;margin-top:11px}
+.sec:first-child{border-top:0;padding-top:0;margin-top:0}
+.lab{font-family:var(--serif);font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);margin:0 0 7px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+.stat b{display:block;font-family:var(--serif);font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
+.stat span{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:4px 11px;font-size:12.5px;font-weight:700;cursor:pointer;color:var(--ink)}
+.chip.on{background:var(--red);border-color:var(--red);color:#fff}
+.tg{display:flex;align-items:center;gap:9px;padding:4px 0;cursor:pointer;user-select:none;font-size:13.5px}
+.tg input{appearance:none;-webkit-appearance:none;width:32px;height:18px;border-radius:10px;background:#cfd6e0;position:relative;cursor:pointer;
+  transition:background .15s;flex:none;margin:0}
+.tg input:checked{background:var(--red)}
+.tg input::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:transform .15s;
+  box-shadow:0 1px 2px rgba(0,0,0,.25)}
+.tg input:checked::after{transform:translateX(14px)}
+.tg input:disabled{opacity:.4}
+.tg small{color:var(--mut);font-size:11px;margin-left:auto}
+.rng{margin:6px 0 2px}
+.rng .row{display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;margin-bottom:5px}
+.rng .v{font-weight:700;color:var(--red);font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;-webkit-appearance:none;appearance:none;height:5px;border-radius:3px;background:#d7dde5;outline:none;margin:6px 0}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:#fff;border:2px solid var(--red);
+  cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.3)}
+input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:#fff;border:2px solid var(--red);cursor:pointer}
+.btns{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.btn{padding:7px 4px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font-size:12px;font-weight:500;border-radius:8px;cursor:pointer;
+  font-family:var(--sans)}
+.btn:hover{background:var(--chip);border-color:var(--red);color:var(--red)}
+.find{display:flex;gap:6px}
+.find input{flex:1;min-width:0;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:13px;font-family:var(--sans)}
+.hint{font-size:11.5px;color:var(--mut);line-height:1.45;margin:8px 0 0}
+.kv{display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:13px;color:var(--mut)}
+.kv b{color:var(--ink);font-weight:700;font-variant-numeric:tabular-nums;text-align:right}
+.big{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin:4px 0 2px}
+.big div{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:7px 8px}
+.big b{display:block;font-family:var(--serif);font-size:15.5px;font-weight:700;font-variant-numeric:tabular-nums}
+.big span{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut)}
+.big div.hl{background:#fff5f5;border-color:#f3c9cb}
+.cmp{margin-top:6px}
+.cmpbar{height:10px;border-radius:5px;background:#eef1f5;position:relative;overflow:hidden;margin:3px 0 7px}
+.cmpbar i{position:absolute;left:0;top:0;bottom:0;background:var(--red);border-radius:5px}
+.cmpbar.pub i{background:#274b8f}
+.note{font-size:11.5px;color:var(--mut);line-height:1.5;margin:6px 0 0}
+.res{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:6px;font-size:12.5px}
+.res a{color:var(--red);text-decoration:none;font-size:11.5px}
+.res table{width:100%;border-collapse:collapse;margin-top:4px;font-variant-numeric:tabular-nums}
+.res td{padding:2px 0;font-size:12px}
+.res td:nth-child(n+2){text-align:right}
+.src{display:flex;flex-direction:column;gap:6px;max-height:190px;overflow-y:auto}
+.src a{display:block;font-size:12px;line-height:1.35;color:var(--ink);text-decoration:none;padding-left:12px;position:relative}
+.src a::before{content:"";position:absolute;left:0;top:6px;width:6px;height:6px;border-radius:50%;background:var(--red)}
+.src a.rep::before{background:#274b8f;border-radius:1px}
+.src a:hover{color:var(--red)}
+.src a em{font-style:normal;color:var(--mut);font-size:10.5px}
+svg.gt{width:100%;height:110px;display:block;margin-top:4px}
+/* legend */
+.lg{display:flex;flex-direction:column;gap:3px}
+.lg div{display:flex;align-items:center;gap:8px;font-size:12px;font-variant-numeric:tabular-nums}
+.lg i{width:22px;height:9px;border-radius:3px;flex:none}
+.lg i.lo{background:#c3cad4;height:3px}
+/* overlays */
+table.bd{width:100%;table-layout:fixed;border-collapse:collapse;font-size:11px;font-variant-numeric:tabular-nums;margin-top:4px}
+table.bd th{text-align:left;font-size:9px;letter-spacing:.04em;text-transform:uppercase;color:var(--mut);padding:4px 4px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.bd td{padding:5px 4px;border-bottom:1px solid #f1f3f6;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+table.bd td.n,table.bd th.n{text-align:right}
+table.bd tr.on td{background:var(--chip)}
+table.bd tr:hover td{color:var(--red)}
+table.bd td em{font-style:normal;font-size:9px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
+table.bd td.thin{color:var(--mut)}
+.bdhead{font-size:12px;padding:6px 0 2px;border-bottom:1px solid var(--line)}
+.bdhead b{font-size:15px}
+.bdcuts{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 2px}
+.bdcuts .mini{font-size:10px;padding:3px 7px}
+.bdcuts .mini.on{background:var(--red);border-color:var(--red);color:#fff}
+.disc{margin-top:10px;padding:9px 10px;border:1px solid var(--line);border-radius:7px;background:#fbfcfd}
+.disc p{margin:4px 0;font-size:11px;line-height:1.5}
+.disc ul{margin:4px 0 4px 15px;padding:0;font-size:11px;line-height:1.5}
+.disc li{margin:2px 0}
+.warn{margin:8px 0;padding:9px 10px;border:1px solid #d9534f;border-left:3px solid #d9534f;
+  border-radius:7px;background:#fdf4f4;font-size:11px;line-height:1.5}
+.warn ul{margin:4px 0 4px 15px;padding:0}
+.warn span{color:var(--mut)}
+.fixnote{margin:8px 0;padding:8px 10px;border:1px solid var(--line);border-radius:7px;
+  background:#fafbfc;font-size:10.5px;line-height:1.5;color:var(--mut)}
+.fixnote ul{margin:3px 0 3px 15px;padding:0}
+#holetbl{max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:8px;margin-top:6px}
+#holetbl table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:11.5px;font-variant-numeric:tabular-nums}
+#holetbl th{position:sticky;top:0;background:#fff;text-align:left;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--mut);padding:5px 7px;border-bottom:1px solid var(--line)}
+#holetbl td{padding:4px 7px;border-bottom:1px solid #f1f3f6;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#holetbl tr:hover td{background:var(--panel);color:var(--red)}
+#holetbl td.n{text-align:right}
+#hfilter{width:100%;border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:12.5px;font-family:var(--sans);margin-top:4px}
+button.mini{border:1px solid var(--line);background:#fff;border-radius:6px;font-family:var(--sans);font-size:10.5px;font-weight:700;
+  color:var(--red);padding:2px 7px;cursor:pointer;margin-left:6px}
+button.mini:hover{background:var(--chip)}
+#tip{position:fixed;z-index:40;pointer-events:none;background:#fff;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:12px;
+  display:none;box-shadow:0 8px 24px rgba(17,20,24,.18);line-height:1.5;font-variant-numeric:tabular-nums;max-width:260px}
+#tip .g{font-weight:700}
+#hud2{position:fixed;z-index:15;bottom:14px;right:12px;display:flex;align-items:flex-end;gap:10px;pointer-events:none}
+#scalebar{display:flex;align-items:center;gap:8px;font-size:11px;background:rgba(255,255,255,.9);border:1px solid var(--line);border-radius:8px;padding:4px 9px}
+#scalebar .sb{height:8px;border-left:2px solid var(--ink);border-right:2px solid var(--ink);display:flex;align-items:center;width:90px}
+#scalebar .sb span{display:block;height:2px;width:100%;background:var(--ink)}
+#compass{width:46px;height:46px;border-radius:50%;background:rgba(255,255,255,.9);border:1px solid var(--line);display:grid;place-items:center}
+#compass svg{width:34px;height:34px;transition:none}
+#nav{position:fixed;z-index:18;bottom:14px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:4px;
+  background:rgba(255,255,255,.94);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:4px}
+#nav .nb{display:flex;align-items:center;gap:6px;border:0;background:transparent;border-radius:9px;padding:7px 10px;cursor:pointer;
+  color:var(--ink);font-family:var(--sans);font-size:12.5px;font-weight:700}
+#nav .nb svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round}
+#nav .nb:hover{background:var(--panel)}
+#nav .nb.on{background:var(--chip);color:var(--red)}
+#nav .nb.sq{padding:7px 11px;font-size:15px;line-height:1;font-weight:700;color:var(--mut)}
+#nav .sep{width:1px;height:20px;background:var(--line);margin:0 3px}
+@media (max-width:760px){#nav{bottom:66px;padding:3px}#nav .nb{padding:8px 9px;font-size:12px}#nav .nb b{display:none}#nav .nb.sq{padding:8px 11px}
+  /* the scale bar and compass move out from under the controls */
+  #hud2{bottom:auto;top:calc(var(--bar) + 8px);right:8px;flex-direction:column;align-items:flex-end;gap:6px}
+  #compass{width:38px;height:38px}#compass svg{width:28px;height:28px}
+  #scalebar{font-size:10.5px;padding:3px 7px}#scalebar .sb{width:62px}}
+
+/* A phone on its side has ~350 px of height: a bottom sheet would cover the model,
+   so the open panel docks to the right and the controls shrink. */
+@media (max-height:560px) and (orientation:landscape){
+  #leftcol{display:contents}
+  :root{--bar:40px}
+  #bar .ttl span{display:none}
+  .panel{left:auto!important;right:8px!important;width:300px!important;max-width:46vw;
+    top:calc(var(--bar) + 6px)!important;bottom:8px!important;max-height:none;border-radius:12px}
+  .panel.open{display:flex}
+  #mtools{left:auto;right:316px;bottom:auto;top:calc(var(--bar) + 6px);width:auto;flex-direction:column;gap:4px;padding:4px}
+  #mtools button{flex:none;padding:7px 10px;font-size:11.5px}
+  #nav{bottom:10px;left:12px;transform:none;padding:3px}
+  #nav .nb{padding:7px 8px;font-size:11.5px}#nav .nb b{display:none}
+  #hud2{top:calc(var(--bar) + 6px);right:auto;left:12px;bottom:auto;flex-direction:column;align-items:flex-start;gap:6px}
+  #compass{width:34px;height:34px}#compass svg{width:26px;height:26px}
+  #scalebar{font-size:10px;padding:3px 6px}#scalebar .sb{width:56px}
+  svg.gt{height:78px}
+}
+#pivot{position:fixed;z-index:14;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;border:2px solid var(--red);background:rgba(215,25,32,.18);
+  pointer-events:none;opacity:0;transition:opacity .4s}
+#toast{position:fixed;z-index:35;left:50%;top:calc(var(--bar) + 12px);transform:translateX(-50%);background:rgba(17,20,24,.86);color:#fff;
+  font-size:12.5px;padding:7px 13px;border-radius:20px;opacity:0;transition:opacity .4s;pointer-events:none;white-space:nowrap}
+#labels{position:fixed;inset:0;top:var(--bar);pointer-events:none;z-index:12;overflow:hidden}
+#labels span{position:absolute;font-size:10.5px;font-weight:500;color:#1d2530;background:rgba(255,255,255,.78);padding:0 4px;border-radius:3px;
+  transform:translate(6px,-50%);white-space:nowrap}
+#mtools{display:none}
+@media (max-width:760px){
+  #leftcol{display:contents}
+  :root{--bar:48px}
+  #bar .brand{display:none}
+  #bar .ttl b{font-size:14.5px}
+  .panel{left:8px!important;right:8px!important;width:auto!important;top:auto!important;bottom:62px!important;max-height:58vh;display:none;
+    border-radius:14px}
+  .panel.open{display:flex}
+  .panel.min .pbody{display:block}
+  .phead{cursor:default}
+  #mtools{display:flex;position:fixed;z-index:25;bottom:10px;left:8px;right:8px;gap:6px;background:#fff;border:1px solid var(--line);
+    border-radius:14px;box-shadow:var(--shadow);padding:5px}
+  #mtools button{flex:1;border:0;background:transparent;font-family:var(--sans);font-size:12px;font-weight:700;color:var(--ink);padding:9px 2px;border-radius:10px}
+  #mtools button.on{background:var(--chip);color:var(--red)}
+  #hud2{bottom:66px;right:8px}
+  #compass{width:40px;height:40px}
+  #toast{white-space:normal;text-align:center;max-width:90vw}
+}
+</style>
+</head>
+<body>
+<div id="bar">
+  <a class="back" href="../models.html">← Models</a>
+  <div class="ttl"><b id="t-name">Curibaya</b><span id="t-sub"></span></div>
+  <a class="brand" href="../models.html">Mine<em>Modeling</em>Pro</a>
+</div>
+<div id="scene"></div>
+<div id="labels"></div>
+<div id="pivot"></div>
+<div id="toast"></div>
+
+<div id="leftcol">
+<section id="pModel" class="panel">
+  <div class="phead" data-p="pModel"><h2>Model</h2><button class="pbtn" aria-label="Minimise">–</button></div>
+  <div class="pbody">
+    <div class="sec">
+      <div class="stats">
+        <div class="stat"><b id="s-holes">–</b><span>Holes</span></div>
+        <div class="stat"><b id="s-int">–</b><span>Intervals</span></div>
+        <div class="stat"><b id="s-src">–</b><span>Sources</span></div>
+      </div>
+      <p class="lab" style="margin-top:10px">Size</p><div id="sizebox"></div>
+    </div>
+    <div class="sec" id="elsec"><p class="lab">Colour by</p><div class="chips" id="els"></div></div>
+    <div class="sec">
+      <p class="lab">Layers</p>
+      <label class="tg"><input type="checkbox" id="L-int" checked>Drill intervals by grade</label>
+      <label class="tg"><input type="checkbox" id="L-trace" checked>Drill traces &amp; collars</label>
+      <label class="tg"><input type="checkbox" id="L-blocks" checked>Block model<small id="blk-note"></small></label>
+      <label class="tg"><input type="checkbox" id="L-terrain">Terrain<small id="ter-note"></small></label>
+      <label class="tg"><input type="checkbox" id="L-labels">Hole labels</label>
+      <div class="rng" id="ter-op-row"><div class="row"><span>Terrain opacity</span><span class="v" id="ter-op-v">45%</span></div>
+        <input type="range" id="ter-op" min="10" max="100" value="45"></div>
+      <div class="rng"><div class="row"><span>Block opacity</span><span class="v" id="blk-op-v">35%</span></div>
+        <input type="range" id="blk-op" min="10" max="100" value="35"></div>
+    </div>
+    <div class="sec">
+      <p class="lab">View</p>
+      <div class="btns">
+        <button class="btn" id="v-3d">3D</button><button class="btn" id="v-plan">Plan</button>
+        <button class="btn" id="v-ns" title="Section looking east">Sec E</button><button class="btn" id="v-ew" title="Section looking north">Sec N</button>
+      </div>
+      <div class="find" style="margin-top:8px"><input id="find" list="holelist" placeholder="Go to hole…" autocomplete="off"><button class="btn" id="find-go" style="width:52px">Go</button></div>
+      <datalist id="holelist"></datalist>
+      <p class="hint" id="navhint">Drag to orbit · <b>Pan</b> button (or hold space / right-drag) to move around · scroll to zoom at the cursor · double-click anything to pivot around it · arrow keys or WASD pan, Q/E up-down.</p>
+    </div>
+  </div>
+</section>
+
+<section id="pData" class="panel min">
+  <div class="phead" data-p="pData"><h2>Drill data</h2><button class="pbtn" aria-label="Minimise">–</button></div>
+  <div class="pbody">
+    <div class="sec"><div id="datasum"></div></div>
+    <div class="sec"><p class="lab">Holes <span id="hole-n" style="font-weight:400"></span></p>
+      <input type="search" id="hfilter" placeholder="Filter holes…" aria-label="Filter holes">
+      <div id="holetbl"></div></div>
+    <div class="sec"><p class="lab">Data sources <span id="src-n" style="font-weight:400"></span></p><div class="src" id="srclist"></div></div>
+  </div>
+</section>
+</div>
+
+
+<section id="pGrade" class="panel">
+  <div class="phead" data-p="pGrade"><h2>Grade, tonnes &amp; metal</h2><button class="pbtn" aria-label="Minimise">–</button></div>
+  <div class="pbody">
+    <div class="sec" id="gtsec">
+      <div class="rng"><div class="row"><span>Cut-off grade</span><span class="v"><span id="cut-v">–</span></span></div>
+        <input type="range" id="cut" min="0" max="10" value="0" step="1"></div>
+      <p class="lab" style="margin-top:6px">MMP block model above cut-off</p>
+      <div class="big">
+        <div><b id="g-t">–</b><span>Tonnes</span></div>
+        <div><b id="g-g">–</b><span>Grade</span></div>
+        <div class="hl"><b id="g-c">–</b><span id="g-cu">Contained</span></div>
+      </div>
+      <svg class="gt" id="gtchart" viewBox="0 0 300 110" preserveAspectRatio="none"></svg>
+      <div id="cmp"></div>
+    </div>
+    <div class="sec" id="nogt" hidden><p class="note" id="nogt-msg"></p></div>
+    <div class="sec"><div id="intbox"></div><div id="metbox"></div></div>
+    <div class="sec"><p class="lab">One deposit, every metal</p><div id="bdown"></div></div>
+    <div class="sec" id="ressec"><p class="lab">Published resource</p><div id="res"></div></div>
+    <div class="sec"><p class="lab">Block model parameters</p><div id="params"></div></div>
+    <div class="sec"><p class="note">Grades are inverse-distance estimates for <b>visualisation only</b> — not a mineral resource estimate. Verify every figure against the source filings.</p></div>
+  </div>
+</section>
+
+
+<section id="pLegend" class="panel">
+  <div class="phead" data-p="pLegend"><h2 id="lg-h">Grade</h2><button class="pbtn" aria-label="Minimise">–</button></div>
+  <div class="pbody"><div class="lg" id="legend"></div></div>
+</section>
+
+<div id="mtools">
+  <button data-open="pModel">Model</button><button data-open="pGrade">Grade</button><button data-open="pData">Data</button><button data-open="pLegend">Legend</button>
+</div>
+<div id="hud2">
+  <div id="scalebar"><div class="sb"><span></span></div><b id="sb-l"></b></div>
+  <div id="compass" title="North"><svg viewBox="-20 -20 40 40"><g id="needle"><path d="M0,-16 L5,2 L0,-2 L-5,2Z" fill="#D71920"/><path d="M0,16 L5,2 L0,-2 L-5,2Z" fill="#9aa3ae"/><text x="0" y="-9" font-size="0" fill="#fff">N</text></g></svg></div>
+</div>
+<div id="tip"></div>
+
+<script id="model" type="application/json">{"slug":"curibaya-tslv","project":"Curibaya","company":"TSLV","region":null,"kinds":["report"],"updated":"2022-08-25","generated":"2026-10-15T22:06:55Z","frame":{"kind":"local","lat0":null,"lon0":null,"grid":"mtp:5865cb8032fddf69"},"holes":[["21CUR-001",96.5,-264.8,2130.6,300.0,-69.7,649.7],["21CUR-002",402.7,231.1,2056.5,120.0,-45.0,595.9],["21CUR-003",95.4,-263.0,2130.6,120.0,-45.0,592.7],["21CUR-004",-548.5,97.5,2095.2,115.0,-45.0,549.9],["21CUR-005",435.7,0.0,2097.8,120.0,-45.0,330.5],["21CUR-006",0.5,-441.3,2114.0,110.0,-45.0,220.0],["21CUR-007",-0.5,-440.9,2114.1,110.0,-68.0,202.7],["21CUR-008",95.6,-262.4,2130.6,300.0,-45.0,331.8],["21CUR-009",-1365.6,-212.4,2029.5,300.0,-45.0,124.0],["21CUR-010",-664.9,301.6,2091.9,300.0,-50.0,176.0],["21CUR-011",-180.7,2.0,1999.0,115.0,-45.0,226.4],["21CUR-012",-230.5,567.0,2168.0,127.0,-50.0,506.2],["21CUR-013",-264.5,430.5,2155.1,125.0,-50.0,380.2],["21CUR-014",-1.1,-336.1,2116.9,100.0,-45.0,137.1],["21CUR-015",419.5,94.4,2125.8,87.0,-45.0,167.0],["21CUR-016",431.7,0.0,2098.6,87.0,-45.0,157.8]],"elements":{"Ag":{"unit":"g/t","bins":[5,15,30,60,100,200,500],"colors":["#3b4cc0","#2c9fd0","#9bcf3c","#f2cf1d","#f39a1f","#b8123a","#7a0b6e"],"segments":[[2,105.0,106.0,175.0],[2,106.0,108.0,30.1],[2,128.0,133.0,8.42],[2,133.0,134.0,93.5],[2,143.0,154.0,29.5],[2,155.0,159.0,12.875],[2,159.0,160.0,68.5],[2,413.0,414.0,147.0]],"n_holes":1,"stats":{"max":175.0,"mean":70.612,"p50":49.3}},"Au":{"unit":"g/t","bins":[0.1,0.3,0.5,1,2,5,10],"colors":["#3b4cc0","#2c9fd0","#9bcf3c","#f2cf1d","#f39a1f","#b8123a","#7a0b6e"],"segments":[[2,105.0,106.0,0.5],[2,106.0,108.0,0.11],[2,128.0,133.0,0.036],[2,133.0,134.0,0.6],[2,143.0,154.0,0.08],[2,155.0,159.0,0.0525],[2,159.0,160.0,0.04],[2,413.0,414.0,0.1]],"n_holes":1,"stats":{"max":0.6,"mean":0.19,"p50":0.09}},"Zn":{"unit":"%","bins":[0.25,0.5,1,2,4,8],"colors":["#3b4cc0","#2fb38a","#9bcf3c","#f39a1f","#e0521b","#7a0b6e"],"segments":[[2,105.0,106.0,0.005],[2,106.0,108.0,0.005],[2,128.0,133.0,0.0172],[2,133.0,134.0,0.01],[2,143.0,154.0,0.046],[2,155.0,159.0,0.1235],[2,159.0,160.0,0.756],[2,413.0,414.0,0.995]],"n_holes":1,"stats":{"max":0.995,"mean":0.245,"p50":0.032}}},"primary":"Ag","by_metal":null,"style":{"key":"vein","label":"narrow vein system","why":"the technical report describes a narrow vein system","confidence":"report","note":"Narrow, high-contrast bodies. Mineralisation is not assumed to carry far from an intercept, because across strike it does not.","summary":"narrow vein system \u2014 the technical report describes a narrow vein system","halo_m":6.0,"median_intercept_m":2.0},"metallurgy":{"routes":[],"traits":["oxide","sulphide"],"recoveries":null,"summary":"oxide ore present, sulphide ore"},"coverage":{"stated":{"strike":{"n":1,"min":800.0,"max":800.0,"median":800.0,"page":43,"text":"lel breccia bodies of high-grade oxidized copper (malachite-chrysocolla) fractures and breccias that runs for 800 m of strike length and vary between 1.5 m and 8 m in thickness. Mineralization"}},"stated_text":"800 m strike","stated_from":{"id":"mtp:5865cb8032fddf69","date":"2022-02-15"}},"track_record":{"n":110,"median_ratio":0.942,"within_1_5x":22,"within_2x":35,"grade_matched_n":154,"grade_matched_median":0.865,"covered_n":36,"covered_median":1.26,"covered_within_1_5x":8,"tiers":{"n":84,"filed_mi_share":0.653,"mmp_top2_share":0.51}},"integrity":null,"settings":{"metallurgy":{"routes":[],"traits":["oxide","sulphide"],"recoveries":null,"summary":"oxide ore present, sulphide ore"},"deposit_style":"vein","block":[5.0,5.0,5.0],"density":2.69},"param_sources":{"metallurgy":"technical report (2022)","deposit_style":"technical report (2022)","block":"typical for Ag deposits (10 reports)","density":"typical for Ag deposits (10 reports)"},"terrain":null,"sources":[{"kind":"NI 43-101 technical report","id":"mtp:5865cb8032fddf69","title":"NI 43-101 technical report \u2014 Curibaya (TSLV), 2022-08","url":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=630824f31f348f69de826f1b&type=PDFC&symbol=TSLV%3ACA&companyName=Tier+One+Silver+Inc.&formType=002-002-001119-001014&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2022-10-23","archive":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=630824f31f348f69de826f1b&type=PDFC&symbol=TSLV%3ACA&companyName=Tier+One+Silver+Inc.&formType=002-002-001119-001014&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2022-10-23","listing":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=630824f31f348f69de826f1b&type=PDFC&symbol=TSLV%3ACA&companyName=Tier+One+Silver+Inc.&formType=002-002-001119-001014&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2022-10-23","date":"2022-08-25","collars":29,"intervals":56,"has_resource":false}],"resources":[],"counts":{"holes":16,"assayed_holes":1,"intervals":24,"surveyed":0,"blocks":0,"reports":1,"releases":0},"ok":true}</script>
+<script src="three.min.js"></script>
+<script src="viewer.js?v=1792080639"></script>
+</body>
+</html>

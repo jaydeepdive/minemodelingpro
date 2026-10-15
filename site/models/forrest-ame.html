@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Forrest — AME · 3D model · MineModelingPro</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bitter:wght@600;700;800&family=Roboto:wght@400;500;700&display=swap">
+<style>
+:root{
+  --red:#D71920; --ink:#111418; --mut:#5f6670; --line:#e3e6ea; --panel:#f5f7fa; --card:#ffffff;
+  --bg:#e9edf2; --chip:#fdecec; --shadow:0 6px 24px rgba(17,20,24,.12);
+  --serif:'Bitter',Georgia,serif; --sans:'Roboto',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --bar:52px;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);overflow:hidden;
+  -webkit-text-size-adjust:100%;touch-action:none}
+#scene{position:fixed;left:0;right:0;bottom:0;top:var(--bar);z-index:0}
+#scene canvas{display:block;width:100%;height:100%;touch-action:none}
+/* ---------- top bar ---------- */
+#bar{position:fixed;top:0;left:0;right:0;height:var(--bar);z-index:30;background:#fff;border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:12px;padding:0 14px}
+#bar a.back{font-size:13px;font-weight:500;color:var(--red);text-decoration:none;white-space:nowrap}
+#bar .ttl{min-width:0;flex:1;display:flex;flex-direction:column;line-height:1.15}
+#bar .ttl b{font-family:var(--serif);font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#bar .ttl span{font-size:11.5px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#bar .brand{font-family:var(--serif);font-weight:800;font-size:13px;color:var(--ink);text-decoration:none;white-space:nowrap}
+#bar .brand em{color:var(--red);font-style:normal}
+/* ---------- panels ---------- */
+.panel{position:fixed;z-index:20;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);
+  display:flex;flex-direction:column;max-height:calc(100vh - var(--bar) - 28px);overflow:hidden}
+.phead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px 10px 14px;cursor:pointer;
+  user-select:none;border-bottom:1px solid var(--line)}
+.phead h2{font-family:var(--serif);font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--ink);margin:0}
+.pbtn{border:1px solid var(--line);background:var(--panel);border-radius:7px;width:28px;height:26px;display:grid;place-items:center;
+  cursor:pointer;color:var(--mut);font-size:15px;line-height:1;padding:0;flex:none}
+.pbtn:hover{border-color:var(--red);color:var(--red)}
+.pbody{padding:12px 14px 14px;overflow-y:auto;overscroll-behavior:contain}
+.panel.min .pbody{display:none}
+.panel.min .phead{border-bottom:0}
+#leftcol{position:fixed;z-index:20;top:calc(var(--bar) + 12px);left:12px;width:306px;display:flex;flex-direction:column;gap:10px;
+  max-height:calc(100vh - var(--bar) - 86px);pointer-events:none}
+#leftcol>.panel{position:static;width:auto;max-height:none;pointer-events:auto;flex:0 1 auto;min-height:0}
+#leftcol>.panel .pbody{max-height:42vh}
+#pModel{top:calc(var(--bar) + 12px);left:12px;width:306px}
+#pGrade{top:calc(var(--bar) + 12px);right:12px;width:318px}
+#pLegend{bottom:14px;left:330px;width:236px}
+@media (max-width:1180px) and (min-width:761px){#pLegend{left:12px}#pModel{max-height:calc(100vh - var(--bar) - 300px)}}
+/* ---------- controls ---------- */
+.sec{border-top:1px solid var(--line);padding-top:11px;margin-top:11px}
+.sec:first-child{border-top:0;padding-top:0;margin-top:0}
+.lab{font-family:var(--serif);font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);margin:0 0 7px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+.stat b{display:block;font-family:var(--serif);font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
+.stat span{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:4px 11px;font-size:12.5px;font-weight:700;cursor:pointer;color:var(--ink)}
+.chip.on{background:var(--red);border-color:var(--red);color:#fff}
+.tg{display:flex;align-items:center;gap:9px;padding:4px 0;cursor:pointer;user-select:none;font-size:13.5px}
+.tg input{appearance:none;-webkit-appearance:none;width:32px;height:18px;border-radius:10px;background:#cfd6e0;position:relative;cursor:pointer;
+  transition:background .15s;flex:none;margin:0}
+.tg input:checked{background:var(--red)}
+.tg input::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:transform .15s;
+  box-shadow:0 1px 2px rgba(0,0,0,.25)}
+.tg input:checked::after{transform:translateX(14px)}
+.tg input:disabled{opacity:.4}
+.tg small{color:var(--mut);font-size:11px;margin-left:auto}
+.rng{margin:6px 0 2px}
+.rng .row{display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;margin-bottom:5px}
+.rng .v{font-weight:700;color:var(--red);font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;-webkit-appearance:none;appearance:none;height:5px;border-radius:3px;background:#d7dde5;outline:none;margin:6px 0}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:#fff;border:2px solid var(--red);
+  cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.3)}
+input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:#fff;border:2px solid var(--red);cursor:pointer}
+.btns{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.btn{padding:7px 4px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font-size:12px;font-weight:500;border-radius:8px;cursor:pointer;
+  font-family:var(--sans)}
+.btn:hover{background:var(--chip);border-color:var(--red);color:var(--red)}
+.find{display:flex;gap:6px}
+.find input{flex:1;min-width:0;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:13px;font-family:var(--sans)}
+.hint{font-size:11.5px;color:var(--mut);line-height:1.45;margin:8px 0 0}
+.kv{display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:13px;color:var(--mut)}
+.kv b{color:var(--ink);font-weight:700;font-variant-numeric:tabular-nums;text-align:right}
+.big{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin:4px 0 2px}
+.big div{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:7px 8px}
+.big b{display:block;font-family:var(--serif);font-size:15.5px;font-weight:700;font-variant-numeric:tabular-nums}
+.big span{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut)}
+.big div.hl{background:#fff5f5;border-color:#f3c9cb}
+.cmp{margin-top:6px}
+.cmpbar{height:10px;border-radius:5px;background:#eef1f5;position:relative;overflow:hidden;margin:3px 0 7px}
+.cmpbar i{position:absolute;left:0;top:0;bottom:0;background:var(--red);border-radius:5px}
+.cmpbar.pub i{background:#274b8f}
+.note{font-size:11.5px;color:var(--mut);line-height:1.5;margin:6px 0 0}
+.res{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:6px;font-size:12.5px}
+.res a{color:var(--red);text-decoration:none;font-size:11.5px}
+.res table{width:100%;border-collapse:collapse;margin-top:4px;font-variant-numeric:tabular-nums}
+.res td{padding:2px 0;font-size:12px}
+.res td:nth-child(n+2){text-align:right}
+.src{display:flex;flex-direction:column;gap:6px;max-height:190px;overflow-y:auto}
+.src a{display:block;font-size:12px;line-height:1.35;color:var(--ink);text-decoration:none;padding-left:12px;position:relative}
+.src a::before{content:"";position:absolute;left:0;top:6px;width:6px;height:6px;border-radius:50%;background:var(--red)}
+.src a.rep::before{background:#274b8f;border-radius:1px}
+.src a:hover{color:var(--red)}
+.src a em{font-style:normal;color:var(--mut);font-size:10.5px}
+svg.gt{width:100%;height:110px;display:block;margin-top:4px}
+/* legend */
+.lg{display:flex;flex-direction:column;gap:3px}
+.lg div{display:flex;align-items:center;gap:8px;font-size:12px;font-variant-numeric:tabular-nums}
+.lg i{width:22px;height:9px;border-radius:3px;flex:none}
+.lg i.lo{background:#c3cad4;height:3px}
+/* overlays */
+table.bd{width:100%;table-layout:fixed;border-collapse:collapse;font-size:11px;font-variant-numeric:tabular-nums;margin-top:4px}
+table.bd th{text-align:left;font-size:9px;letter-spacing:.04em;text-transform:uppercase;color:var(--mut);padding:4px 4px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.bd td{padding:5px 4px;border-bottom:1px solid #f1f3f6;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+table.bd td.n,table.bd th.n{text-align:right}
+table.bd tr.on td{background:var(--chip)}
+table.bd tr:hover td{color:var(--red)}
+table.bd td em{font-style:normal;font-size:9px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
+table.bd td.thin{color:var(--mut)}
+.bdhead{font-size:12px;padding:6px 0 2px;border-bottom:1px solid var(--line)}
+.bdhead b{font-size:15px}
+.bdcuts{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 2px}
+.bdcuts .mini{font-size:10px;padding:3px 7px}
+.bdcuts .mini.on{background:var(--red);border-color:var(--red);color:#fff}
+.disc{margin-top:10px;padding:9px 10px;border:1px solid var(--line);border-radius:7px;background:#fbfcfd}
+.disc p{margin:4px 0;font-size:11px;line-height:1.5}
+.disc ul{margin:4px 0 4px 15px;padding:0;font-size:11px;line-height:1.5}
+.disc li{margin:2px 0}
+.warn{margin:8px 0;padding:9px 10px;border:1px solid #d9534f;border-left:3px solid #d9534f;
+  border-radius:7px;background:#fdf4f4;font-size:11px;line-height:1.5}
+.warn ul{margin:4px 0 4px 15px;padding:0}
+.warn span{color:var(--mut)}
+.fixnote{margin:8px 0;padding:8px 10px;border:1px solid var(--line);border-radius:7px;
+  background:#fafbfc;font-size:10.5px;line-height:1.5;color:var(--mut)}
+.fixnote ul{margin:3px 0 3px 15px;padding:0}
+#holetbl{max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:8px;margin-top:6px}
+#holetbl table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:11.5px;font-variant-numeric:tabular-nums}
+#holetbl th{position:sticky;top:0;background:#fff;text-align:left;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--mut);padding:5px 7px;border-bottom:1px solid var(--line)}
+#holetbl td{padding:4px 7px;border-bottom:1px solid #f1f3f6;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#holetbl tr:hover td{background:var(--panel);color:var(--red)}
+#holetbl td.n{text-align:right}
+#hfilter{width:100%;border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:12.5px;font-family:var(--sans);margin-top:4px}
+button.mini{border:1px solid var(--line);background:#fff;border-radius:6px;font-family:var(--sans);font-size:10.5px;font-weight:700;
+  color:var(--red);padding:2px 7px;cursor:pointer;margin-left:6px}
+button.mini:hover{background:var(--chip)}
+#tip{position:fixed;z-index:40;pointer-events:none;background:#fff;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:12px;
+  display:none;box-shadow:0 8px 24px rgba(17,20,24,.18);line-height:1.5;font-variant-numeric:tabular-nums;max-width:260px}
+#tip .g{font-weight:700}
+#hud2{position:fixed;z-index:15;bottom:14px;right:12px;display:flex;align-items:flex-end;gap:10px;pointer-events:none}
+#scalebar{display:flex;align-items:center;gap:8px;font-size:11px;background:rgba(255,255,255,.9);border:1px solid var(--line);border-radius:8px;padding:4px 9px}
+#scalebar .sb{height:8px;border-left:2px solid var(--ink);border-right:2px solid var(--ink);display:flex;align-items:center;width:90px}
+#scalebar .sb span{display:block;height:2px;width:100%;background:var(--ink)}
+#compass{width:46px;height:46px;border-radius:50%;background:rgba(255,255,255,.9);border:1px solid var(--line);display:grid;place-items:center}
+#compass svg{width:34px;height:34px;transition:none}
+#nav{position:fixed;z-index:18;bottom:14px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:4px;
+  background:rgba(255,255,255,.94);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:4px}
+#nav .nb{display:flex;align-items:center;gap:6px;border:0;background:transparent;border-radius:9px;padding:7px 10px;cursor:pointer;
+  color:var(--ink);font-family:var(--sans);font-size:12.5px;font-weight:700}
+#nav .nb svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round}
+#nav .nb:hover{background:var(--panel)}
+#nav .nb.on{background:var(--chip);color:var(--red)}
+#nav .nb.sq{padding:7px 11px;font-size:15px;line-height:1;font-weight:700;color:var(--mut)}
+#nav .sep{width:1px;height:20px;background:var(--line);margin:0 3px}
+@media (max-width:760px){#nav{bottom:66px;padding:3px}#nav .nb{padding:8px 9px;font-size:12px}#nav .nb b{display:none}#nav .nb.sq{padding:8px 11px}
+  /* the scale bar and compass move out from under the controls */
+  #hud2{bottom:auto;top:calc(var(--bar) + 8px);right:8px;flex-direction:column;align-items:flex-end;gap:6px}
+  #compass{width:38px;height:38px}#compass svg{width:28px;height:28px}
+  #scalebar{font-size:10.5px;padding:3px 7px}#scalebar .sb{width:62px}}
+
+/* A phone on its side has ~350 px of height: a bottom sheet would cover the model,
+   so the open panel docks to the right and the controls shrink. */
+@media (max-height:560px) and (orientation:landscape){
+  #leftcol{display:contents}
+  :root{--bar:40px}
+  #bar .ttl span{display:none}
+  .panel{left:auto!important;right:8px!important;width:300px!important;max-width:46vw;
+    top:calc(var(--bar) + 6px)!important;bottom:8px!important;max-height:none;border-radius:12px}
+  .panel.open{display:flex}
+  #mtools{left:auto;right:316px;bottom:auto;top:calc(var(--bar) + 6px);width:auto;flex-direction:column;gap:4px;padding:4px}
+  #mtools button{flex:none;padding:7px 10px;font-size:11.5px}
+  #nav{bottom:10px;left:12px;transform:none;padding:3px}
+  #nav .nb{padding:7px 8px;font-size:11.5px}#nav .nb b{display:none}
+  #hud2{top:calc(var(--bar) + 6px);right:auto;left:12px;bottom:auto;flex-direction:column;align-items:flex-start;gap:6px}
+  #compass{width:34px;height:34px}#compass svg{width:26px;height:26px}
+  #scalebar{font-size:10px;padding:3px 6px}#scalebar .sb{width:56px}
+  svg.gt{height:78px}
+}
+#pivot{position:fixed;z-index:14;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;border:2px solid var(--red);background:rgba(215,25,32,.18);
+  pointer-events:none;opacity:0;transition:opacity .4s}
+#toast{position:fixed;z-index:35;left:50%;top:calc(var(--bar) + 12px);transform:translateX(-50%);background:rgba(17,20,24,.86);color:#fff;
+  font-size:12.5px;padding:7px 13px;border-radius:20px;opacity:0;transition:opacity .4s;pointer-events:none;white-space:nowrap}
+#labels{position:fixed;inset:0;top:var(--bar);pointer-events:none;z-index:12;overflow:hidden}
+#labels span{position:absolute;font-size:10.5px;font-weight:500;color:#1d2530;background:rgba(255,255,255,.78);padding:0 4px;border-radius:3px;
+  transform:translate(6px,-50%);white-space:nowrap}
+#mtools{display:none}
+@media (max-width:760px){
+  #leftcol{display:contents}
+  :root{--bar:48px}
+  #bar .brand{display:none}
+  #bar .ttl b{font-size:14.5px}
+  .panel{left:8px!important;right:8px!important;width:auto!important;top:auto!important;bottom:62px!important;max-height:58vh;display:none;
+    border-radius:14px}
+  .panel.open{display:flex}
+  .panel.min .pbody{display:block}
+  .phead{cursor:default}
+  #mtools{display:flex;position:fixed;z-index:25;bottom:10px;left:8px;right:8px;gap:6px;background:#fff;border:1px solid var(--line);
+    border-radius:14px;box-shadow:var(--shadow);padding:5px}
+  #mtools button{flex:1;border:0;background:transparent;font-family:var(--sans);font-size:12px;font-weight:700;color:var(--ink);padding:9px 2px;border-radius:10px}
+  #mtools button.on{background:var(--chip);color:var(--red)}
+  #hud2{bottom:66px;right:8px}
+  #compass{width:40px;height:40px}
+  #toast{white-space:normal;text-align:center;max-width:90vw}
+}
+</style>
+</head>
+<body>
+<div id="bar">
+  <a class="back" href="../models.html">← Models</a>
+  <div class="ttl"><b id="t-name">Forrest</b><span id="t-sub"></span></div>
+  <a class="brand" href="../models.html">Mine<em>Modeling</em>Pro</a>
+</div>
+<div id="scene"></div>
+<div id="labels"></div>
+<div id="pivot"></div>
+<div id="toast"></div>
+
+<div id="leftcol">
+<section id="pModel" class="panel">
+  <div class="phead" data-p="pModel"><h2>Model</h2><button class="pbtn" aria-label="Minimise">–</button></div>
+  <div class="pbody">
+    <div class="sec">
+      <div class="stats">
+        <div class="stat"><b id="s-holes">–</b><span>Holes</span></div>
+        <div class="stat"><b id="s-int">–</b><span>Intervals</span></div>
+        <div class="stat"><b id="s-src">–</b><span>Sources</span></div>
+      </div>
+      <p class="lab" style="margin-top:10px">Size</p><div id="sizebox"></div>
+    </div>
+    <div class="sec" id="elsec"><p class="lab">Colour by</p><div class="chips" id="els"></div></div>
+    <div class="sec">
+      <p class="lab">Layers</p>
+      <label class="tg"><input type="checkbox" id="L-int" checked>Drill intervals by grade</label>
+      <label class="tg"><input type="checkbox" id="L-trace" checked>Drill traces &amp; collars</label>
+      <label class="tg"><input type="checkbox" id="L-blocks" checked>Block model<small id="blk-note"></small></label>
+      <label class="tg"><input type="checkbox" id="L-terrain">Terrain<small id="ter-note"></small></label>
+      <label class="tg"><input type="checkbox" id="L-labels">Hole labels</label>
+      <div class="rng" id="ter-op-row"><div class="row"><span>Terrain opacity</span><span class="v" id="ter-op-v">45%</span></div>
+        <input type="range" id="ter-op" min="10" max="100" value="45"></div>
+      <div class="rng"><div class="row"><span>Block opacity</span><span class="v" id="blk-op-v">35%</span></div>
+        <input type="range" id="blk-op" min="10" max="100" value="35"></div>
+    </div>
+    <div class="sec">
+      <p class="lab">View</p>
+      <div class="btns">
+        <button class="btn" id="v-3d">3D</button><button class="btn" id="v-plan">Plan</button>
+        <button class="btn" id="v-ns" title="Section looking east">Sec E</button><button class="btn" id="v-ew" title="Section looking north">Sec N</button>
+      </div>
+      <div class="find" style="margin-top:8px"><input id="find" list="holelist" placeholder="Go to hole…" autocomplete="off"><button class="btn" id="find-go" style="width:52px">Go</button></div>
+      <datalist id="holelist"></datalist>
+      <p class="hint" id="navhint">Drag to orbit · <b>Pan</b> button (or hold space / right-drag) to move around · scroll to zoom at the cursor · double-click anything to pivot around it · arrow keys or WASD pan, Q/E up-down.</p>
+    </div>
+  </div>
+</section>
+
+<section id="pData" class="panel min">
+  <div class="phead" data-p="pData"><h2>Drill data</h2><button class="pbtn" aria-label="Minimise">–</button></div>
+  <div class="pbody">
+    <div class="sec"><div id="datasum"></div></div>
+    <div class="sec"><p class="lab">Holes <span id="hole-n" style="font-weight:400"></span></p>
+      <input type="search" id="hfilter" placeholder="Filter holes…" aria-label="Filter holes">
+      <div id="holetbl"></div></div>
+    <div class="sec"><p class="lab">Data sources <span id="src-n" style="font-weight:400"></span></p><div class="src" id="srclist"></div></div>
+  </div>
+</section>
+</div>
+
+
+<section id="pGrade" class="panel">
+  <div class="phead" data-p="pGrade"><h2>Grade, tonnes &amp; metal</h2><button class="pbtn" aria-label="Minimise">–</button></div>
+  <div class="pbody">
+    <div class="sec" id="gtsec">
+      <div class="rng"><div class="row"><span>Cut-off grade</span><span class="v"><span id="cut-v">–</span></span></div>
+        <input type="range" id="cut" min="0" max="10" value="0" step="1"></div>
+      <p class="lab" style="margin-top:6px">MMP block model above cut-off</p>
+      <div class="big">
+        <div><b id="g-t">–</b><span>Tonnes</span></div>
+        <div><b id="g-g">–</b><span>Grade</span></div>
+        <div class="hl"><b id="g-c">–</b><span id="g-cu">Contained</span></div>
+      </div>
+      <svg class="gt" id="gtchart" viewBox="0 0 300 110" preserveAspectRatio="none"></svg>
+      <div id="cmp"></div>
+    </div>
+    <div class="sec" id="nogt" hidden><p class="note" id="nogt-msg"></p></div>
+    <div class="sec"><div id="intbox"></div><div id="metbox"></div></div>
+    <div class="sec"><p class="lab">One deposit, every metal</p><div id="bdown"></div></div>
+    <div class="sec" id="ressec"><p class="lab">Published resource</p><div id="res"></div></div>
+    <div class="sec"><p class="lab">Block model parameters</p><div id="params"></div></div>
+    <div class="sec"><p class="note">Grades are inverse-distance estimates for <b>visualisation only</b> — not a mineral resource estimate. Verify every figure against the source filings.</p></div>
+  </div>
+</section>
+
+
+<section id="pLegend" class="panel">
+  <div class="phead" data-p="pLegend"><h2 id="lg-h">Grade</h2><button class="pbtn" aria-label="Minimise">–</button></div>
+  <div class="pbody"><div class="lg" id="legend"></div></div>
+</section>
+
+<div id="mtools">
+  <button data-open="pModel">Model</button><button data-open="pGrade">Grade</button><button data-open="pData">Data</button><button data-open="pLegend">Legend</button>
+</div>
+<div id="hud2">
+  <div id="scalebar"><div class="sb"><span></span></div><b id="sb-l"></b></div>
+  <div id="compass" title="North"><svg viewBox="-20 -20 40 40"><g id="needle"><path d="M0,-16 L5,2 L0,-2 L-5,2Z" fill="#D71920"/><path d="M0,16 L5,2 L0,-2 L-5,2Z" fill="#9aa3ae"/><text x="0" y="-9" font-size="0" fill="#fff">N</text></g></svg></div>
+</div>
+<div id="tip"></div>
+
+<script id="model" type="application/json">{"slug":"forrest-ame","project":"Forrest","company":"AME","region":null,"kinds":["report"],"updated":"2012-12-19","generated":"2026-10-15T23:13:32Z","frame":{"kind":"local","lat0":null,"lon0":null,"grid":"mtp:bebef13c0f72b7af"},"holes":[["90A-1",-107.0,0.0,1127.0,227.0,-55.0,44.2],["90A-2",-107.0,0.0,1127.0,227.0,-70.0,62.8],["90A-3",-108.0,0.0,1128.0,197.0,-45.0,54.0],["90A-4",-37.0,13.0,1153.0,132.0,-45.0,34.8],["90A-5",-37.0,13.0,1153.0,132.0,-65.0,63.7],["90A-6",-37.0,13.0,1153.0,162.0,-45.0,39.0],["90A-7",-37.0,13.0,1153.0,162.0,-65.0,95.1],["90A-8",288.0,29.0,1285.0,315.0,-60.0,97.8],["90A-9",85.0,-864.0,1472.0,30.0,-60.0,223.1],["90A-10",-36.0,15.0,1152.0,102.0,-65.0,119.5],["90A-11",-42.0,27.0,1135.0,132.0,-45.0,98.5],["90A-12",-42.0,27.0,1135.0,132.0,-60.0,132.6],["90A-13",0.0,52.0,1146.0,132.0,-45.0,109.4],["90A-14",0.0,52.0,1146.0,132.0,-65.0,120.7],["90A-15",219.0,52.0,1265.0,135.0,-56.0,142.9],["AVD90-16",336.0,-346.0,1381.0,40.0,-45.0,99.4],["AVD90-17",420.0,-317.0,1383.0,220.0,-50.0,125.0],["AVD90-18",329.0,-96.0,1366.0,90.0,-45.0,100.3],["AVD90-19",-182.0,-898.0,1462.0,280.0,-45.0,45.4],["AVD90-20",-183.0,-898.0,1462.0,280.0,-60.0,61.6],["AVD90-21",219.0,-43.0,1263.0,312.0,-61.0,260.3],["AVD90-22",76.0,-5036.0,1241.0,345.0,-44.0,136.9],["AVD90-23",56.0,-5053.0,1241.0,345.0,-57.0,124.7],["AVD90-24",119.0,-5017.0,1237.0,345.0,-45.0,106.4],["F95-1",657.0,1304.0,1110.0,130.0,-45.0,152.4],["F95-3",290.0,-1009.0,1435.0,318.0,-45.0,118.9],["F95-4",127.0,174.0,1080.0,130.0,-45.0,121.9],["F95-5",127.0,174.0,1080.0,130.0,-80.0,112.8],["F95-6",14.0,88.0,1126.0,138.0,-45.0,109.7],["F95-9",-107.0,0.0,1128.0,255.0,-60.0,18.3],["F95-10",-107.0,0.0,1128.0,255.0,-80.0,61.5],["F95-11",-105.0,0.0,1128.0,88.0,-45.0,161.5]],"elements":{"Cu":{"unit":"%","bins":[0.05,0.1,0.2,0.4,0.7,1,2],"colors":["#3b4cc0","#2c9fd0","#9bcf3c","#f2cf1d","#f39a1f","#b8123a","#7a0b6e"],"segments":[[2,49.5,50.5,0.04],[3,17.0,18.0,0.05],[4,24.0,39.0,0.0808],[4,39.0,42.0,8.57],[4,42.0,56.0,0.0808],[4,56.0,61.0,0.03],[4,61.0,63.7,0.8766],[5,6.0,8.0,0.01],[5,11.0,12.0,0.05],[6,43.0,49.0,1.29],[6,49.0,54.0,0.0],[6,54.0,63.0,0.04],[6,63.0,71.0,0.4379],[7,71.0,72.0,0.01],[7,80.0,81.0,0.04],[9,33.0,34.0,0.151],[9,34.0,40.0,1.37],[9,40.0,68.0,0.151],[10,16.0,18.0,0.05],[10,37.0,38.0,0.04],[10,56.0,60.0,0.23],[10,78.5,79.5,0.03],[11,5.5,6.5,0.06],[11,15.0,18.0,0.05],[11,24.0,25.0,0.07],[11,36.0,39.0,0.09],[12,17.0,27.0,0.8945],[12,27.0,28.0,0.12],[12,28.0,29.0,0.8945],[12,37.0,46.1,0.06],[12,85.5,87.0,0.03],[14,64.5,66.0,0.03],[14,114.0,115.7,0.06],[31,60.85,64.0,0.05]],"n_holes":12,"stats":{"max":8.57,"mean":0.472,"p50":0.06},"check":{"idw_mean":0.1032,"nn_mean":0.1071,"bias_pct":-3.6,"assay_mean":0.4363,"composite_mean":0.1044,"dilution_pct":76.1},"blocks":{"cls":"AgIDAwICAgMCAgIDAgMBAQIDAwICAwMCAgIDAgIBAwMCAQECAwMCAQEBAgICAgEBAgIDAwICAgICAgICAgICAQMCAQEBAgIBAwICAQEBAQEBAQICAgEBAgICAwICAwICAgICAgICAgIBAQECAQICAgEBAQECAgIBAgICAQEBAQEBAQECAgIBAQECAQECAwIDAgICAQICAgICAQEBAQIBAwEBAgEBAQECAgIBAQECAQEBAgIBAQEBAQICAQIBAQECAgICAgMCAgICAQECAgIBAgEBAgIDAQECAQEBAgMCAgEBAQECAgICAgICAgEBAQEBAgMCAgICAQICAgIBAgEBAQECAQECAgECAwICAQEBAQIDAgIBAQEBAQIDAwICAgICAgMCAgIBAQMDAgECAQECAgMDAgIBAQICAwMCAgIDAwMBAQMCAQIBAgMCAgECAwMDAwMDAwMDAgMCAwMCAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMD","classes":["well drilled","moderately drilled","thinly drilled"],"origin":[-134.15,-50.8,1061.37],"size":[5.0,5.0,5.0],"ijk":"EQANAAsAEQAOAA0AEgAGAAQAEgAHAAYAEgAIAAcAEgAIAAgAEgAIAAkAEgAJAAgAEgAJAAoAEgAJAAsAEgAKAAwAEgALAAgAEgALAA0AEgAMAAkAEgANAAoAEgANAAsAEgANAAwAEwAGAAQAEwAGAAUAEwAHAAUAEwAHAAYAEwAHAAcAEwAIAAYAEwAIAAcAEwAIAAgAEwAIAAkAEwAJAAgAEwAJAAkAEwAJAAoAEwAJAAsAEwAKAAgAEwAKAAkAEwAKAAoAEwAKAAsAEwAKAAwAEwAKAA0AEwALAAkAEwALAAoAEwALAAwAEwALAA0AEwALAA4AEwAMAAcAEwAMAAkAEwAMAAoAEwAMAAsAEwAMAAwAEwANAAoAEwANAAsAEwANAAwAFAAGAAMAFAAGAAQAFAAGAAUAFAAHAAUAFAAHAAYAFAAHAAcAFAAIAAcAFAAIAAgAFAAIAAkAFAAIAAoAFAAJAAcAFAAJAAgAFAAJAAkAFAAJAAoAFAAJAAsAFAAKAAgAFAAKAAkAFAAKAAoAFAAKAAsAFAAKAAwAFAAKAA0AFAALAAUAFAALAAgAFAALAAkAFAALAAoAFAALAAsAFAALAAwAFAALAA0AFAAMAAcAFAAMAAkAFAAMAAoAFAAMAAsAFAAMAAwAFAAMAA0AFAANAAcAFAANAAgAFAANAAoAFAANAAwAFAANAA0AFAANAA4AFAAPAA8AFQAFAAMAFQAGAAMAFQAGAAQAFQAGAAUAFQAHAAUAFQAHAAYAFQAHAAcAFQAIAAUAFQAIAAYAFQAIAAcAFQAIAAgAFQAIAAkAFQAIAAoAFQAJAAYAFQAJAAcAFQAJAAgAFQAJAAkAFQAJAAoAFQAJAAsAFQAKAAYAFQAKAAcAFQAKAAgAFQAKAAkAFQAKAAoAFQAKAAsAFQAKAAwAFQAKAA0AFQALAAUAFQALAAcAFQALAAgAFQALAAkAFQALAAoAFQALAAsAFQALAAwAFQALAA0AFQAMAAcAFQAMAAgAFQAMAAkAFQAMAAoAFQAMAAsAFQAMAAwAFQAMAA0AFQANAAcAFQANAAgAFQANAAsAFQANAAwAFQANAA0AFQANAA4AFQAOAAwAFQAOAA0AFQAPAA4AFgAFAAMAFgAGAAQAFgAGAAUAFgAHAAUAFgAHAAYAFgAHAAcAFgAIAAUAFgAIAAYAFgAIAAcAFgAIAAgAFgAIAAkAFgAJAAUAFgAJAAYAFgAJAAcAFgAJAAgAFgAJAAkAFgAJAAoAFgAJAAsAFgAJAAwAFgAKAAYAFgAKAAcAFgAKAAgAFgAKAAkAFgAKAAoAFgAKAAsAFgAKAAwAFgAKAA0AFgALAAUAFgALAAYAFgALAAcAFgALAAkAFgALAAoAFgALAAsAFgALAAwAFgALAA0AFgALAA4AFgAMAAYAFgAMAAcAFgAMAAgAFgAMAAkAFgAMAAoAFgAMAAsAFgAMAAwAFgAMAA0AFgANAAgAFgANAAkAFgANAAoAFgANAAsAFgANAAwAFgANAA0AFgANAA4AFgAOAAoAFgAOAAwAFgAOAA0AFwAGAAQAFwAGAAUAFwAHAAUAFwAHAAYAFwAHAAcAFwAIAAQAFwAIAAUAFwAIAAYAFwAIAAcAFwAIAAgAFwAIAAkAFwAJAAUAFwAJAAYAFwAJAAcAFwAJAAgAFwAJAAkAFwAJAAoAFwAJAAsAFwAKAAYAFwAKAAcAFwAKAAgAFwAKAAkAFwAKAAoAFwAKAAsAFwAKAAwAFwALAAMAFwALAAQAFwALAAUAFwALAAYAFwALAAcAFwALAAgAFwALAAkAFwALAAoAFwALAAsAFwALAAwAFwALAA0AFwALAA4AFwAMAAUAFwAMAAYAFwAMAAcAFwAMAAgAFwAMAAkAFwAMAAoAFwAMAAsAFwAMAAwAFwAMAA0AFwANAAcAFwANAAgAFwANAAkAFwANAAoAFwANAAsAFwANAAwAFwANAA0AFwANAA4AGAAIAAQAGAAIAAUAGAAIAAYAGAAJAAQAGAAJAAUAGAAJAAYAGAAJAAcAGAAJAAgAGAAJAAkAGAAKAAYAGAAKAAcAGAAKAAgAGAAKAAkAGAAKAAoAGAAKAAsAGAALAAMAGAALAAQAGAALAAUAGAALAAYAGAALAAcAGAALAAgAGAALAAkAGAALAAoAGAALAAwAGAAMAAYAGAAMAAcAGAAMAAgAGAAMAAkAGAAMAAoAGAAMAAsAGAAMAAwAGAAMAA0AGAAMAA4AGAANAAcAGAANAAgAGAANAAkAGAANAAoAGAANAAsAGAANAAwAGAANAA0AGAANAA4AGQAHAAMAGQAIAAYAGQAJAAQAGQAJAAYAGQAJAAcAGQAJAAgAGQAKAAMAGQAKAAYAGQAKAAcAGQALAAUAGQALAAYAGQALAAcAGQALAAgAGQALAAkAGQALAAoAGQALAAsAGQAMAAYAGQAMAAcAGQAMAAgAGQAMAAkAGQAMAAoAGQAMAAsAGQAMAA0AGQANAAcAGQANAAgAGQANAAkAGQANAAoAGQANAA4AGQATAA4AGQATAA8AGgAJAAUAGgAJAAYAGgAKAAMAGgAKAAYAGgAKAAcAGgALAAUAGgALAAYAGgALAAcAGgALAAkAGgAMAAYAGgAMAAcAGgAMAAgAGgAMAAkAGgAMAAoAGgAMAAsAGgAMAAwAGgANAAkAGgASAA0AGgASAA4AGgATAA4AGgATAA8AGgAUABAAGwAJAAYAGwALAAUAGwALAAYAGwAMAAUAGwAMAAYAGwAMAAcAGwAMAAoAGwANAAkAGwARAAsAGwARAAwAGwASAA0AGwASAA4AGwATAA4AGwATAA8AGwAUABAAHAALAAQAHAAQAAoAHAAQAAsAHAARAAsAHAARAAwAHAASAAwAHAASAA0AHAASAA4AHAATAA4AHAATAA8AHAATABAAHAAUABAAHAAUABEAHQAQAAsAHQARAAsAHQARAAwAHQARAA0AHQASAA0AHQASAA4AHQATAA4AHQATAA8AHQATABAAHQAUABAAHgARAAsAHgARAA0AHgASAA0AHgASAA4AHgATAA8AHwARAAwAHwARAA0AHwASAA0AHwASAA4AIAARAAwA","g":"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","n":390,"n_total":842,"shown_from":0.05,"tonnes_per_block":337.5,"density":2.7,"params":{"block":[5.0,5.0,5.0],"radius_m":32.6,"max_gap_m":15.3,"spacing_m":20.4,"power":2.0,"min_holes":2,"min_samples":3,"method":"idw","coarsened":1.0,"max_per_hole":4,"domain_radius_m":3.8,"domain_reach_m":21.6,"anisotropy":[1.0,0.9,0.22],"passes":[{"range_m":32.6,"max_gap_m":11.5,"min_holes":3,"min_samples":3,"class":"well drilled"},{"range_m":32.6,"max_gap_m":15.3,"min_holes":2,"min_samples":2,"class":"moderately drilled"},{"range_m":32.6,"max_gap_m":15.3,"min_holes":1,"min_samples":2,"class":"thinly drilled"}],"domain":{"intercepts":11,"reach_m":36.0,"intercept_spacing_m":14.5,"mode":"sheet","faces":14,"points":1382,"thickness_m":3.8,"grade_reach_m":21.6},"top_cut":1.353,"composite_m":5.0,"block_source":"typical for Au deposits (69 reports)","gap_fill":true,"gap_fill_margin_m":6.0,"custom":[],"auto":{"metallurgy":"technical report (2011)","deposit_style":"technical report (2011)","block":"typical for Au deposits (69 reports)","density":"typical for Au deposits (69 reports)"},"density_source":"stated in the technical report"}},"gt":[[0.0,284175,0.0938,587379],[0.0426,137700,0.1823,553370],[0.05,131625,0.1886,547170],[0.0851,106988,0.2165,510576],[0.1,96188,0.2304,488554],[0.1277,68850,0.2765,419686],[0.1702,48938,0.3289,354860],[0.2,40838,0.3576,321953],[0.2128,39150,0.3643,314416],[0.2553,31050,0.3986,272854],[0.2979,22950,0.4423,223780],[0.3404,17212,0.4827,183154],[0.383,13500,0.516,153578],[0.4,11812,0.5342,139116],[0.4255,11138,0.5414,132926],[0.4681,8100,0.5751,102694],[0.5106,4725,0.6348,66123],[0.5532,3038,0.6941,46481],[0.5957,2362,0.7281,37925],[0.6383,1012,0.8847,19747],[0.6809,1012,0.8847,19747],[0.7,675,0.9817,14609],[0.7234,675,0.9817,14609],[0.766,675,0.9817,14609],[0.8085,675,0.9817,14609],[0.8511,675,0.9817,14609],[0.8936,675,0.9817,14609],[0.9362,338,1.0615,7898],[0.9787,338,1.0615,7898],[1,338,1.0615,7898],[1.0213,338,1.0615,7898],[1.0638,0,0.0,0],[1.1064,0,0.0,0],[1.1489,0,0.0,0],[1.1915,0,0.0,0],[1.234,0,0.0,0],[1.2766,0,0.0,0],[1.3191,0,0.0,0],[1.3617,0,0.0,0],[1.4043,0,0.0,0],[1.4468,0,0.0,0],[1.4894,0,0.0,0],[1.5319,0,0.0,0],[1.5745,0,0.0,0],[1.617,0,0.0,0],[1.6596,0,0.0,0],[1.7021,0,0.0,0],[1.7447,0,0.0,0],[1.7872,0,0.0,0],[1.8298,0,0.0,0],[1.8723,0,0.0,0],[1.9149,0,0.0,0],[1.9574,0,0.0,0],[2,0,0.0,0]],"contained_unit":"lb"},"Au":{"unit":"g/t","bins":[0.1,0.3,0.5,1,2,5,10],"colors":["#3b4cc0","#2c9fd0","#9bcf3c","#f2cf1d","#f39a1f","#b8123a","#7a0b6e"],"segments":[[2,49.5,50.5,2.57],[3,17.0,18.0,1.78],[4,24.0,39.0,1.3732],[4,39.0,42.0,4.45],[4,42.0,56.0,1.3732],[4,56.0,61.0,4.11],[4,61.0,63.7,1.6616],[5,6.0,8.0,3.65],[5,11.0,12.0,3.63],[6,43.0,49.0,3.08],[6,49.0,54.0,0.528],[6,54.0,63.0,3.04],[6,63.0,71.0,1.92],[7,71.0,72.0,1.27],[7,80.0,81.0,1.39],[9,33.0,34.0,1.8055],[9,34.0,40.0,3.29],[9,40.0,68.0,1.8055],[10,16.0,18.0,2.03],[10,37.0,38.0,3.09],[10,56.0,60.0,2.64],[10,78.5,79.5,8.01],[11,5.5,6.5,1.54],[11,15.0,18.0,1.13],[11,24.0,25.0,1.54],[11,36.0,39.0,1.11],[12,17.0,27.0,2.9809],[12,27.0,28.0,36.69],[12,28.0,29.0,2.9809],[12,37.0,46.1,1.29],[12,85.5,87.0,1.1],[14,64.5,66.0,19.37],[14,114.0,115.7,1.39],[31,60.85,64.0,4.05]],"n_holes":12,"stats":{"max":36.69,"mean":3.931,"p50":1.975},"blocks":{"cls":"AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIDAwICAgMCAgMDAgMDAgIDAgICAgICAgICAgIDAwMDAwICAgECAgICAwICAgICAgMDAQIDAQEBAgIDAwIBAQICAgICAwMCAgMDAgICAgICAQICAwMCAQECAgICAwICAQECAQICAQICAQICAwMCAQICAQEBAgMDAgMDAQEBAwICAgICAwIDAwICAgICAgICAgICAQICAgMCAQEBAgECAgIDAQICAgEBAQICAgIBAQEBAQIDAQECAgIBAQEBAgICAwIBAQECAgIDAgMCAgIDAgICAgICAgEBAQIBAQICAgICAQEBAgEBAgICAgIBAgECAQEBAgECAgIBAQEBAQICAwICAgIBAQEBAQICAQIBAgIDAgMCAgIBAgICAgMBAgEBAQIBAgIBAQIBAQECAgECAgIBAQEBAQIBAQEDAQICAgEBAQEBAgMCAgECAQEBAgMCAgIDAgIDAgIBAgIDAwECAQEBAgMCAQECAQEBAgMCAgICAQEBAQECAgICAgICAgEBAQEBAgMDAwICAgICAgMDAwMDAgIBAQEBAQICAgIBAwICAgIDAgIBAQEBAgMCAgIBAQEBAgIDAwICAgIDAwMDAgMDAgIBAQIDAwIBAwMCAgEBAgIDAwMDAgIBAQICAwMDAwMDAwMDAgMCAgIDAwIDAgICAwMCAgICAwMDAwMDAwMDAwMDAwMDAwICAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=","classes":["well drilled","moderately drilled","thinly drilled"],"origin":[-133.76,-50.41,1061.75],"size":[5.0,5.0,5.0],"ijk":"AAACAAQAAAADAAYAAQACAAQAAQACAAUAAQADAAUAAQADAAYAAQAEAAcAAgACAAQAAgACAAUAAgADAAUAAgADAAYAAgADAAcAAgAEAAcAAgAEAAgAAwACAAQAAwACAAUAAwADAAUAAwADAAYAAwADAAcAAwAEAAcAAwAEAAgABAACAAQABAACAAUABAADAAUABAADAAYABAADAAcABAAEAAcABAAEAAgABQACAAUABQADAAYACwAKAAQACwAKAAUADAAJAAMADAAJAAQADAAKAAMADAAKAAQADAAKAAUADAALAAYADQAJAAIADQAJAAMADQAJAAQADQAKAAMADQAKAAQADQAKAAUADQALAAQADQALAAUADQALAAYADgAJAAIADgAJAAMADgAJAAQADgAKAAMADgAKAAQADgAKAAUADgALAAQADgALAAUADgALAAYADwAJAAIADwAJAAMADwAJAAQADwAKAAMADwAKAAQADwAKAAUADwALAAQADwALAAUADwALAAYAEAAJAAIAEAAJAAMAEAAKAAMAEAAKAAQAEAAKAAUAEAALAAUAEAALAAYAEAALAAcAEAAOAAwAEAAPAA0AEAAPAA4AEQAJAAIAEQAKAAMAEQAKAAQAEQAKAAUAEQAKAAYAEQAKAA8AEQALAAUAEQALAAYAEQALABAAEQALABEAEQAMAAgAEQAMABEAEQAMABIAEQANAAkAEQANAAoAEQANAAsAEQAOAAsAEQAOAAwAEQAOAA0AEQAPAA0AEQAPAA4AEQAQAA8AEgAGAAQAEgAHAAYAEgAHAAcAEgAIAAYAEgAIAAcAEgAIAAgAEgAIAAkAEgAJAAoAEgAJAAsAEgAJAA4AEgAKAAwAEgAKAA8AEgAKABAAEgALAAYAEgALAA0AEgALAA4AEgALAA8AEgALABAAEgALABEAEgAMAAcAEgAMAAkAEgAMAAoAEgAMABEAEgAMABIAEgANAAgAEgANAAkAEgANAAoAEgANAAsAEgANAAwAEgANABMAEgAOAAkAEgAOAAoAEgAOAAsAEgAOAAwAEgAOAA0AEgAPAAwAEgAPAA0AEgAPAA8AEgAQAA8AEgAQABAAEwAGAAQAEwAGAAUAEwAHAAUAEwAHAAYAEwAHAAcAEwAIAAYAEwAIAAcAEwAIAAgAEwAIAAkAEwAIAAoAEwAJAAkAEwAJAAoAEwAJAAsAEwAJAA4AEwAJAA8AEwAKAAYAEwAKAAcAEwAKAAoAEwAKAAsAEwAKAAwAEwAKAA0AEwAKAA4AEwAKAA8AEwAKABAAEwALAAYAEwALAAgAEwALAAwAEwALAA0AEwALAA4AEwALAA8AEwALABAAEwALABEAEwAMAAYAEwAMAAcAEwAMAAgAEwAMAAkAEwAMAAoAEwAMAAsAEwAMAAwAEwAMAA0AEwAMAA4AEwAMAA8AEwAMABEAEwAMABIAEwANAAgAEwANAAkAEwANAAoAEwANAAsAEwANAAwAEwANAA0AEwANAA4AEwANABMAEwAOAAkAEwAOAAoAEwAOAAsAEwAOAAwAEwAOAA0AEwAPAAsAEwAPAAwAEwAPAA0AEwAPAA4AEwAPAA8AEwAQAA8AFAAFAAMAFAAGAAMAFAAGAAQAFAAGAAUAFAAHAAUAFAAHAAYAFAAHAAcAFAAIAAcAFAAIAAgAFAAIAAkAFAAIAAoAFAAJAAcAFAAJAAgAFAAJAAkAFAAJAAoAFAAJAAsAFAAJAA0AFAAJAA4AFAAJAA8AFAAKAAcAFAAKAAkAFAAKAAoAFAAKAAsAFAAKAAwAFAAKAA0AFAAKAA4AFAAKAA8AFAAKABAAFAALAAUAFAALAAcAFAALAAgAFAALAAkAFAALAAoAFAALAAsAFAALAAwAFAALAA0AFAALAA4AFAALAA8AFAALABEAFAAMAAYAFAAMAAcAFAAMAAgAFAAMAAkAFAAMAAoAFAAMAAsAFAAMAAwAFAAMAA0AFAAMAA4AFAAMAA8AFAAMABEAFAAMABIAFAANAAcAFAANAAgAFAANAAkAFAANAAoAFAANAAsAFAANAAwAFAANAA0AFAANAA4AFAANABMAFAAOAAkAFAAOAAoAFAAOAAsAFAAOAAwAFAAOAA0AFAAPAA0AFAAPAA4AFAAPAA8AFQAFAAMAFQAGAAQAFQAGAAUAFQAHAAUAFQAHAAYAFQAHAAcAFQAHAAgAFQAIAAUAFQAIAAYAFQAIAAcAFQAIAAgAFQAIAAkAFQAIAAoAFQAJAAYAFQAJAAcAFQAJAAgAFQAJAAkAFQAJAAoAFQAJAAsAFQAJAA0AFQAJAA4AFQAJAA8AFQAKAAYAFQAKAAcAFQAKAAgAFQAKAAkAFQAKAAoAFQAKAAsAFQAKAAwAFQAKAA0AFQAKAA4AFQAKAA8AFQAKABAAFQALAAUAFQALAAYAFQALAAcAFQALAAgAFQALAAkAFQALAAoAFQALAAsAFQALAAwAFQALAA0AFQALAA4AFQALAA8AFQALABAAFQALABEAFQAMAAYAFQAMAAcAFQAMAAgAFQAMAAkAFQAMAAoAFQAMAAsAFQAMAAwAFQAMAA0AFQAMAA8AFQAMABAAFQAMABEAFQAMABIAFQANAAcAFQANAAgAFQANAAkAFQANAAoAFQANAAsAFQANAAwAFQANAA0AFQANAA4AFQAOAAoAFQAOAAsAFQAOAAwAFQAOAA0AFQAPAA0AFQAPAA4AFgAFAAMAFgAGAAQAFgAGAAUAFgAHAAUAFgAHAAYAFgAHAAcAFgAIAAUAFgAIAAYAFgAIAAcAFgAIAAgAFgAIAAkAFgAIAAoAFgAJAAUAFgAJAAYAFgAJAAcAFgAJAAgAFgAJAAkAFgAJAAoAFgAJAAsAFgAJAA0AFgAJAA4AFgAKAAYAFgAKAAcAFgAKAAgAFgAKAAkAFgAKAAoAFgAKAAsAFgAKAAwAFgAKAA0AFgAKAA4AFgAKAA8AFgAKABAAFgALAAUAFgALAAYAFgALAAcAFgALAAgAFgALAAkAFgALAAoAFgALAAsAFgALAAwAFgALAA0AFgALAA4AFgALAA8AFgALABAAFgALABEAFgAMAAYAFgAMAAcAFgAMAAgAFgAMAAkAFgAMAAoAFgAMAAsAFgAMAAwAFgAMAA0AFgAMAA4AFgAMAA8AFgANAAgAFgANAAkAFgANAAoAFgANAAsAFgANAAwAFgANAA0AFgANAA4AFgANAA8AFgAOAAsAFgAOAA0AFwAGAAQAFwAGAAUAFwAHAAYAFwAHAAcAFwAIAAMAFwAIAAQAFwAIAAUAFwAIAAYAFwAIAAcAFwAIAAgAFwAIAAkAFwAIAAoAFwAJAAUAFwAJAAYAFwAJAAcAFwAJAAgAFwAJAAkAFwAJAAoAFwAJAAsAFwAJAA0AFwAKAAYAFwAKAAcAFwAKAAgAFwAKAAkAFwAKAAoAFwAKAAsAFwAKAAwAFwAKAA0AFwAKAA4AFwAKAA8AFwALAAQAFwALAAUAFwALAAYAFwALAAcAFwALAAgAFwALAAkAFwALAAoAFwALAAsAFwALAAwAFwALAA0AFwALAA4AFwALABAAFwAMAAUAFwAMAAYAFwAMAAcAFwAMAAgAFwAMAAkAFwAMAAoAFwAMAAsAFwAMAAwAFwAMAA0AFwAMAA4AFwAMAA8AFwANAAcAFwANAAgAFwANAAkAFwANAAoAFwANAAsAFwANAAwAFwANAA0AFwANAA4AFwANAA8AGAAHAAIAGAAHAAUAGAAIAAMAGAAIAAQAGAAIAAUAGAAIAAYAGAAJAAUAGAAJAAYAGAAJAAcAGAAJAAgAGAAJAAkAGAAKAAMAGAAKAAQAGAAKAAYAGAAKAAcAGAAKAAgAGAAKAAkAGAAKAAoAGAAKAAsAGAAKAA8AGAALAAMAGAALAAQAGAALAAUAGAALAAYAGAALAAcAGAALAAgAGAALAAkAGAALAAoAGAALAA0AGAAMAAUAGAAMAAYAGAAMAAcAGAAMAAgAGAAMAAkAGAAMAAoAGAAMAAsAGAAMAAwAGAAMAA0AGAAMAA4AGAANAAcAGAANAAkAGAANAAoAGAANAAsAGAANAAwAGAANAA0AGAANAA4AGQAGAAEAGQAHAAIAGQAHAAMAGQAHAAQAGQAIAAMAGQAIAAQAGQAIAAYAGQAJAAUAGQAJAAYAGQAJAAcAGQAJAAgAGQAKAAMAGQAKAAYAGQAKAAcAGQAKAAgAGQALAAMAGQALAAQAGQALAAUAGQALAAYAGQALAAcAGQALAAgAGQALAAkAGQALAAoAGQALAAsAGQALAAwAGQAMAAUAGQAMAAYAGQAMAAcAGQAMAAgAGQAMAAkAGQAMAAoAGQAMAAsAGQAMAA0AGQANAAcAGQANAAkAGQANAAoAGQANAAwAGQANAA4AGQATAA8AGgAGAAEAGgAHAAIAGgAHAAMAGgAIAAMAGgAIAAQAGgAJAAUAGgAJAAYAGgAKAAMAGgAKAAYAGgAKAAcAGgALAAQAGgALAAUAGgALAAYAGgALAAcAGgALAAoAGgAMAAUAGgAMAAYAGgAMAAcAGgAMAAgAGgAMAAkAGgAMAAoAGgAMAAsAGgAMAAwAGgANAAkAGgAQAAoAGgASAA0AGgASAA4AGgATAA4AGgATAA8AGgAUABAAGwAGAAEAGwAHAAIAGwAHAAMAGwAIAAMAGwAIAAQAGwAJAAQAGwAJAAUAGwAJAAYAGwAKAAUAGwALAAQAGwALAAUAGwALAAYAGwAMAAUAGwAMAAYAGwAMAAkAGwARAAsAGwARAAwAGwASAA0AGwASAA4AGwATAA4AGwATAA8AGwAUABAAHAAGAAEAHAAHAAIAHAAHAAMAHAAIAAMAHAAIAAQAHAAMAAYAHAAPAAgAHAAQAAkAHAAQAAoAHAAQAAsAHAARAAsAHAARAAwAHAASAAwAHAASAA0AHAASAA4AHAATAA4AHAATAA8AHAATABAAHAAUABAAHQAHAAIAHQAHAAMAHQAPAAkAHQAPAAoAHQAQAAkAHQAQAAoAHQAQAAsAHQARAAsAHQARAAwAHQARAA0AHQASAA0AHQASAA4AHQATAA4AHQATAA8AHQAUABAAHgAOAAcAHgAPAAgAHgAPAAkAHgAPAAoAHgAQAAoAHgAQAAsAHgARAAsAHgARAAwAHgARAA0AHgASAA0AHgASAA4AHgATAA8AHwAPAAgAHwAPAAkAHwAPAAoAHwAQAAoAHwAQAAsAHwARAAsAHwARAAwAHwARAA0AHwASAA0AHwASAA4AIAAMAAUAIAAOAAgAIAAPAAkAIAAPAAoAIAAQAAoAIAAQAAsAIAARAAwAIQALAAMAIQALAAQAIQAMAAQAIQAMAAUAIQANAAUAIQAPAAkAIQAPAAoAIQAQAAoAIQAQAAsAIgALAAIAIgALAAMAIgALAAQAIgAMAAQAIgAMAAUAIgANAAUAIwAKAAEAIwAKAAIAIwALAAIAIwALAAMAIwALAAQAIwAMAAQAIwAMAAUAIwANAAUAJAALAAIAJAALAAQAJAAMAAQAJAAMAAUAJAANAAUAJQALAAIAJQALAAQAJQAMAAQAJQAMAAUAJQANAAYAJgAMAAQAJgAMAAUASQAOABwASQAPAB0ASQAPAB4ASQAQAB8ASgAOABwASgAOAB0ASgAPAB0ASgAPAB4ASgAQAB8ASwAOABwASwAOAB0ASwAPAB0ASwAPAB4ASwAQAB8ATAAOABwATAAOAB0ATAAPAB0ATAAPAB4ATAAQAB8ATAAVAB0ATAAVAB4ATAAVAB8ATAAVACAATAAWAB8ATQAKABQATQALABUATQALABYATQAMABYATQAMABcATQAOABwATQAOAB0ATQAPAB0ATQAPAB4ATQAQAB8ATQAUABwATQAUAB0ATQAUAB4ATQAUAB8ATQAVAB0ATQAVAB4ATQAVACAATQAVACEATQAWAB4ATQAWAB8ATQAWACAATgAKABMATgAKABQATgALABQATgALABUATgALABYATgAMABYATgAMABcATgAPAB4ATgAUABwATgAUAB0ATgAUAB4ATgAUAB8ATgAVAB0ATgAVAB4ATgAVACAATgAVACEATgAWAB4ATgAWAB8ATgAWACAATwAKABMATwAKABQATwALABQATwALABUATwALABYATwAMABYATwAMABcATwAUABwATwAUAB0ATwAUAB4ATwAUAB8ATwAVAB0ATwAVAB4ATwAVACAATwAVACEATwAWAB8ATwAWACAATwAWACEAUAAKABMAUAAKABQAUAALABUAUAALABYAUAAMABYAUAAMABcAUAAUAB4AUAAUAB8AUAAVAB0AUAAVAB4AUAAVACAAUAAVACEAUAAWAB8AUAAWACAAUQAKABQAUQALABUAUQALABYAUQAMABcAUQAUAB8AUQAVAB8AUQAVACAAUQAVACEAUgAKABQAUgALABUA","g":"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","n":809,"n_total":842,"shown_from":0.1,"tonnes_per_block":337.5,"density":2.7,"params":{"block":[5.0,5.0,5.0],"radius_m":31.8,"max_gap_m":14.9,"spacing_m":19.9,"power":2.0,"min_holes":2,"min_samples":3,"method":"idw","coarsened":1.0,"max_per_hole":4,"domain_radius_m":3.8,"domain_reach_m":21.6,"anisotropy":[1.0,0.9,0.22],"passes":[{"range_m":31.8,"max_gap_m":11.2,"min_holes":3,"min_samples":3,"class":"well drilled"},{"range_m":31.8,"max_gap_m":14.9,"min_holes":2,"min_samples":2,"class":"moderately drilled"},{"range_m":31.8,"max_gap_m":14.9,"min_holes":1,"min_samples":2,"class":"thinly drilled"}],"domain":{"intercepts":18,"reach_m":36.0,"intercept_spacing_m":16.8,"mode":"sheet","faces":19,"points":2175,"thickness_m":3.8,"grade_reach_m":21.6},"top_cut":30.051,"composite_m":5.0,"block_source":"typical for Au deposits (69 reports)","gap_fill":true,"gap_fill_margin_m":6.0,"custom":[],"auto":{"metallurgy":"technical report (2011)","deposit_style":"technical report (2011)","block":"typical for Au deposits (69 reports)","density":"typical for Au deposits (69 reports)"},"density_source":"stated in the technical report"}},"gt":[[0.0,284175,1.2528,11446],[0.1,273038,1.3015,11425],[0.2181,238275,1.47,11262],[0.3,224775,1.5428,11149],[0.4361,206888,1.646,10949],[0.5,199800,1.6878,10842],[0.6542,176175,1.837,10405],[0.8722,136350,2.1559,9451],[1,120488,2.3158,8971],[1.0903,109012,2.4492,8584],[1.3083,87412,2.7615,7761],[1.5264,65812,3.2029,6777],[1.7444,44888,3.9394,5685],[1.9625,36112,4.4507,5167],[2,34762,4.5467,5082],[2.1805,28012,5.1422,4631],[2.3986,22612,5.8237,4234],[2.6166,21262,6.0342,4125],[2.8347,19575,6.3198,3977],[3.0527,18562,6.507,3883],[3.2708,17212,6.7717,3747],[3.4889,16875,6.8378,3710],[3.7069,16538,6.9042,3671],[3.925,15862,7.0368,3589],[4.143,13838,7.4773,3327],[4.3611,13162,7.6381,3232],[4.5791,12488,7.8128,3137],[4.7972,12150,7.8983,3085],[5,11475,8.0707,2978],[5.0152,11475,8.0707,2978],[5.2333,11475,8.0707,2978],[5.4513,10800,8.2455,2863],[5.6694,10125,8.4297,2744],[5.8874,8775,8.8419,2494],[6.1055,8775,8.8419,2494],[6.3236,7425,9.3162,2224],[6.5416,6750,9.6143,2086],[6.7597,6750,9.6143,2086],[6.9777,6750,9.6143,2086],[7.1958,6075,9.8907,1932],[7.4138,5738,10.0488,1854],[7.6319,5738,10.0488,1854],[7.8499,5400,10.1988,1771],[8.068,5062,10.3465,1684],[8.286,5062,10.3465,1684],[8.5041,5062,10.3465,1684],[8.7221,5062,10.3465,1684],[8.9402,4725,10.4623,1589],[9.1582,4388,10.5654,1490],[9.3763,4050,10.6755,1390],[9.5944,3712,10.7858,1287],[9.8124,3038,11.0302,1077],[10,2362,11.3421,862],[10.0305,2362,11.3421,862],[10.2485,1688,11.827,642]],"contained_unit":"oz"},"Ag":{"unit":"g/t","bins":[5,15,30,60,100,200,500],"colors":["#3b4cc0","#2c9fd0","#9bcf3c","#f2cf1d","#f39a1f","#b8123a","#7a0b6e"],"segments":[[2,49.5,50.5,1.0],[3,17.0,18.0,1.0],[4,24.0,39.0,3.6867],[4,39.0,42.0,134.1],[4,42.0,56.0,3.6867],[4,56.0,61.0,3.9],[4,61.0,63.7,15.913],[5,6.0,8.0,1.9],[5,11.0,12.0,0.03],[6,43.0,49.0,17.1],[6,49.0,54.0,0.0],[6,54.0,63.0,3.6],[6,63.0,71.0,7.5789],[7,71.0,72.0,1.0],[7,80.0,81.0,1.0],[9,33.0,34.0,2.9034],[9,34.0,40.0,23.3],[9,40.0,68.0,2.9034],[10,16.0,18.0,3.8],[10,37.0,38.0,1.0],[10,56.0,60.0,5.7],[10,78.5,79.5,5.5],[11,5.5,6.5,1.0],[11,15.0,18.0,1.0],[11,24.0,25.0,1.0],[11,36.0,39.0,1.0],[12,17.0,27.0,10.2364],[12,27.0,28.0,11.0],[12,28.0,29.0,10.2364],[12,37.0,46.1,4.9],[12,85.5,87.0,1.0],[31,60.85,64.0,1.0]],"n_holes":11,"stats":{"max":134.1,"mean":8.843,"p50":3.252},"blocks":{"cls":"AgICAgICAgICAgIBAgICAgICAgECAgICAgICAQIBAgICAgICAgMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMD","classes":["well drilled","moderately drilled","thinly drilled"],"origin":[-132.18,-48.82,1063.34],"size":[5.0,5.0,5.0],"ijk":"EgAIAAgAEgAIAAkAEwAIAAgAEwAIAAkAFAAIAAYAFAAIAAgAFAAIAAkAFAALAAoAFAAMAAsAFQAHAAUAFQAIAAUAFQAIAAYAFQAIAAcAFQAIAAgAFQAIAAkAFQAJAAcAFQALAAoAFQAMAAsAFgAIAAUAFgAIAAYAFgAIAAcAFgAIAAgAFgAIAAkAFgAJAAcAFgALAAoAFgAMAAsAFwAIAAUAFwAIAAYAFwAJAAcAFwAJAAgAFwALAAoAFwAMAAsAGAAIAAUAGAAIAAYAGAAJAAcAGAAJAAgAGAAMAAsAGQASAA4AGgAQAAwAGgARAAwAGgASAA0AGgASAA4AGwARAAwAGwARAA0AGwASAA0AGwASAA4AHAARAAsAHAARAAwAHAARAA0AHAASAA0AHAASAA4AHAATABAAHQARAAsAHQARAAwAHQARAA0AHQASAA0AHQASAA4AHQATAA8AHgARAAsAHgARAAwAHgARAA0AHgASAA0AHgASAA4A","g":"T3unQAixqECMxLRA6+8DQW520EAGr7JAjAArQasMpEBIUaBAjtGgQLaa5UAgwONA53u7QDPtokDxj9FAhdCwQBrQvEA6PvdACaYLQWCBCEFW7sBAXW2nQCyVrkCn+MVA7pXBQH0SOkE+jANBwND9QCxu1UCFJqRAAO6rQAkEE0GCVqhAIWXJQLllxkDbaLpAWOvgQFhSw0ATUMVAB70MQZQat0D+cMVANtgRQbzGBkFZM8pAoIz0QBFPCkGkJRhBGxDoQN39AUEQ4A5BSGa1QCawAkF42CZB467JQAqBC0HrCBJBaK+uQCiZ1EDYG6pAThKyQLVqDkHsug9B","n":63,"n_total":550,"shown_from":5,"tonnes_per_block":337.5,"density":2.7,"params":{"block":[5.0,5.0,5.0],"radius_m":28.4,"max_gap_m":13.3,"spacing_m":17.8,"power":2.0,"min_holes":2,"min_samples":3,"method":"idw","coarsened":1.0,"max_per_hole":4,"domain_radius_m":3.8,"domain_reach_m":21.6,"anisotropy":[1.0,0.9,0.22],"passes":[{"range_m":28.4,"max_gap_m":10.0,"min_holes":3,"min_samples":3,"class":"well drilled"},{"range_m":28.4,"max_gap_m":13.3,"min_holes":2,"min_samples":2,"class":"moderately drilled"},{"range_m":28.4,"max_gap_m":13.3,"min_holes":1,"min_samples":2,"class":"thinly drilled"}],"domain":{"intercepts":6,"reach_m":36.0,"intercept_spacing_m":17.1,"mode":"sheet","faces":5,"points":441,"thickness_m":3.8,"grade_reach_m":21.6},"top_cut":22.06,"composite_m":5.0,"block_source":"typical for Au deposits (69 reports)","gap_fill":true,"gap_fill_margin_m":6.0,"custom":[],"auto":{"metallurgy":"technical report (2011)","deposit_style":"technical report (2011)","block":"typical for Au deposits (69 reports)","density":"typical for Au deposits (69 reports)"},"density_source":"stated in the technical report"}},"gt":[[0.0,185625,2.0663,12332],[5,21262,6.9913,4779],[10.6383,675,11.1586,242],[15,0,0.0,0],[21.2766,0,0.0,0],[30,0,0.0,0],[31.9149,0,0.0,0],[42.5532,0,0.0,0],[53.1915,0,0.0,0],[60,0,0.0,0],[63.8298,0,0.0,0],[74.4681,0,0.0,0],[85.1064,0,0.0,0],[95.7447,0,0.0,0],[100,0,0.0,0],[106.383,0,0.0,0],[117.0213,0,0.0,0],[127.6596,0,0.0,0],[138.2979,0,0.0,0],[148.9362,0,0.0,0],[159.5745,0,0.0,0],[170.2128,0,0.0,0],[180.8511,0,0.0,0],[191.4894,0,0.0,0],[200,0,0.0,0],[202.1277,0,0.0,0],[212.766,0,0.0,0],[223.4043,0,0.0,0],[234.0426,0,0.0,0],[244.6809,0,0.0,0],[255.3191,0,0.0,0],[265.9574,0,0.0,0],[276.5957,0,0.0,0],[287.234,0,0.0,0],[297.8723,0,0.0,0],[308.5106,0,0.0,0],[319.1489,0,0.0,0],[329.7872,0,0.0,0],[340.4255,0,0.0,0],[351.0638,0,0.0,0],[361.7021,0,0.0,0],[372.3404,0,0.0,0],[382.9787,0,0.0,0],[393.617,0,0.0,0],[404.2553,0,0.0,0],[414.8936,0,0.0,0],[425.5319,0,0.0,0],[436.1702,0,0.0,0],[446.8085,0,0.0,0],[457.4468,0,0.0,0],[468.0851,0,0.0,0],[478.7234,0,0.0,0],[489.3617,0,0.0,0],[500,0,0.0,0]],"contained_unit":"oz"}},"primary":"Cu","by_metal":{"basis":"Cu","basis_unit":"%","cuts":[0.0,0.05,0.1,0.2,0.4,0.7,1.0,2.0],"tonnes":[284175,131625,96188,40838,11812,675,338,0],"density":2.7,"tonnes_per_block":337.5,"order":["Cu","Au","Ag"],"metals":{"Cu":{"unit":"%","contained_unit":"lb","grade":[0.0938,0.1886,0.2304,0.3576,0.5342,0.9817,1.0615,null],"contained":[587379,547170,488554,321953,139116,14609,7898,null],"coverage":[1.0,1.0,1.0,1.0,1.0,1.0,1.0,0.0],"tonnes":[284175,131625,96188,40838,11812,675,338,0]},"Au":{"unit":"g/t","contained_unit":"oz","grade":[1.2527,1.8038,2.0089,2.849,4.8242,2.2335,2.5642,null],"contained":[11309,7477,6038,3617,1780,48,28,null],"coverage":[0.9881,0.9795,0.9719,0.9669,0.9714,1.0,1.0,0.0],"tonnes":[280800,128925,93488,39488,11475,675,338,0]},"Ag":{"unit":"g/t","contained_unit":"oz","grade":[2.117,3.545,4.0023,4.9517,6.9122,12.374,15.9712,null],"contained":[17757,14694,12030,6286,2550,269,173,null],"coverage":[0.9181,0.9795,0.9719,0.9669,0.9714,1.0,1.0,0.0],"tonnes":[260888,128925,93488,39488,11475,675,338,0]}},"classes":{"well drilled":[52988,41175,29700,8100,2025,675,338,0],"moderately drilled":[94838,57712,40500,15525,675,0,0,0],"thinly drilled":[136350,32738,25988,17212,9112,0,0,0]},"value":{"currency":"US$","formula":"NSR US$/t = Au g/t \u00d7 73.3037 + Cu % \u00d7 61.7294 + Ag g/t \u00d7 0.8282","classes":{"well drilled":[52988,24300,2025,338,0,0,0,0],"moderately drilled":[94838,42862,3038,0,0,0,0,0],"thinly drilled":[136350,50962,24638,18900,11475,7088,5062,3712]},"factors":{"Cu":61.7294,"Au":73.3037,"Ag":0.8282},"approximate":true,"covers":1.0,"source":"indicative: metal prices less typical recovery, payables and treatment charges","cuts":[0.0,91.7,168.0,244.4,320.8,397.2,473.6,550.0],"tonnes":[284175,118125,29700,19238,11475,7088,5062,3712],"nsr":[98.13,177.94,343.04,424.43,515.67,618.16,689.63,750.47],"cutoff":null,"order":["Cu","Au","Ag"],"metals":{"Cu":{"unit":"%","contained_unit":"lb","grade":[0.0938,0.1709,0.2548,0.3007,0.351,0.4023,0.4013,0.4158],"contained":[587379,445047,166825,127547,88798,62861,44790,34031],"coverage":[1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0],"tonnes":[284175,118125,29700,19238,11475,7088,5062,3712],"priced":true},"Au":{"unit":"g/t","contained_unit":"oz","grade":[1.2527,2.2441,4.4141,5.4816,6.6715,8.0165,8.9904,9.8059],"contained":[11309,8522,4215,3390,2461,1827,1463,1170],"coverage":[0.9881,1.0,1.0,1.0,1.0,1.0,1.0,1.0],"tonnes":[280800,118125,29700,19238,11475,7088,5062,3712],"priced":true},"Ag":{"unit":"g/t","contained_unit":"oz","grade":[2.117,3.7842,5.6066,6.1813,6.3492,6.8633,7.0345,7.2376],"contained":[17757,13263,4319,3018,2205,1564,1145,864],"coverage":[0.9181,0.9229,0.8068,0.7895,0.9412,1.0,1.0,1.0],"tonnes":[260888,109012,23962,15188,10800,7088,5062,3712],"priced":true}}},"method":{"limit_m":100.0,"note":"Blocks within 100 m of surface are reported as open pit and the rest as underground, with the underground cut-off set 2.5x higher because underground tonnes cost more to mine. The depth is what a pit plausibly reaches on a vein \u2014 a geometric split, not a pit shell.","basis":"value","open_pit":{"cutoff":0.05,"tonnes":273712,"blocks":811,"metals":{"Cu":{"grade":0.097,"unit":"%","contained":585072,"contained_unit":"lb","coverage":1.0},"Au":{"grade":1.2919,"unit":"g/t","contained":11229,"contained_unit":"oz","coverage":0.988},"Ag":{"grade":2.117,"unit":"g/t","contained":17757,"contained_unit":"oz","coverage":0.953}}},"underground":{"cutoff":0.125,"tonnes":10462,"blocks":31,"metals":{"Cu":{"grade":0.01,"unit":"%","contained":2306,"contained_unit":"lb","coverage":1.0},"Au":{"grade":0.2389,"unit":"g/t","contained":80,"contained_unit":"oz","coverage":1.0}}}}},"style":{"key":"vein","label":"narrow vein system","why":"the technical report describes a narrow vein system","confidence":"report","note":"Narrow, high-contrast bodies. Mineralisation is not assumed to carry far from an intercept, because across strike it does not.","summary":"narrow vein system \u2014 the technical report describes a narrow vein system","halo_m":6.0,"median_intercept_m":2.0},"metallurgy":{"routes":[],"traits":["arsenic"],"recoveries":null,"summary":"arsenic-bearing"},"coverage":{"stated":{"strike":{"n":1,"min":250.0,"max":250.0,"median":250.0,"page":24,"text":"of the Brucejack deposit, ten quartz-sulphide veins have been recognized with a maximum width of 6 metres and strike length of 250 metres. These are hosted within a 100-150 metre wide alterati"},"depth":{"n":1,"min":110.0,"max":110.0,"median":110.0,"page":21,"text":"ts and tuffaceous siltstones. In 1990, a northeasterly directed -60\u00b0 drill hole tested the Forrest stockwork. At a vertical depth of approximately 110 m, the drill hole passed out of the andesites, through a faul"},"dip":{"n":1,"min":100.0,"max":100.0,"median":100.0,"page":11,"text":"of mineralization. This work confirmed the presence of Au-Cu mineralization at the Crooked Creek Showing for 100 metres down-dip and 75 metres along strike from its previously- recognized"}},"stated_text":"250 m strike, 100 m down dip, 110 m depth","stated_from":{"id":"mtp:bebef13c0f72b7af","date":"2011-11-30"},"model":{"volume_m3":105250,"strike_m":415.0,"diagonal_m":428.1,"depth_m":170.0,"blocks":842},"strike_ratio":1.66},"track_record":{"n":110,"median_ratio":0.942,"within_1_5x":22,"within_2x":35,"grade_matched_n":154,"grade_matched_median":0.865,"covered_n":36,"covered_median":1.26,"covered_within_1_5x":8,"tiers":{"n":84,"filed_mi_share":0.653,"mmp_top2_share":0.51}},"integrity":null,"settings":{"metallurgy":{"routes":[],"traits":["arsenic"],"recoveries":null,"summary":"arsenic-bearing"},"deposit_style":"vein","block":[5.0,5.0,5.0],"density":2.7},"param_sources":{"metallurgy":"technical report (2011)","deposit_style":"technical report (2011)","block":"typical for Au deposits (69 reports)","density":"typical for Au deposits (69 reports)"},"terrain":null,"sources":[{"kind":"NI 43-101 technical report","id":"mtp:bebef13c0f72b7af","title":"NI 43-101 technical report \u2014 Forrest (AME), 2012-12","url":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=5ea2a0105a05ce663124bec4&type=PDFC&symbol=AME%3ACA&companyName=Abacus+Mining+%26+Exploration+Corporation&formType=002-001-001012-001033&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2012-12-18","archive":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=5ea2a0105a05ce663124bec4&type=PDFC&symbol=AME%3ACA&companyName=Abacus+Mining+%26+Exploration+Corporation&formType=002-001-001012-001033&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2012-12-18","listing":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=5ea2a0105a05ce663124bec4&type=PDFC&symbol=AME%3ACA&companyName=Abacus+Mining+%26+Exploration+Corporation&formType=002-001-001012-001033&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2012-12-18","date":"2012-12-18","collars":32,"intervals":88,"has_resource":true},{"kind":"NI 43-101 technical report","id":"mtp:e7cb122461f92189","title":"NI 43-101 technical report \u2014 Forrest (AME), 2012-12","url":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=5ea2a0115a05ce663124bec8&type=PDFC&symbol=AME%3ACA&companyName=Abacus+Mining+%26+Exploration+Corporation&formType=002-001-001012-001033&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2012-12-19","archive":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=5ea2a0115a05ce663124bec8&type=PDFC&symbol=AME%3ACA&companyName=Abacus+Mining+%26+Exploration+Corporation&formType=002-001-001012-001033&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2012-12-19","listing":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=5ea2a0115a05ce663124bec8&type=PDFC&symbol=AME%3ACA&companyName=Abacus+Mining+%26+Exploration+Corporation&formType=002-001-001012-001033&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2012-12-19","date":"2012-12-19","collars":32,"intervals":88,"has_resource":true}],"resources":[{"source":"mtp:e7cb122461f92189","date":"2012-12-19","url":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=5ea2a0115a05ce663124bec8&type=PDFC&symbol=AME%3ACA&companyName=Abacus+Mining+%26+Exploration+Corporation&formType=002-001-001012-001033&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2012-12-19","archive":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=5ea2a0115a05ce663124bec8&type=PDFC&symbol=AME%3ACA&companyName=Abacus+Mining+%26+Exploration+Corporation&formType=002-001-001012-001033&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2012-12-19","title":"NI 43-101 technical report \u2014 Forrest (AME), 2012-12","sensitivity":null,"page":15,"contained_unit":"lb","categories":{"Inferred":{"tonnes":270000,"grade":0.13,"contained":800000}},"year":null,"by_header":false,"cutoff":null,"cutoff_unit":null,"grade_unit":"%","scope":null,"element":"Cu","tonnes":270000,"contained":800000,"mi_tonnes":null,"mi_contained":null,"inf_tonnes":270000,"inf_contained":800000}],"counts":{"holes":32,"assayed_holes":12,"intervals":100,"surveyed":0,"blocks":842,"reports":2,"releases":0},"ok":true}</script>
+<script src="three.min.js"></script>
+<script src="viewer.js?v=1792080639"></script>
+</body>
+</html>

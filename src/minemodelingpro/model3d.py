@@ -354,6 +354,28 @@ def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None,
     dist = ndimage.distance_transform_edt(~occ, sampling=(bx * f, by * f, bz * f))
     cdiag = math.sqrt((bx * f) ** 2 + (by * f) ** 2 + (bz * f) ** 2)
     cand_c = np.argwhere(dist <= seed_reach + cdiag)
+    # How many fine blocks those candidate regions could hold. A property drilled
+    # over twenty kilometres on a three-metre block is tens of millions of blocks,
+    # each carrying a grade, a class and an index — enough to exhaust the machine
+    # and take the whole build down with it, which is what it did. Coarsening the
+    # block is the honest response: a model of the right extent at a coarser block
+    # beats no model at all, and every page says what block it used.
+    MAXB = int(o.get("max_blocks") or 4_000_000)
+    while len(cand_c) * (f ** 3) > MAXB and max(bx, by, bz) < 400.0:
+        bx, by, bz = bx * 1.6, by * 1.6, bz * 1.6
+        coarsened *= 1.6
+        dims = np.ceil((hi - lo) / [bx, by, bz]).astype(int) + 1
+        f = 1
+        while (np.ceil(dims / f)).prod() > max_cells:
+            f += 1
+        cd = np.ceil(dims / f).astype(int)
+        occ = np.zeros(cd, dtype=bool)
+        ci = np.floor((seeds - lo) / (np.array([bx, by, bz]) * f)).astype(int)
+        ci = np.clip(ci, 0, cd - 1)
+        occ[ci[:, 0], ci[:, 1], ci[:, 2]] = True
+        dist = ndimage.distance_transform_edt(~occ, sampling=(bx * f, by * f, bz * f))
+        cdiag = math.sqrt((bx * f) ** 2 + (by * f) ** 2 + (bz * f) ** 2)
+        cand_c = np.argwhere(dist <= seed_reach + cdiag)
     # expand to fine cells
     off = np.stack(np.meshgrid(np.arange(f), np.arange(f), np.arange(f), indexing="ij"), -1).reshape(-1, 3)
     if rot is not None:
@@ -1568,9 +1590,41 @@ def _validation():
         return None
 
 
-def build_all(site_dir="site", only=None, verbose=True):
+def _index_entry(m, site_base):
+    """One project's row in models_index.json (Closeology deep-links through it)."""
+    slug = m["slug"]
+    e = {"slug": slug, "url": site_base + "models/" + slug + ".html", "project": m["project"],
+         "company": m.get("company"), "region": m.get("region"), "element": m["primary"],
+         "updated": m.get("updated"), "source": "+".join(m.get("kinds") or []),
+         "holes": m["counts"]["holes"], "samples": m["counts"]["intervals"],
+         "releases": [s["url"] for s in m["sources"]
+                      if s["kind"] == "news release" and s.get("url")]}
+    if (m.get("frame") or {}).get("lat0") is not None:
+        e["center"] = [m["frame"]["lat0"], m["frame"]["lon0"]]
+    return e
+
+
+def _page_model(path):
+    """The model a built page carries, for a resumed build to reuse."""
+    try:
+        s = open(path, encoding="utf-8").read()
+        i = s.index('<script id="model"')
+        a = s.index(">", i) + 1
+        b = s.index("</script>", a)
+        return json.loads(s[a:b].replace("<\\/", "</"))
+    except Exception:
+        return None
+
+
+
+def build_all(site_dir="site", only=None, verbose=True, resume_after=None):
     """One model page per PROJECT (all sources merged), the gallery, and
-    models_index.json (Closeology's drill radar deep-links release URLs to it)."""
+    models_index.json (Closeology's drill radar deep-links release URLs to it).
+
+    `resume_after` is a unix time: a project whose page was written after it is
+    taken as already built from the current inputs and reused, so a build that
+    stopped three hours in is picked up rather than started over. The gallery and
+    the index are assembled from every page present either way."""
     out_dir = os.path.join(site_dir, "models")
     os.makedirs(out_dir, exist_ok=True)
     site_base = os.environ.get("MMP_SITE_URL", "https://jaydeepdive.github.io/minemodelingpro/")
@@ -1582,6 +1636,20 @@ def build_all(site_dir="site", only=None, verbose=True):
     cards, index = [], []
     built = set()
     for ds in datasets:
+        if resume_after:
+            pg = os.path.join(out_dir, ds["slug"] + ".html")
+            try:
+                fresh = os.path.getmtime(pg) >= float(resume_after)
+            except OSError:
+                fresh = False
+            if fresh:
+                m = _page_model(pg)
+                if m:
+                    built.add(ds["slug"] + ".html")
+                    built.add(ds["slug"] + ".svg")
+                    cards.append(card_of(m))
+                    index.append(_index_entry(m, site_base))
+                    continue
         try:
             m = build_project(ds, verbose=verbose)
         except Exception as ex:
@@ -1594,14 +1662,7 @@ def build_all(site_dir="site", only=None, verbose=True):
         write_thumb(m, os.path.join(out_dir, slug + ".svg"))
         built.add(slug + ".svg")
         cards.append(card_of(m))
-        e = {"slug": slug, "url": site_base + "models/" + slug + ".html", "project": m["project"],
-             "company": m.get("company"), "region": m.get("region"), "element": m["primary"],
-             "updated": m.get("updated"), "source": "+".join(m.get("kinds") or []),
-             "holes": m["counts"]["holes"], "samples": m["counts"]["intervals"],
-             "releases": [s["url"] for s in m["sources"] if s["kind"] == "news release" and s.get("url")]}
-        if m["frame"].get("lat0") is not None:
-            e["center"] = [m["frame"]["lat0"], m["frame"]["lon0"]]
-        index.append(e)
+        index.append(_index_entry(m, site_base))
         if verbose:
             print(f"[model3d] {slug}: {m['counts']['holes']}h {m['counts']['intervals']}iv "
                   f"{m['counts']['blocks']}blk {m['primary']} kinds={m.get('kinds')} terrain={'y' if m.get('terrain') else 'n'}")

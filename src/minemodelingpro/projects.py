@@ -431,6 +431,9 @@ def _overrides():
 
 
 # ---------------------------------------------------------------- assembly
+_UPPER = re.compile(r"[^A-Z]")
+
+
 def assemble(min_holes=3, min_intervals=8, verbose=False, include_imports=True):
     """Datasets for every project. Imported datasets (minemodelingpro.imports) are
     treated as another source alongside technical reports — attached to the project
@@ -506,19 +509,31 @@ def assemble(min_holes=3, min_intervals=8, verbose=False, include_imports=True):
 
     def rep_company(r):
         return clean_company(r.get("company"))
+    def strong_keys(keys):
+        """Hole ids distinctive enough to match projects on.
+
+        Computed once per report and once per project: doing it inside the
+        comparison loop ran a regular expression for every shared hole id of every
+        report against every project, which is how assembling five thousand
+        reports stopped finishing."""
+        return {k for k in keys
+                if len(k) >= 5 and len(_UPPER.sub("", k)) >= 2}
+
+    for p in projs:
+        p["strong"] = strong_keys(p["keys"])
     standalone = []
     for r in reports:
         ivs = r.get("intervals") or []
         cols = r.get("collars") or []
         ikeys = {holeid.key(x["hole"]) for x in ivs} | {holeid.key(c["hole"]) for c in cols}
+        istrong = strong_keys(ikeys)
         rn = name_key(rep_name(r) or "")
         rc = (rep_company(r) or "").lower()
         rcenter = r.get("center") if (r.get("crs") or {}).get("kind") in ("utm", "latlon") else None
         best, best_s = None, 0
         for p in projs:
             s = 0
-            sh = {k for k in ikeys & p["keys"] if len(re.sub(r"[^A-Z]", "", k)) >= 2 and len(k) >= 5}
-            shared = len(sh)
+            shared = len(istrong & p["strong"])
             if shared >= 3 and shared >= 0.2 * min(len(ikeys), len(p["keys"]) or 1):
                 s += 10 + min(shared, 20)
             rj, pc = _fold(r.get("jurisdiction")), _fold(p.get("country"))
@@ -543,28 +558,46 @@ def assemble(min_holes=3, min_intervals=8, verbose=False, include_imports=True):
                         or name_key(p.get("project") or "") == name_key(forced)), None)
             if tgt is not None:
                 tgt["reports"].append(r); tgt["keys"] |= ikeys
+                tgt["strong"] |= istrong
                 continue
             if verbose:
                 print(f"[projects] {r['id']}: attach_to '{forced}' not found — standing alone")
         if best is not None and best_s >= 6:
             best["reports"].append(r)
             best["keys"] |= ikeys
+            best["strong"] |= istrong
         else:
             standalone.append(r)
 
     # standalone reports: merge reports of the same project with each other
     su = _UF(len(standalone))
+    # Name, hole ids, centre and company, computed once per report. Rebuilding
+    # each report's hole-id set inside the comparison loop made this quadratic in
+    # the reports AND linear in their intervals — eight million comparisons over
+    # five thousand reports, each re-reading thousands of rows, and the assembly
+    # simply stopped finishing.
+    pre = []
+    for r in standalone:
+        pre.append({
+            "n": name_key(rep_name(r) or ""),
+            "k": {holeid.key(x["hole"]) for x in
+                  (r.get("intervals") or []) + (r.get("collars") or [])},
+            "c": r.get("center"), "co": rep_company(r)})
     for i in range(len(standalone)):
+        a = pre[i]
         for j in range(i + 1, len(standalone)):
-            a, b = standalone[i], standalone[j]
-            na, nb = name_key(rep_name(a) or ""), name_key(rep_name(b) or "")
-            ka = {holeid.key(x["hole"]) for x in (a.get("intervals") or []) + (a.get("collars") or [])}
-            kb = {holeid.key(x["hole"]) for x in (b.get("intervals") or []) + (b.get("collars") or [])}
-            ca, cb = a.get("center"), b.get("center")
-            near = ca and cb and _km(ca[0], ca[1], cb[0], cb[1]) < 25
-            far = ca and cb and not near
-            same_co = bool(rep_company(a)) and rep_company(a) == rep_company(b)
-            if not far and ((na and na == nb and (near or same_co)) or len(ka & kb) >= 10):
+            b = pre[j]
+            same_name = bool(a["n"]) and a["n"] == b["n"]
+            # two reports with different project names and no holes in common are
+            # never the same project, and comparing them costs nothing to skip
+            if not same_name and not (a["k"] and b["k"]):
+                continue
+            ca, cb = a["c"], b["c"]
+            near = bool(ca and cb and _km(ca[0], ca[1], cb[0], cb[1]) < 25)
+            if ca and cb and not near:
+                continue
+            same_co = bool(a["co"]) and a["co"] == b["co"]
+            if (same_name and (near or same_co)) or len(a["k"] & b["k"]) >= 10:
                 su.union(i, j)
     sg = defaultdict(list)
     for i in range(len(standalone)):
@@ -808,7 +841,7 @@ def _materialise(p, news_holes, news_ivs, ov):
     res = []
     seen_res = set()
     for r in sorted(reports, key=lambda r: r.get("date") or "", reverse=True):
-        if r.get("resource"):
+        if r.get("resource") and (r["resource"].get("tonnes") or 0) >= MIN_FILED_T:
             kk = (r["resource"].get("tonnes"), r["resource"].get("contained"))
             if kk in seen_res:
                 continue                         # same statement repeated in another report
@@ -852,6 +885,15 @@ def _recency(r):
     if y:
         return "%04d-07-01" % int(y)
     return str(r.get("date") or "")[:10]
+
+
+# A filed statement smaller than this is a mis-read table, not a small deposit.
+# Nothing in a 43-101 is reported as thirty thousand tonnes of ore — that is a
+# week of mining — and the handful that came out that way scored at a thousand
+# times the published figure, which is the signature of a column read in the
+# wrong units. Carrying one onto a model page would publish it as the company's
+# own number, so a statement below the floor is left off rather than shown.
+MIN_FILED_T = 100_000
 
 
 def _report_extent(reports):

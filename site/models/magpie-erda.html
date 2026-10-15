@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Magpie — ERDA · 3D model · MineModelingPro</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bitter:wght@600;700;800&family=Roboto:wght@400;500;700&display=swap">
+<style>
+:root{
+  --red:#D71920; --ink:#111418; --mut:#5f6670; --line:#e3e6ea; --panel:#f5f7fa; --card:#ffffff;
+  --bg:#e9edf2; --chip:#fdecec; --shadow:0 6px 24px rgba(17,20,24,.12);
+  --serif:'Bitter',Georgia,serif; --sans:'Roboto',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --bar:52px;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);overflow:hidden;
+  -webkit-text-size-adjust:100%;touch-action:none}
+#scene{position:fixed;left:0;right:0;bottom:0;top:var(--bar);z-index:0}
+#scene canvas{display:block;width:100%;height:100%;touch-action:none}
+/* ---------- top bar ---------- */
+#bar{position:fixed;top:0;left:0;right:0;height:var(--bar);z-index:30;background:#fff;border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:12px;padding:0 14px}
+#bar a.back{font-size:13px;font-weight:500;color:var(--red);text-decoration:none;white-space:nowrap}
+#bar .ttl{min-width:0;flex:1;display:flex;flex-direction:column;line-height:1.15}
+#bar .ttl b{font-family:var(--serif);font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#bar .ttl span{font-size:11.5px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#bar .brand{font-family:var(--serif);font-weight:800;font-size:13px;color:var(--ink);text-decoration:none;white-space:nowrap}
+#bar .brand em{color:var(--red);font-style:normal}
+/* ---------- panels ---------- */
+.panel{position:fixed;z-index:20;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);
+  display:flex;flex-direction:column;max-height:calc(100vh - var(--bar) - 28px);overflow:hidden}
+.phead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px 10px 14px;cursor:pointer;
+  user-select:none;border-bottom:1px solid var(--line)}
+.phead h2{font-family:var(--serif);font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--ink);margin:0}
+.pbtn{border:1px solid var(--line);background:var(--panel);border-radius:7px;width:28px;height:26px;display:grid;place-items:center;
+  cursor:pointer;color:var(--mut);font-size:15px;line-height:1;padding:0;flex:none}
+.pbtn:hover{border-color:var(--red);color:var(--red)}
+.pbody{padding:12px 14px 14px;overflow-y:auto;overscroll-behavior:contain}
+.panel.min .pbody{display:none}
+.panel.min .phead{border-bottom:0}
+#leftcol{position:fixed;z-index:20;top:calc(var(--bar) + 12px);left:12px;width:306px;display:flex;flex-direction:column;gap:10px;
+  max-height:calc(100vh - var(--bar) - 86px);pointer-events:none}
+#leftcol>.panel{position:static;width:auto;max-height:none;pointer-events:auto;flex:0 1 auto;min-height:0}
+#leftcol>.panel .pbody{max-height:42vh}
+#pModel{top:calc(var(--bar) + 12px);left:12px;width:306px}
+#pGrade{top:calc(var(--bar) + 12px);right:12px;width:318px}
+#pLegend{bottom:14px;left:330px;width:236px}
+@media (max-width:1180px) and (min-width:761px){#pLegend{left:12px}#pModel{max-height:calc(100vh - var(--bar) - 300px)}}
+/* ---------- controls ---------- */
+.sec{border-top:1px solid var(--line);padding-top:11px;margin-top:11px}
+.sec:first-child{border-top:0;padding-top:0;margin-top:0}
+.lab{font-family:var(--serif);font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);margin:0 0 7px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+.stat b{display:block;font-family:var(--serif);font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
+.stat span{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:4px 11px;font-size:12.5px;font-weight:700;cursor:pointer;color:var(--ink)}
+.chip.on{background:var(--red);border-color:var(--red);color:#fff}
+.tg{display:flex;align-items:center;gap:9px;padding:4px 0;cursor:pointer;user-select:none;font-size:13.5px}
+.tg input{appearance:none;-webkit-appearance:none;width:32px;height:18px;border-radius:10px;background:#cfd6e0;position:relative;cursor:pointer;
+  transition:background .15s;flex:none;margin:0}
+.tg input:checked{background:var(--red)}
+.tg input::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:transform .15s;
+  box-shadow:0 1px 2px rgba(0,0,0,.25)}
+.tg input:checked::after{transform:translateX(14px)}
+.tg input:disabled{opacity:.4}
+.tg small{color:var(--mut);font-size:11px;margin-left:auto}
+.rng{margin:6px 0 2px}
+.rng .row{display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;margin-bottom:5px}
+.rng .v{font-weight:700;color:var(--red);font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;-webkit-appearance:none;appearance:none;height:5px;border-radius:3px;background:#d7dde5;outline:none;margin:6px 0}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:#fff;border:2px solid var(--red);
+  cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.3)}
+input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:#fff;border:2px solid var(--red);cursor:pointer}
+.btns{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.btn{padding:7px 4px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font-size:12px;font-weight:500;border-radius:8px;cursor:pointer;
+  font-family:var(--sans)}
+.btn:hover{background:var(--chip);border-color:var(--red);color:var(--red)}
+.find{display:flex;gap:6px}
+.find input{flex:1;min-width:0;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:13px;font-family:var(--sans)}
+.hint{font-size:11.5px;color:var(--mut);line-height:1.45;margin:8px 0 0}
+.kv{display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:13px;color:var(--mut)}
+.kv b{color:var(--ink);font-weight:700;font-variant-numeric:tabular-nums;text-align:right}
+.big{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin:4px 0 2px}
+.big div{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:7px 8px}
+.big b{display:block;font-family:var(--serif);font-size:15.5px;font-weight:700;font-variant-numeric:tabular-nums}
+.big span{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut)}
+.big div.hl{background:#fff5f5;border-color:#f3c9cb}
+.cmp{margin-top:6px}
+.cmpbar{height:10px;border-radius:5px;background:#eef1f5;position:relative;overflow:hidden;margin:3px 0 7px}
+.cmpbar i{position:absolute;left:0;top:0;bottom:0;background:var(--red);border-radius:5px}
+.cmpbar.pub i{background:#274b8f}
+.note{font-size:11.5px;color:var(--mut);line-height:1.5;margin:6px 0 0}
+.res{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:6px;font-size:12.5px}
+.res a{color:var(--red);text-decoration:none;font-size:11.5px}
+.res table{width:100%;border-collapse:collapse;margin-top:4px;font-variant-numeric:tabular-nums}
+.res td{padding:2px 0;font-size:12px}
+.res td:nth-child(n+2){text-align:right}
+.src{display:flex;flex-direction:column;gap:6px;max-height:190px;overflow-y:auto}
+.src a{display:block;font-size:12px;line-height:1.35;color:var(--ink);text-decoration:none;padding-left:12px;position:relative}
+.src a::before{content:"";position:absolute;left:0;top:6px;width:6px;height:6px;border-radius:50%;background:var(--red)}
+.src a.rep::before{background:#274b8f;border-radius:1px}
+.src a:hover{color:var(--red)}
+.src a em{font-style:normal;color:var(--mut);font-size:10.5px}
+svg.gt{width:100%;height:110px;display:block;margin-top:4px}
+/* legend */
+.lg{display:flex;flex-direction:column;gap:3px}
+.lg div{display:flex;align-items:center;gap:8px;font-size:12px;font-variant-numeric:tabular-nums}
+.lg i{width:22px;height:9px;border-radius:3px;flex:none}
+.lg i.lo{background:#c3cad4;height:3px}
+/* overlays */
+table.bd{width:100%;table-layout:fixed;border-collapse:collapse;font-size:11px;font-variant-numeric:tabular-nums;margin-top:4px}
+table.bd th{text-align:left;font-size:9px;letter-spacing:.04em;text-transform:uppercase;color:var(--mut);padding:4px 4px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.bd td{padding:5px 4px;border-bottom:1px solid #f1f3f6;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+table.bd td.n,table.bd th.n{text-align:right}
+table.bd tr.on td{background:var(--chip)}
+table.bd tr:hover td{color:var(--red)}
+table.bd td em{font-style:normal;font-size:9px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
+table.bd td.thin{color:var(--mut)}
+.bdhead{font-size:12px;padding:6px 0 2px;border-bottom:1px solid var(--line)}
+.bdhead b{font-size:15px}
+.bdcuts{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 2px}
+.bdcuts .mini{font-size:10px;padding:3px 7px}
+.bdcuts .mini.on{background:var(--red);border-color:var(--red);color:#fff}
+.disc{margin-top:10px;padding:9px 10px;border:1px solid var(--line);border-radius:7px;background:#fbfcfd}
+.disc p{margin:4px 0;font-size:11px;line-height:1.5}
+.disc ul{margin:4px 0 4px 15px;padding:0;font-size:11px;line-height:1.5}
+.disc li{margin:2px 0}
+.warn{margin:8px 0;padding:9px 10px;border:1px solid #d9534f;border-left:3px solid #d9534f;
+  border-radius:7px;background:#fdf4f4;font-size:11px;line-height:1.5}
+.warn ul{margin:4px 0 4px 15px;padding:0}
+.warn span{color:var(--mut)}
+.fixnote{margin:8px 0;padding:8px 10px;border:1px solid var(--line);border-radius:7px;
+  background:#fafbfc;font-size:10.5px;line-height:1.5;color:var(--mut)}
+.fixnote ul{margin:3px 0 3px 15px;padding:0}
+#holetbl{max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:8px;margin-top:6px}
+#holetbl table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:11.5px;font-variant-numeric:tabular-nums}
+#holetbl th{position:sticky;top:0;background:#fff;text-align:left;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--mut);padding:5px 7px;border-bottom:1px solid var(--line)}
+#holetbl td{padding:4px 7px;border-bottom:1px solid #f1f3f6;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#holetbl tr:hover td{background:var(--panel);color:var(--red)}
+#holetbl td.n{text-align:right}
+#hfilter{width:100%;border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:12.5px;font-family:var(--sans);margin-top:4px}
+button.mini{border:1px solid var(--line);background:#fff;border-radius:6px;font-family:var(--sans);font-size:10.5px;font-weight:700;
+  color:var(--red);padding:2px 7px;cursor:pointer;margin-left:6px}
+button.mini:hover{background:var(--chip)}
+#tip{position:fixed;z-index:40;pointer-events:none;background:#fff;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:12px;
+  display:none;box-shadow:0 8px 24px rgba(17,20,24,.18);line-height:1.5;font-variant-numeric:tabular-nums;max-width:260px}
+#tip .g{font-weight:700}
+#hud2{position:fixed;z-index:15;bottom:14px;right:12px;display:flex;align-items:flex-end;gap:10px;pointer-events:none}
+#scalebar{display:flex;align-items:center;gap:8px;font-size:11px;background:rgba(255,255,255,.9);border:1px solid var(--line);border-radius:8px;padding:4px 9px}
+#scalebar .sb{height:8px;border-left:2px solid var(--ink);border-right:2px solid var(--ink);display:flex;align-items:center;width:90px}
+#scalebar .sb span{display:block;height:2px;width:100%;background:var(--ink)}
+#compass{width:46px;height:46px;border-radius:50%;background:rgba(255,255,255,.9);border:1px solid var(--line);display:grid;place-items:center}
+#compass svg{width:34px;height:34px;transition:none}
+#nav{position:fixed;z-index:18;bottom:14px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:4px;
+  background:rgba(255,255,255,.94);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:4px}
+#nav .nb{display:flex;align-items:center;gap:6px;border:0;background:transparent;border-radius:9px;padding:7px 10px;cursor:pointer;
+  color:var(--ink);font-family:var(--sans);font-size:12.5px;font-weight:700}
+#nav .nb svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round}
+#nav .nb:hover{background:var(--panel)}
+#nav .nb.on{background:var(--chip);color:var(--red)}
+#nav .nb.sq{padding:7px 11px;font-size:15px;line-height:1;font-weight:700;color:var(--mut)}
+#nav .sep{width:1px;height:20px;background:var(--line);margin:0 3px}
+@media (max-width:760px){#nav{bottom:66px;padding:3px}#nav .nb{padding:8px 9px;font-size:12px}#nav .nb b{display:none}#nav .nb.sq{padding:8px 11px}
+  /* the scale bar and compass move out from under the controls */
+  #hud2{bottom:auto;top:calc(var(--bar) + 8px);right:8px;flex-direction:column;align-items:flex-end;gap:6px}
+  #compass{width:38px;height:38px}#compass svg{width:28px;height:28px}
+  #scalebar{font-size:10.5px;padding:3px 7px}#scalebar .sb{width:62px}}
+
+/* A phone on its side has ~350 px of height: a bottom sheet would cover the model,
+   so the open panel docks to the right and the controls shrink. */
+@media (max-height:560px) and (orientation:landscape){
+  #leftcol{display:contents}
+  :root{--bar:40px}
+  #bar .ttl span{display:none}
+  .panel{left:auto!important;right:8px!important;width:300px!important;max-width:46vw;
+    top:calc(var(--bar) + 6px)!important;bottom:8px!important;max-height:none;border-radius:12px}
+  .panel.open{display:flex}
+  #mtools{left:auto;right:316px;bottom:auto;top:calc(var(--bar) + 6px);width:auto;flex-direction:column;gap:4px;padding:4px}
+  #mtools button{flex:none;padding:7px 10px;font-size:11.5px}
+  #nav{bottom:10px;left:12px;transform:none;padding:3px}
+  #nav .nb{padding:7px 8px;font-size:11.5px}#nav .nb b{display:none}
+  #hud2{top:calc(var(--bar) + 6px);right:auto;left:12px;bottom:auto;flex-direction:column;align-items:flex-start;gap:6px}
+  #compass{width:34px;height:34px}#compass svg{width:26px;height:26px}
+  #scalebar{font-size:10px;padding:3px 6px}#scalebar .sb{width:56px}
+  svg.gt{height:78px}
+}
+#pivot{position:fixed;z-index:14;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;border:2px solid var(--red);background:rgba(215,25,32,.18);
+  pointer-events:none;opacity:0;transition:opacity .4s}
+#toast{position:fixed;z-index:35;left:50%;top:calc(var(--bar) + 12px);transform:translateX(-50%);background:rgba(17,20,24,.86);color:#fff;
+  font-size:12.5px;padding:7px 13px;border-radius:20px;opacity:0;transition:opacity .4s;pointer-events:none;white-space:nowrap}
+#labels{position:fixed;inset:0;top:var(--bar);pointer-events:none;z-index:12;overflow:hidden}
+#labels span{position:absolute;font-size:10.5px;font-weight:500;color:#1d2530;background:rgba(255,255,255,.78);padding:0 4px;border-radius:3px;
+  transform:translate(6px,-50%);white-space:nowrap}
+#mtools{display:none}
+@media (max-width:760px){
+  #leftcol{display:contents}
+  :root{--bar:48px}
+  #bar .brand{display:none}
+  #bar .ttl b{font-size:14.5px}
+  .panel{left:8px!important;right:8px!important;width:auto!important;top:auto!important;bottom:62px!important;max-height:58vh;display:none;
+    border-radius:14px}
+  .panel.open{display:flex}
+  .panel.min .pbody{display:block}
+  .phead{cursor:default}
+  #mtools{display:flex;position:fixed;z-index:25;bottom:10px;left:8px;right:8px;gap:6px;background:#fff;border:1px solid var(--line);
+    border-radius:14px;box-shadow:var(--shadow);padding:5px}
+  #mtools button{flex:1;border:0;background:transparent;font-family:var(--sans);font-size:12px;font-weight:700;color:var(--ink);padding:9px 2px;border-radius:10px}
+  #mtools button.on{background:var(--chip);color:var(--red)}
+  #hud2{bottom:66px;right:8px}
+  #compass{width:40px;height:40px}
+  #toast{white-space:normal;text-align:center;max-width:90vw}
+}
+</style>
+</head>
+<body>
+<div id="bar">
+  <a class="back" href="../models.html">← Models</a>
+  <div class="ttl"><b id="t-name">Magpie</b><span id="t-sub"></span></div>
+  <a class="brand" href="../models.html">Mine<em>Modeling</em>Pro</a>
+</div>
+<div id="scene"></div>
+<div id="labels"></div>
+<div id="pivot"></div>
+<div id="toast"></div>
+
+<div id="leftcol">
+<section id="pModel" class="panel">
+  <div class="phead" data-p="pModel"><h2>Model</h2><button class="pbtn" aria-label="Minimise">–</button></div>
+  <div class="pbody">
+    <div class="sec">
+      <div class="stats">
+        <div class="stat"><b id="s-holes">–</b><span>Holes</span></div>
+        <div class="stat"><b id="s-int">–</b><span>Intervals</span></div>
+        <div class="stat"><b id="s-src">–</b><span>Sources</span></div>
+      </div>
+      <p class="lab" style="margin-top:10px">Size</p><div id="sizebox"></div>
+    </div>
+    <div class="sec" id="elsec"><p class="lab">Colour by</p><div class="chips" id="els"></div></div>
+    <div class="sec">
+      <p class="lab">Layers</p>
+      <label class="tg"><input type="checkbox" id="L-int" checked>Drill intervals by grade</label>
+      <label class="tg"><input type="checkbox" id="L-trace" checked>Drill traces &amp; collars</label>
+      <label class="tg"><input type="checkbox" id="L-blocks" checked>Block model<small id="blk-note"></small></label>
+      <label class="tg"><input type="checkbox" id="L-terrain">Terrain<small id="ter-note"></small></label>
+      <label class="tg"><input type="checkbox" id="L-labels">Hole labels</label>
+      <div class="rng" id="ter-op-row"><div class="row"><span>Terrain opacity</span><span class="v" id="ter-op-v">45%</span></div>
+        <input type="range" id="ter-op" min="10" max="100" value="45"></div>
+      <div class="rng"><div class="row"><span>Block opacity</span><span class="v" id="blk-op-v">35%</span></div>
+        <input type="range" id="blk-op" min="10" max="100" value="35"></div>
+    </div>
+    <div class="sec">
+      <p class="lab">View</p>
+      <div class="btns">
+        <button class="btn" id="v-3d">3D</button><button class="btn" id="v-plan">Plan</button>
+        <button class="btn" id="v-ns" title="Section looking east">Sec E</button><button class="btn" id="v-ew" title="Section looking north">Sec N</button>
+      </div>
+      <div class="find" style="margin-top:8px"><input id="find" list="holelist" placeholder="Go to hole…" autocomplete="off"><button class="btn" id="find-go" style="width:52px">Go</button></div>
+      <datalist id="holelist"></datalist>
+      <p class="hint" id="navhint">Drag to orbit · <b>Pan</b> button (or hold space / right-drag) to move around · scroll to zoom at the cursor · double-click anything to pivot around it · arrow keys or WASD pan, Q/E up-down.</p>
+    </div>
+  </div>
+</section>
+
+<section id="pData" class="panel min">
+  <div class="phead" data-p="pData"><h2>Drill data</h2><button class="pbtn" aria-label="Minimise">–</button></div>
+  <div class="pbody">
+    <div class="sec"><div id="datasum"></div></div>
+    <div class="sec"><p class="lab">Holes <span id="hole-n" style="font-weight:400"></span></p>
+      <input type="search" id="hfilter" placeholder="Filter holes…" aria-label="Filter holes">
+      <div id="holetbl"></div></div>
+    <div class="sec"><p class="lab">Data sources <span id="src-n" style="font-weight:400"></span></p><div class="src" id="srclist"></div></div>
+  </div>
+</section>
+</div>
+
+
+<section id="pGrade" class="panel">
+  <div class="phead" data-p="pGrade"><h2>Grade, tonnes &amp; metal</h2><button class="pbtn" aria-label="Minimise">–</button></div>
+  <div class="pbody">
+    <div class="sec" id="gtsec">
+      <div class="rng"><div class="row"><span>Cut-off grade</span><span class="v"><span id="cut-v">–</span></span></div>
+        <input type="range" id="cut" min="0" max="10" value="0" step="1"></div>
+      <p class="lab" style="margin-top:6px">MMP block model above cut-off</p>
+      <div class="big">
+        <div><b id="g-t">–</b><span>Tonnes</span></div>
+        <div><b id="g-g">–</b><span>Grade</span></div>
+        <div class="hl"><b id="g-c">–</b><span id="g-cu">Contained</span></div>
+      </div>
+      <svg class="gt" id="gtchart" viewBox="0 0 300 110" preserveAspectRatio="none"></svg>
+      <div id="cmp"></div>
+    </div>
+    <div class="sec" id="nogt" hidden><p class="note" id="nogt-msg"></p></div>
+    <div class="sec"><div id="intbox"></div><div id="metbox"></div></div>
+    <div class="sec"><p class="lab">One deposit, every metal</p><div id="bdown"></div></div>
+    <div class="sec" id="ressec"><p class="lab">Published resource</p><div id="res"></div></div>
+    <div class="sec"><p class="lab">Block model parameters</p><div id="params"></div></div>
+    <div class="sec"><p class="note">Grades are inverse-distance estimates for <b>visualisation only</b> — not a mineral resource estimate. Verify every figure against the source filings.</p></div>
+  </div>
+</section>
+
+
+<section id="pLegend" class="panel">
+  <div class="phead" data-p="pLegend"><h2 id="lg-h">Grade</h2><button class="pbtn" aria-label="Minimise">–</button></div>
+  <div class="pbody"><div class="lg" id="legend"></div></div>
+</section>
+
+<div id="mtools">
+  <button data-open="pModel">Model</button><button data-open="pGrade">Grade</button><button data-open="pData">Data</button><button data-open="pLegend">Legend</button>
+</div>
+<div id="hud2">
+  <div id="scalebar"><div class="sb"><span></span></div><b id="sb-l"></b></div>
+  <div id="compass" title="North"><svg viewBox="-20 -20 40 40"><g id="needle"><path d="M0,-16 L5,2 L0,-2 L-5,2Z" fill="#D71920"/><path d="M0,16 L5,2 L0,-2 L-5,2Z" fill="#9aa3ae"/><text x="0" y="-9" font-size="0" fill="#fff">N</text></g></svg></div>
+</div>
+<div id="tip"></div>
+
+<script id="model" type="application/json">{"slug":"magpie-erda","project":"Magpie","company":"ERDA","region":null,"kinds":["report"],"updated":"2012-06-06","generated":"2026-10-15T23:00:49Z","frame":{"kind":"local","lat0":null,"lon0":null,"grid":"mtp:6efe34c2a23f6fb9"},"holes":[["PM-11-04",-15.0,-446.0,0.0,90.0,-60.0,268.0],["PM-11-05",146.0,173.0,0.0,0.0,-90.0,354.0],["PM-11-06",-15.0,-446.0,0.0,0.0,-90.0,301.0],["PM-11-07",146.0,173.0,0.0,90.0,-60.0,246.0],["PM-11-08",168.0,317.0,0.0,90.0,-60.0,193.0],["PM-11-09",-72.0,-601.0,0.0,90.0,-60.0,284.0],["PM-11-10",0.0,327.0,0.0,90.0,-60.0,324.0],["PM-11-11",-45.0,-746.0,0.0,90.0,-60.0,270.5],["PM-11-12",100.0,0.0,0.0,90.0,-60.0,267.0],["PM-11-13",-45.0,-746.0,0.0,0.0,-90.0,282.8],["PM-11-14",-63.0,3.0,0.0,90.0,-60.0,378.0],["PM-11-15",7.0,-894.0,0.0,0.0,-90.0,220.0],["PM-11-16",-5.0,-142.0,0.0,0.0,-90.0,440.2],["PM-11-17A",-259.0,-741.0,0.0,90.0,-60.0,67.0],["PM-11-17B",-259.0,-741.0,0.0,90.0,-45.0,251.6],["PM-11-18",-5.0,-142.0,0.0,90.0,-60.0,317.7],["PM-11-19",-240.0,-897.0,0.0,90.0,-60.0,96.0],["PM-11-20",-137.0,-142.0,0.0,90.0,-75.0,438.0],["PM-11-21",114.0,460.0,0.0,90.0,-60.0,213.0],["PM-11-22",-28.0,-284.0,0.0,90.0,-60.0,306.0],["PM-11-23",155.0,610.0,0.0,0.0,-90.0,237.0],["PM-11-24",-187.0,-292.0,0.0,90.0,-60.0,401.8],["PM-11-25",155.0,610.0,0.0,90.0,-50.0,219.0],["PM-11-26",-227.0,-591.0,0.0,90.0,-60.0,422.0],["PM-11-27",218.0,755.0,0.0,0.0,-90.0,255.0],["PM-11-29",201.0,906.0,0.0,90.0,-75.0,240.0],["PM-11-31",287.0,1056.0,0.0,0.0,-90.0,214.1],["PM-11-33",363.0,1353.0,0.0,270.0,-75.0,177.0],["PM-11-35",282.0,1659.0,0.0,270.0,-70.0,186.0],["PM-11-37",286.0,1964.0,0.0,0.0,-90.0,165.0],["PM-11-39",317.0,2258.0,0.0,0.0,-90.0,109.0]],"elements":{"TiO2":{"unit":"%","bins":[10.8,11.244,11.418,11.705,11.91,12.318],"colors":["#3b4cc0","#2fb38a","#9bcf3c","#f39a1f","#e0521b","#7a0b6e"],"segments":[[0,1.3,250.0,11.22],[1,3.2,343.1,10.92],[2,3.6,301.0,11.92],[3,2.0,237.0,11.22],[4,2.2,190.0,11.09],[5,4.5,279.0,11.26],[6,1.8,311.4,10.56],[7,4.0,270.5,11.36],[8,3.6,252.3,11.31],[9,3.5,282.8,11.48],[10,3.0,373.3,11.57],[12,3.5,259.3,11.82],[12,261.9,278.9,12.43],[12,287.2,405.8,11.84],[12,410.0,437.7,8.87],[13,3.3,30.3,9.3],[14,14.0,117.0,10.02],[14,119.4,144.0,11.01],[14,149.3,220.1,9.89],[14,222.7,248.2,7.8],[15,3.6,314.5,11.69],[17,3.0,131.3,10.04],[17,142.1,292.3,11.38],[17,298.2,356.3,12.36],[17,361.0,429.9,11.95],[18,3.0,208.4,11.41],[19,3.6,302.6,11.47],[20,3.9,229.0,11.14],[21,3.3,226.3,11.25],[21,243.8,273.2,12.2],[21,276.7,398.4,11.45],[22,2.3,212.6,10.95],[23,3.0,221.2,11.34],[23,236.5,354.0,11.72],[23,362.6,392.3,10.3],[25,2.2,219.0,11.4],[26,1.6,212.2,11.09],[27,1.0,152.2,11.4],[28,3.6,166.3,11.84],[29,1.5,81.6,11.78],[29,86.7,94.5,11.87],[29,97.3,139.0,10.72],[30,3.0,97.6,11.62]],"n_holes":28,"stats":{"max":12.43,"mean":11.146,"p50":11.36},"check":{"idw_mean":9.2701,"nn_mean":7.4518,"bias_pct":24.4,"assay_mean":11.2867,"composite_mean":10.5581,"dilution_pct":6.5},"blocks":{"cls":"","classes":["well drilled","moderately drilled","thinly drilled"],"origin":[-327.75,-816.0,-507.5],"size":[6.0,5.0,5.0],"ijk":"","g":"","n":0,"n_total":861693,"shown_from":13.5,"tonnes_per_block":691.5,"density":4.61,"params":{"block":[6.0,5.0,5.0],"radius_m":160.0,"max_gap_m":70.0,"spacing_m":137.5,"power":2.0,"min_holes":2,"min_samples":3,"method":"idw","coarsened":1.0,"max_per_hole":4,"domain_radius_m":4.5,"domain_reach_m":108.0,"anisotropy":[1.0,0.96,0.92],"passes":[{"range_m":160.0,"max_gap_m":52.5,"min_holes":3,"min_samples":3,"class":"well drilled"},{"range_m":160.0,"max_gap_m":70.0,"min_holes":2,"min_samples":2,"class":"moderately drilled"},{"range_m":160.0,"max_gap_m":70.0,"min_holes":1,"min_samples":2,"class":"thinly drilled"}],"domain":{"intercepts":29,"reach_m":230.9,"intercept_spacing_m":144.3,"mode":"solid","cells":45,"points":131654,"thickness_m":4.5,"grade_reach_m":108.0},"top_cut":27.0,"composite_m":5.0,"block_source":"typical across all 43-101 reports (179 reports)","gap_fill":true,"gap_fill_margin_m":60.0,"custom":[],"auto":{"density":"technical report (2012)","composite_m":"technical report (2012)","top_cut":"technical report (2012)","default_cutoff":"technical report (2012)","method":"technical report (2012)","power":"technical report (2012)","deposit_style":"technical report (2012)","block":"typical across all 43-101 reports (179 reports)"},"density_source":"stated in the technical report"}},"gt":[[0.0,577352712,10.2301,59064022],[0.2621,577250370,10.2319,59063803],[0.5242,576702702,10.2413,59061637],[0.7863,576251152,10.2488,59058731],[1.0483,575841784,10.2554,59054970],[1.3104,575430342,10.2619,59050119],[1.5725,574894430,10.2701,59042335],[1.8346,574172504,10.2809,59030035],[2.0967,573126264,10.296,59009291],[2.3588,571340120,10.3213,58969458],[2.6209,569270460,10.3497,58917812],[2.8829,566382756,10.3884,58838020],[3.145,564923000,10.4075,58794427],[3.4071,564205914,10.4166,58770929],[3.6692,563432817,10.426,58743589],[3.9313,562526952,10.4367,58709126],[4.1934,561055440,10.4534,58649159],[4.4554,558433964,10.4821,58535732],[4.7175,555502004,10.5132,58401147],[4.9796,552774036,10.5412,58268973],[5.2417,549376005,10.5748,58095212],[5.5038,545836908,10.6085,57905137],[5.7659,541936156,10.6442,57684822],[6.028,538843768,10.6715,57502724],[6.29,536754056,10.6891,57374246],[6.5521,534788121,10.7048,57248089],[6.8142,532354041,10.7231,57085108],[7.0763,528778986,10.7486,56836459],[7.3384,523605183,10.7835,56462958],[7.6005,516090652,10.8316,55900733],[7.8626,504508028,10.9026,55004595],[8.1246,489566787,10.9913,53809682],[8.3867,474012878,11.0811,52525789],[8.6488,460195324,11.1582,51349525],[8.9109,450575868,11.2091,50505357],[9.173,444965728,11.2365,49998446],[9.4351,439410218,11.2607,49480869],[9.6971,433437732,11.2842,48909963],[9.9592,426000650,11.3093,48177628],[10.2213,415196654,11.3418,47090741],[10.4834,410361686,11.3535,46590412],[10.7455,381831087,11.4113,43571788],[10.8,380871285,11.4129,43468393],[11.0076,353325382,11.4503,40456992],[11.244,286938616,11.5261,33072972],[11.2697,257904606,11.5566,29805084],[11.418,160517895,11.6713,18734546],[11.5317,118172510,11.7449,13879290],[11.705,65829417,11.8507,7801246],[11.7938,41998944,11.9072,5000915],[11.91,18826088,11.9913,2257495],[12.0559,3761068,12.2499,460728],[12.318,1347042,12.3669,166587]],"default_cutoff":3.0,"contained_unit":"t"},"V2O5":{"unit":"%","bins":[0.2,0.4,0.6,0.8,1.2],"colors":["#3b4cc0","#2fb38a","#f2cf1d","#e0521b","#7a0b6e"],"segments":[[0,1.3,250.0,0.3288],[1,3.2,343.1,0.319],[2,3.6,301.0,0.3542],[3,2.0,237.0,0.3356],[4,2.2,190.0,0.3315],[5,4.5,279.0,0.3163],[6,1.8,311.4,0.3133],[7,4.0,270.5,0.3289],[8,3.6,252.3,0.3328],[9,3.5,282.8,0.3302],[10,3.0,373.3,0.3307],[12,3.5,259.3,0.3486],[12,261.9,278.9,0.3594],[12,287.2,405.8,0.3284],[12,410.0,437.7,0.2267],[13,3.3,30.3,0.2504],[14,14.0,117.0,0.2765],[14,119.4,144.0,0.3179],[14,149.3,220.1,0.2758],[14,222.7,248.2,0.1894],[15,3.6,314.5,0.3385],[17,3.0,131.3,0.2859],[17,142.1,292.3,0.3325],[17,298.2,356.3,0.3612],[17,361.0,429.9,0.3526],[18,3.0,208.4,0.3336],[19,3.6,302.6,0.3387],[20,3.9,229.0,0.3261],[21,3.3,226.3,0.3192],[21,243.8,273.2,0.3486],[21,276.7,398.4,0.3121],[22,2.3,212.6,0.3275],[23,3.0,221.2,0.3272],[23,236.5,354.0,0.3278],[23,362.6,392.3,0.2711],[25,2.2,219.0,0.3288],[26,1.6,212.2,0.3258],[27,1.0,152.2,0.3378],[28,3.6,166.3,0.0001],[29,1.5,81.6,0.0002],[29,86.7,94.5,0.0001],[29,97.3,139.0,0.0001],[30,3.0,97.6,0.0002]],"n_holes":28,"stats":{"max":0.361,"mean":0.281,"p50":0.328},"blocks":{"cls":"","classes":["well drilled","moderately drilled","thinly drilled"],"origin":[-327.75,-816.0,-507.5],"size":[6.0,5.0,5.0],"ijk":"","g":"","n":0,"n_total":869711,"shown_from":0.3906,"tonnes_per_block":691.5,"density":4.61,"params":{"block":[6.0,5.0,5.0],"radius_m":160.0,"max_gap_m":70.0,"spacing_m":137.5,"power":2.0,"min_holes":2,"min_samples":3,"method":"idw","coarsened":1.0,"max_per_hole":4,"domain_radius_m":4.5,"domain_reach_m":108.0,"anisotropy":[1.0,0.96,0.92],"passes":[{"range_m":160.0,"max_gap_m":52.5,"min_holes":3,"min_samples":3,"class":"well drilled"},{"range_m":160.0,"max_gap_m":70.0,"min_holes":2,"min_samples":2,"class":"moderately drilled"},{"range_m":160.0,"max_gap_m":70.0,"min_holes":1,"min_samples":2,"class":"thinly drilled"}],"domain":{"intercepts":30,"reach_m":227.9,"intercept_spacing_m":142.5,"mode":"solid","cells":58,"points":169680,"thickness_m":4.5,"grade_reach_m":108.0},"top_cut":27.0,"composite_m":5.0,"block_source":"typical across all 43-101 reports (179 reports)","gap_fill":true,"gap_fill_margin_m":60.0,"custom":[],"auto":{"density":"technical report (2012)","composite_m":"technical report (2012)","top_cut":"technical report (2012)","default_cutoff":"technical report (2012)","method":"technical report (2012)","power":"technical report (2012)","deposit_style":"technical report (2012)","block":"typical across all 43-101 reports (179 reports)"},"density_source":"stated in the technical report"}},"gt":[[0.0,582901308,0.2773,3563365698],[0.0255,542207224,0.2981,3562833138],[0.0511,540497145,0.2989,3561336529],[0.0766,535548771,0.301,3554140638],[0.1021,530581035,0.303,3544754742],[0.1277,524311896,0.3053,3528617987],[0.1532,517219872,0.3075,3506592614],[0.1787,507803716,0.3102,3472249547],[0.2,499123317,0.3122,3435657097],[0.2043,495938960,0.3129,3421452351],[0.2298,471416986,0.3178,3303062697],[0.2553,431283018,0.3249,3089264502],[0.2809,412310332,0.3275,2976594043],[0.3064,387802190,0.3297,2819214656],[0.3319,140380724,0.3399,1051867344],[0.3574,1400979,0.3607,11141378],[0.383,0,0.0,0],[0.4,0,0.0,0],[0.4085,0,0.0,0],[0.434,0,0.0,0],[0.4596,0,0.0,0],[0.4851,0,0.0,0],[0.5106,0,0.0,0],[0.5362,0,0.0,0],[0.5617,0,0.0,0],[0.5872,0,0.0,0],[0.6,0,0.0,0],[0.6128,0,0.0,0],[0.6383,0,0.0,0],[0.6638,0,0.0,0],[0.6894,0,0.0,0],[0.7149,0,0.0,0],[0.7404,0,0.0,0],[0.766,0,0.0,0],[0.7915,0,0.0,0],[0.8,0,0.0,0],[0.817,0,0.0,0],[0.8426,0,0.0,0],[0.8681,0,0.0,0],[0.8936,0,0.0,0],[0.9191,0,0.0,0],[0.9447,0,0.0,0],[0.9702,0,0.0,0],[0.9957,0,0.0,0],[1.0213,0,0.0,0],[1.0468,0,0.0,0],[1.0723,0,0.0,0],[1.0979,0,0.0,0],[1.1234,0,0.0,0],[1.1489,0,0.0,0],[1.1745,0,0.0,0],[1.2,0,0.0,0]],"default_cutoff":3.0,"contained_unit":"lb"},"Cr2O3":{"unit":"%","bins":[1.246,1.528,1.746,1.88,2.03,2.07],"colors":["#3b4cc0","#2fb38a","#9bcf3c","#f39a1f","#e0521b","#7a0b6e"],"segments":[[0,1.3,250.0,1.77],[1,3.2,343.1,1.74],[2,3.6,301.0,1.92],[3,2.0,237.0,1.88],[4,2.2,190.0,2.03],[5,4.5,279.0,1.58],[6,1.8,311.4,1.69],[7,4.0,270.5,1.78],[8,3.6,252.3,1.88],[9,3.5,282.8,1.68],[10,3.0,373.3,1.62],[12,3.5,259.3,2.07],[12,261.9,278.9,1.71],[12,287.2,405.8,1.34],[12,410.0,437.7,0.78],[13,3.3,30.3,0.93],[14,14.0,117.0,1.04],[14,119.4,144.0,1.15],[14,149.3,220.1,0.94],[14,222.7,248.2,0.55],[15,3.6,314.5,1.93],[17,3.0,131.3,1.35],[17,142.1,292.3,1.37],[17,298.2,356.3,1.52],[17,361.0,429.9,1.33],[18,3.0,208.4,2.03],[19,3.6,302.6,1.82],[20,3.9,229.0,2.07],[21,3.3,226.3,1.65],[21,243.8,273.2,1.53],[21,276.7,398.4,1.23],[22,2.3,212.6,1.94],[23,3.0,221.2,1.49],[23,236.5,354.0,1.27],[23,362.6,392.3,0.96],[25,2.2,219.0,1.88],[26,1.6,212.2,1.88],[27,1.0,152.2,2.13]],"n_holes":25,"stats":{"max":2.13,"mean":1.565,"p50":1.665},"blocks":{"cls":"","classes":["well drilled","moderately drilled","thinly drilled"],"origin":[-327.75,-816.0,-507.5],"size":[6.0,5.0,5.0],"ijk":"","g":"","n":0,"n_total":796875,"shown_from":2.4336,"tonnes_per_block":691.5,"density":4.61,"params":{"block":[6.0,5.0,5.0],"radius_m":160.0,"max_gap_m":70.0,"spacing_m":113.9,"power":2.0,"min_holes":2,"min_samples":3,"method":"idw","coarsened":1.0,"max_per_hole":4,"domain_radius_m":4.5,"domain_reach_m":108.0,"anisotropy":[1.0,0.96,0.92],"passes":[{"range_m":160.0,"max_gap_m":52.5,"min_holes":3,"min_samples":3,"class":"well drilled"},{"range_m":160.0,"max_gap_m":70.0,"min_holes":2,"min_samples":2,"class":"moderately drilled"},{"range_m":160.0,"max_gap_m":70.0,"min_holes":1,"min_samples":2,"class":"thinly drilled"}],"domain":{"intercepts":27,"reach_m":227.9,"intercept_spacing_m":142.5,"mode":"solid","cells":44,"points":128727,"thickness_m":4.5,"grade_reach_m":108.0},"top_cut":27.0,"composite_m":5.0,"block_source":"typical across all 43-101 reports (179 reports)","gap_fill":true,"gap_fill_margin_m":60.0,"custom":[],"auto":{"density":"technical report (2012)","composite_m":"technical report (2012)","top_cut":"technical report (2012)","default_cutoff":"technical report (2012)","method":"technical report (2012)","power":"technical report (2012)","deposit_style":"technical report (2012)","block":"typical across all 43-101 reports (179 reports)"},"density_source":"stated in the technical report"}},"gt":[[0.0,540080862,1.5754,8508345],[0.0453,539927349,1.5758,8508287],[0.0906,539278722,1.5776,8507852],[0.136,538818874,1.5789,8507331],[0.1813,538354186,1.5801,8506596],[0.2266,537821040,1.5815,8505495],[0.2719,536897196,1.5838,8503211],[0.3172,535714731,1.5866,8499675],[0.3626,533912682,1.5908,8493519],[0.4079,530865242,1.5977,8481783],[0.4532,526436876,1.6075,8462695],[0.4985,523007727,1.615,8446498],[0.5438,521359191,1.6184,8437896],[0.5891,519819220,1.6216,8429205],[0.6345,517360246,1.6264,8414116],[0.6798,514760898,1.6312,8396984],[0.7251,508389417,1.6428,8352063],[0.7704,503901582,1.6508,8318555],[0.8157,500598286,1.6565,8292316],[0.8611,497342704,1.6618,8265040],[0.9064,493849938,1.6674,8234292],[0.9517,488038572,1.6761,8179983],[0.997,483766485,1.6823,8138461],[1.0423,478918378,1.689,8088966],[1.0877,473884258,1.6956,8035322],[1.133,467384850,1.7038,7963129],[1.1783,459980960,1.7126,7877623],[1.2236,452743720,1.7208,7790705],[1.246,442086322,1.7326,7659408],[1.2689,438429670,1.7365,7613439],[1.3143,425077497,1.7508,7442355],[1.3596,406853706,1.7692,7197960],[1.4049,392540348,1.7834,7000752],[1.4502,382629078,1.7927,6859338],[1.4955,361606786,1.8107,6547670],[1.528,354987057,1.8163,6447472],[1.5409,351282000,1.8192,6390662],[1.5862,327117532,1.8374,6010523],[1.6315,297967350,1.859,5539130],[1.6768,279196582,1.8729,5229193],[1.7221,243671462,1.8992,4627902],[1.746,222462465,1.9146,4259274],[1.7674,216590247,1.9189,4156130],[1.8128,188397100,1.9394,3653845],[1.8581,160057356,1.9594,3136229],[1.88,155463030,1.9621,3050415],[1.9034,99540042,2.008,1998753],[1.9487,65926918,2.0488,1350737],[1.994,58709733,2.058,1208255],[2.03,51344566,2.0647,1060100],[2.0394,27216748,2.0952,570259],[2.07,24847670,2.0994,521663],[2.0847,12193911,2.13,259730],[2.13,12193911,2.13,259730]],"default_cutoff":3.0,"contained_unit":"t"}},"primary":"TiO2","by_metal":{"basis":"TiO2","basis_unit":"%","cuts":[0.0,3.0,10.8,11.244,11.418,11.705,11.91,12.318],"tonnes":[577352712,565520456,380871285,286938616,160517895,65829417,18825396,1347042],"density":4.61,"tonnes_per_block":691.5,"order":["TiO2","V2O5","Cr2O3"],"metals":{"TiO2":{"unit":"%","contained_unit":"t","grade":[10.2301,10.3998,11.4129,11.5261,11.6713,11.8507,11.9913,12.3669],"contained":[59064023,58812719,43468390,33072971,18734547,7801246,2257413,166587],"coverage":[1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0],"tonnes":[577352712,565520456,380871285,286938616,160517895,65829417,18825396,1347042]},"V2O5":{"unit":"%","contained_unit":"lb","grade":[0.2847,0.287,0.3049,0.2994,0.2824,0.2413,0.3389,0.3166],"contained":[3523912182,3477406134,2469527361,1812356953,941903077,328749235,123694221,9359727],"coverage":[0.9724,0.972,0.9645,0.9568,0.9425,0.9389,0.8793,0.9954],"tonnes":[561437840,549658828,367361450,274549011,151284296,61809728,16553818,1340818]},"Cr2O3":{"unit":"%","contained_unit":"t","grade":[1.6245,1.6381,1.7473,1.7084,1.6815,1.6934,1.7118,1.3526],"contained":[8479169,8368579,6015282,4301402,2166380,755213,283371,18136],"coverage":[0.9041,0.9033,0.9039,0.8774,0.8026,0.6775,0.8793,0.9954],"tonnes":[521968402,510855998,344252902,251773767,128838206,44596910,16553818,1340818]}},"classes":{"well drilled":[2483176,2465889,188780,38032,17979,692,0,0],"moderately drilled":[179486432,173854856,80852254,55234946,41081324,17044784,2600732,143832],"thinly drilled":[395383104,389199711,299830251,231665638,119418592,48783942,16224664,1203210]},"method":{"limit_m":350.0,"note":"Blocks within 350 m of surface are reported as open pit and the rest as underground, with the underground cut-off set 2.5x higher because underground tonnes cost more to mine. The depth is what a pit plausibly reaches on a bulk \u2014 a geometric split, not a pit shell.","basis":"grade","open_pit":{"cutoff":3.0,"tonnes":548317318,"blocks":792939,"metals":{"TiO2":{"grade":10.4534,"unit":"%","contained":57317599,"contained_unit":"t","coverage":1.0},"V2O5":{"grade":0.2875,"unit":"%","contained":3374556927,"contained_unit":"lb","coverage":0.971},"Cr2O3":{"grade":1.6557,"unit":"%","contained":8173290,"contained_unit":"t","coverage":0.9}}},"underground":{"cutoff":7.5,"tonnes":11029425,"blocks":15950,"metals":{"TiO2":{"grade":10.2273,"unit":"%","contained":1128010,"contained_unit":"t","coverage":1.0},"V2O5":{"grade":0.2921,"unit":"%","contained":71034711,"contained_unit":"lb","coverage":1.0},"Cr2O3":{"grade":1.1721,"unit":"%","contained":129275,"contained_unit":"t","coverage":1.0}}}}},"style":{"key":"bulk","label":"bulk-tonnage / disseminated","why":"the technical report describes a bulk-tonnage / disseminated","confidence":"report","note":"The fallback when neither the report nor the drilling says otherwise.","summary":"bulk-tonnage / disseminated \u2014 the technical report describes a bulk-tonnage / disseminated","halo_m":60.0,"median_intercept_m":162.7},"metallurgy":null,"coverage":{"stated":{"strike":{"n":1,"min":3400.0,"max":3400.0,"median":3400.0,"page":69,"text":"extension of mineralization. Diamond drill and assay data from 8934.2 m of drilling in 34 drillholes, over a 3.4 km strike length, completed by Magpie Mines since 2008 were used for the Res"},"width":{"n":2,"min":200.0,"max":200.0,"median":200.0,"page":7,"text":"the current report, deposit number two, is the largest of the four occurrences and has a length of 5.3 km, a width from 200 m to 450 m and a depth of up to 450 m. The mineralization contained wi"}},"stated_text":"3400 m strike, 200 m true width","stated_from":{"id":"mtp:6efe34c2a23f6fb9","date":"2012-04-11"},"model":{"volume_m3":129253950,"strike_m":3145.0,"diagonal_m":3233.2,"depth_m":565.0,"blocks":861693},"strike_ratio":0.925},"track_record":{"n":110,"median_ratio":0.942,"within_1_5x":22,"within_2x":35,"grade_matched_n":154,"grade_matched_median":0.865,"covered_n":36,"covered_median":1.26,"covered_within_1_5x":8,"tiers":{"n":84,"filed_mi_share":0.653,"mmp_top2_share":0.51}},"integrity":null,"settings":{"density":4.61,"composite_m":5.0,"top_cut":27.0,"default_cutoff":3.0,"method":"idw","power":2.0,"deposit_style":"bulk","block":[6.0,5.0,5.0]},"param_sources":{"density":"technical report (2012)","composite_m":"technical report (2012)","top_cut":"technical report (2012)","default_cutoff":"technical report (2012)","method":"technical report (2012)","power":"technical report (2012)","deposit_style":"technical report (2012)","block":"typical across all 43-101 reports (179 reports)"},"terrain":null,"sources":[{"kind":"NI 43-101 technical report","id":"mtp:6efe34c2a23f6fb9","title":"NI 43-101 technical report \u2014 Magpie (ERDA), 2012-06","url":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=5ea27afc5a05ce663123991b&type=PDFC&symbol=ERDA%3ACA&companyName=Erda+Resource+Opportunities+Inc.&formType=002-002-001114-002003&formDescription=Amended+%26+restated+technical+report+%28NI+43-101%29&dateFiled=2012-06-06","archive":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=5ea27afc5a05ce663123991b&type=PDFC&symbol=ERDA%3ACA&companyName=Erda+Resource+Opportunities+Inc.&formType=002-002-001114-002003&formDescription=Amended+%26+restated+technical+report+%28NI+43-101%29&dateFiled=2012-06-06","listing":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=5ea27afc5a05ce663123991b&type=PDFC&symbol=ERDA%3ACA&companyName=Erda+Resource+Opportunities+Inc.&formType=002-002-001114-002003&formDescription=Amended+%26+restated+technical+report+%28NI+43-101%29&dateFiled=2012-06-06","date":"2012-06-06","collars":31,"intervals":124,"has_resource":false}],"resources":[],"counts":{"holes":31,"assayed_holes":28,"intervals":124,"surveyed":0,"blocks":861693,"reports":1,"releases":0},"ok":true}</script>
+<script src="three.min.js"></script>
+<script src="viewer.js?v=1792080639"></script>
+</body>
+</html>
