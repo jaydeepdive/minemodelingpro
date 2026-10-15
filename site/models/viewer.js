@@ -310,9 +310,24 @@ function drawCmp(cur){const E=M.elements[EL],box=$("cmp"),pubs=pubFor();
    metal's blocks and reports every metal on it. "Assayed over" is the share of
    that tonnage where the metal was actually measured; a metal sampled in a
    third of the holes cannot honestly claim the whole deposit. */
-let BMCUT=null,BMUSER=false;
-function bmDefault(){const B=M.by_metal;if(!B)return 0;
-  const E=M.elements[B.basis]||{},all=B.tonnes[0]||0;
+let BMCUT=null,BMUSER=false,BMBASIS=null;
+/* which basis the one-tonnage table is cut on. A deposit carrying several metals of
+   value is reported in dollars per tonne, not on one metal's grade — cutting Murray
+   Brook at 0.1% Cu returned 4.8 Mt where its own NSR cut-off returns 22.7 Mt against
+   a published 23.1 Mt, because copper is a third of that rock's value. */
+function bmView(){const B=M.by_metal;if(!B)return null;
+  const want=BMBASIS||(B.value?"value":"grade");
+  return (want==="value"&&B.value)?B.value:B;}
+function bmIsValue(){const B=M.by_metal;return !!(B&&B.value&&(BMBASIS||"value")==="value");}
+function fmtCut(V,c){return bmIsValue()?`${V.currency||"$"}${fmtN(c,c<10?1:0)}/t`
+  :`${fmtG(c,M.by_metal.basis_unit||"g/t")} ${M.by_metal.basis}`;}
+/* a published statement MMP can be read against: same cut-off kind, same units */
+function pubAtCut(){const V=bmView();if(!V)return null;
+  return (M.resources||[]).find(r=>r.cutoff!=null&&r.tonnes>0&&
+    (bmIsValue()? /\/t/.test(String(r.cutoff_unit||"")) : String(r.cutoff_unit||"")===(M.by_metal.basis_unit||"")));}
+function bmDefault(){const B=bmView();if(!B)return 0;
+  if(bmIsValue()){const i=B.cuts.indexOf(B.cutoff);if(i>0)return i;return B.cuts.length>1?1:0;}
+  const E=M.elements[M.by_metal.basis]||{},all=B.tonnes[0]||0;
   const near=w=>{let best=-1,bd=Infinity;B.cuts.forEach((c,i)=>{const d=Math.abs(c-w);
     if(c>0&&d<bd){bd=d;best=i;}});return best;};
   // a reporting cut-off the model barely reaches tells the reader nothing, so it is
@@ -323,42 +338,82 @@ function bmDefault(){const B=M.by_metal;if(!B)return 0;
   return B.cuts.length>1?1:0;}
 function drawBreakdown(){
   const box=$("bdown");if(!box)return;
-  const B=M.by_metal;
-  if(!B||!B.cuts||!B.cuts.length){return drawBreakdownLegacy(box);}
-  if(BMCUT==null||BMCUT>=B.cuts.length)BMCUT=bmDefault();
-  // while the viewer is on the basis metal, the table follows the cut-off slider,
-  // so the number on screen and the number in the table are the same number —
-  // until the reader picks a cut-off here, after which this panel stays put
-  if(!BMUSER&&EL===B.basis&&curCut!=null){
-    let j=0;B.cuts.forEach((c,i)=>{if(c<=curCut+1e-9)j=i;});BMCUT=j;}
-  const i=BMCUT,cut=B.cuts[i],T=B.tonnes[i],bu=B.basis_unit||"g/t";
-  const order=(B.order||Object.keys(B.metals||{}));
-  const rows=order.map(e=>{const r=B.metals[e];if(!r)return"";
+  const B=M.by_metal,V=bmView();
+  if(!V||!V.cuts||!V.cuts.length){return drawBreakdownLegacy(box);}
+  if(BMCUT==null||BMCUT>=V.cuts.length)BMCUT=bmDefault();
+  const val=bmIsValue();
+  // on the basis metal the table follows the cut-off slider, so the number on
+  // screen and the number in the table are the same number — until the reader
+  // picks a cut-off here, after which this panel stays put
+  if(!val&&!BMUSER&&EL===B.basis&&curCut!=null){
+    let j=0;V.cuts.forEach((c,i)=>{if(c<=curCut+1e-9)j=i;});BMCUT=j;}
+  const i=BMCUT,cut=V.cuts[i],T=V.tonnes[i];
+  const order=(V.order||Object.keys(V.metals||{}));
+  const rows=order.map(e=>{const r=V.metals[e];if(!r)return"";
     const g=r.grade[i],c=r.contained[i],cov=r.coverage[i]||0,tn=r.tonnes[i];
     const covtxt=cov>=0.995?"all of it":Math.round(cov*100)+"% of it";
     const cls=cov<0.25?"n thin":"n";
-    const covtip=cov>=0.995?"assayed throughout":fmtT(tn)+" of the "+fmtT(T)+" carries a "+e+" assay close enough to estimate";
-    return `<tr data-el="${esc(e)}"${e===EL?' class="on"':''}><td>${esc(e)}${e===B.basis?' <em>basis</em>':''}</td>`+
+    const tip=cov>=0.995?"assayed throughout":fmtT(tn)+" of the "+fmtT(T)+" carries a "+e+" assay close enough to estimate";
+    const unpriced=val&&r.priced===false;
+    return `<tr data-el="${esc(e)}"${e===EL?' class="on"':''}>`+
+      `<td${unpriced?' title="carried in the rock but not paid for in this formula"':''}>${esc(e)}`+
+      `${e===B.basis&&!val?' <em>basis</em>':''}${unpriced?' <em>*</em>':''}</td>`+
       `<td class="n">${g==null?"–":fmtG(g,r.unit)}</td>`+
       `<td class="n"><b>${c==null?"–":fmtC(c,r.contained_unit)}</b></td>`+
-      `<td class="${cls}" title="${esc(covtip)}">${covtxt}</td></tr>`;}).join("");
-  const btns=B.cuts.map((c,j)=>`<button class="mini${j===i?" on":""}" data-bm="${j}">`+
-    (c>0?"≥ "+fmtG(c,bu):"all blocks")+`</button>`).join(" ");
-  box.innerHTML=`<div class="bdhead"><b>${fmtT(T)}</b> of rock`+
-      (cut>0?` at ≥ ${fmtG(cut,bu)} ${esc(B.basis)}`:` (every estimated block)`)+
-      ` · ${B.density||"–"} t/m³</div>`+
+      `<td class="${cls}" title="${esc(tip)}">${covtxt}</td></tr>`;}).join("");
+  const btns=V.cuts.map((c,j)=>`<button class="mini${j===i?" on":""}" data-bm="${j}">`+
+    (c>0?"≥ "+fmtCut(V,c):"all blocks")+`</button>`).join(" ");
+  const toggle=(B.value?`<div class="bdcuts" style="margin-bottom:2px">`+
+      `<button class="mini${val?" on":""}" data-basis="value">cut on value (${esc(B.value.currency||"$")}/t)</button>`+
+      `<button class="mini${val?"":" on"}" data-basis="grade">cut on ${esc(B.basis)} grade</button></div>`:"");
+  // the tiers, and the published statement when it is cut the same way
+  const K=V.classes;
+  const tiers=K?`<table class="bd" style="margin-top:6px"><tbody>`+
+    Object.keys(K).map(k=>`<tr><td style="cursor:default">${esc(k)}</td><td class="n" style="cursor:default">${fmtT(K[k][i])}</td></tr>`).join("")+
+    `</tbody></table><p class="note">MMP's own confidence tiers — how many holes and samples reached each block —
+      not CIM categories assigned by a qualified person.</p>`:"";
+  const p=pubAtCut();
+  let cmp="";
+  if(p&&p.cutoff!=null){
+    const same=Math.abs(p.cutoff-cut)<Math.max(0.02*Math.max(p.cutoff,1),0.001);
+    const pt=p.mi_tonnes||p.tonnes,ratio=pt?T/pt:0;
+    const at=/\/t/.test(String(p.cutoff_unit||""))?`${(+p.cutoff).toLocaleString()} ${esc(p.cutoff_unit)}`:fmtG(+p.cutoff,p.cutoff_unit);
+    cmp=`<div class="bdhead" style="margin-top:8px">Published at the same cut-off</div>`+
+      `<div class="kv"><span>Filed statement · ${esc(at)}</span><b>${fmtT(pt)}</b></div>`+
+      `<div class="kv"><span>MMP at ${esc(fmtCut(V,cut))}</span><b>${fmtT(T)}</b></div>`+
+      `<p class="note">MMP is <b>${(ratio*100).toFixed(0)}%</b> of the filed tonnage.`+
+      (same?"":` <button class="mini" id="matchnsr">match their cut-off</button>`)+
+      ` Same rock, same cut-off, independently interpolated from the public drilling.</p>`;
+  }
+  box.innerHTML=toggle+
+    `<div class="bdhead"><b>${fmtT(T)}</b> of rock`+
+      (cut>0?` at ≥ ${esc(fmtCut(V,cut))}`:` (every estimated block)`)+
+      ` · ${V.density||B.density||"–"} t/m³</div>`+
     `<div class="bdcuts">${btns}</div>`+
     `<table class="bd"><colgroup><col style="width:24%"><col style="width:22%"><col style="width:28%"><col style="width:26%"></colgroup>`+
     `<thead><tr><th>Metal</th><th class="n">Grade</th><th class="n">Contained</th><th class="n">Assayed over</th></tr></thead>`+
     `<tbody>${rows}</tbody></table>`+
-    `<p class="note">One deposit, one tonnage. The cut-off above is on <b>${esc(B.basis)}</b>, and every metal is
-      estimated at those same blocks, so the rock is counted once — only the grade in it changes between metals.
-      Where a metal was assayed in fewer holes, "assayed over" says how much of that tonnage its contained figure
-      actually covers. Inverse-distance estimates for visualisation, not a resource estimate.</p>`+
-    (EL!==B.basis?`<p class="note">You are viewing <b>${esc(EL)}</b>. The tonnage in the panel above is
-      ${esc(EL)}'s own interpolated extent — what you see in 3D. This table is the deposit counted once, on
-      ${esc(B.basis)}'s blocks, which is why the two tonnages differ.</p>`:"");
+    `<p class="note">One deposit, one tonnage. `+
+      (val?`The cut-off is a <b>value</b> cut-off: ${esc(V.formula||"")}${V.approximate?
+        " — indicative only, from metal prices less typical recovery, payables and treatment charges, because no report for this project states a formula"
+        :", the formula this project's technical report states"}. A deposit carrying
+        several metals is reported in dollars per tonne, because cutting it on one
+        metal's grade throws away rock the others pay for.`
+      :`The cut-off above is on <b>${esc(B.basis)}</b>, and every metal is estimated at
+        those same blocks, so the rock is counted once.`)+
+      ` "Assayed over" says how much of that tonnage each metal was actually measured across.
+      Inverse-distance estimates for visualisation, not a resource estimate.</p>`+
+    (val&&order.some(e=>V.metals[e]&&V.metals[e].priced===false)
+      ? `<p class="note">* in the rock, but paid nothing in this formula — the report prices only
+         ${esc(Object.keys(V.factors||{}).join(", "))}.</p>` : "")+
+    tiers+cmp;
   box.querySelectorAll("button[data-bm]").forEach(b=>b.onclick=()=>{BMCUT=+b.dataset.bm;BMUSER=true;drawBreakdown();});
+  box.querySelectorAll("button[data-basis]").forEach(b=>b.onclick=()=>{
+    BMBASIS=b.dataset.basis;BMCUT=null;BMUSER=false;drawBreakdown();});
+  const mn=$("matchnsr");
+  if(mn&&p)mn.onclick=()=>{let best=0,bd=Infinity;
+    bmView().cuts.forEach((c,j)=>{const d=Math.abs(c-p.cutoff);if(d<bd){bd=d;best=j;}});
+    BMCUT=best;BMUSER=true;drawBreakdown();};
   box.querySelectorAll("tr[data-el]").forEach(tr=>tr.onclick=()=>{if(M.elements[tr.dataset.el])setEl(tr.dataset.el);});
 }
 /* models built before the one-tonnage pass: each metal on its own blocks */
