@@ -85,6 +85,110 @@ def _series(V, cutoff):
     return i, (cutoff - cuts[i]) / (cuts[i + 1] - cuts[i])
 
 
+def curve_score(m, p, filed=0.0):
+    """Compare MMP's whole grade-tonnage curve against a filed sensitivity table.
+
+    A single filed tonnage tests one point; a sensitivity table tests the shape. If
+    MMP has the deposit's size roughly right but the wrong grade distribution, one
+    point can look fine while the curve is wrong everywhere else — and the shape is
+    what a reader is actually relying on when they move the cut-off slider.
+
+    Returns the median MMP/filed tonnage ratio across the table's cut-offs."""
+    sens = p.get("sensitivity") or {}
+    rows = sens.get("rows") or []
+    if len(rows) < 3 or not sens.get("cutoff_unit"):
+        return None          # a cut-off series with no stated unit cannot be matched
+    vc = _is_value_cut(sens.get("cutoff_unit"))
+    cuts = [float(r["cutoff"]) for r in rows if r.get("cutoff") is not None]
+    unit = str(sens.get("cutoff_unit") or "")
+    ceiling = 500.0 if vc else (100.0 if unit in ("%", "g/t") else 10.0)
+    if not cuts or max(cuts) > ceiling:
+        return None          # a 207% cut-off is a misread column, not a sensitivity
+    # Tie the table to the statement it sits beside. A report prints sensitivity for
+    # one category as readily as for the whole resource — Murray Brook's is Measured
+    # only, 15.83 Mt where the statement is 23.12 Mt — and scoring MMP's whole
+    # deposit against one category measures nothing. Where the table disagrees with
+    # the headline at the headline's own cut-off, it is describing something else.
+    if p.get("cutoff") is not None and p.get("tonnes"):
+        at = [r for r in rows if abs(float(r["cutoff"]) - float(p["cutoff"]))
+              <= max(0.02 * float(p["cutoff"]), 1e-6)]
+        if at:
+            share = float(at[0]["tonnes"]) / float(p.get("mi_tonnes") or p["tonnes"])
+            if not (0.7 <= share <= 1.4):
+                return None
+        elif min(cuts) > float(p["cutoff"]) or max(cuts) < float(p["cutoff"]):
+            return None      # the table does not even cover the stated cut-off
+    else:
+        # no stated cut-off to tie the table to, so the tonnages have to do it: a
+        # table running to a hundredth of the filed tonnage is describing a
+        # different thing entirely
+        tt = [float(r["tonnes"]) for r in rows if r.get("tonnes")]
+        if not tt or min(tt) > filed * 3 or max(tt) < filed / 3:
+            return None
+    got = []
+    for r in rows:
+        mm = mmp_at(m, float(r["cutoff"]), vc)
+        if mm and mm.get("tonnes") and r.get("tonnes"):
+            got.append(mm["tonnes"] / float(r["tonnes"]))
+    if len(got) < 3:
+        return None
+    return {"n": len(got), "median": round(statistics.median(got), 3),
+            "unit": sens.get("cutoff_unit"),
+            "span": [rows[0]["cutoff"], rows[-1]["cutoff"]],
+            "ratios": [round(x, 3) for x in got]}
+
+
+def filed_element(m, p):
+    """Which of OUR elements a filed statement is actually about.
+
+    Pak was being scored by comparing its tantalum model against a filed lithium
+    grade — a measurement bug that produced a 0.003x "error" and nothing else. The
+    statement names its metal when the extractor was confident; when it did not, the
+    contained-metal unit narrows the field and the grade magnitude settles it, since
+    a statement of 1.16 is not describing a 0.011 model."""
+    els = m.get("elements") or {}
+    named = p.get("element")
+    if named and named in els:
+        return named
+    cu = p.get("contained_unit")
+    gu = p.get("grade_unit")
+    cats = p.get("categories") or {}
+    fg = next((v.get("grade") for v in cats.values() if v.get("grade")), None)
+    cands = []
+    for el, E in els.items():
+        unit = E.get("unit")
+        if gu and ((gu == "%") != (unit == "%")):
+            continue
+        st = E.get("stats") or {}
+        p50 = st.get("p50") or 0
+        if not p50 or not fg:
+            continue
+        # the right metal is the one whose own samples live on the same scale as
+        # the filed grade; an order of magnitude apart is a different metal
+        cands.append((abs(math.log((float(fg) + 1e-9) / (float(p50) + 1e-9))), el))
+    if not cands:
+        return None
+    cands.sort()
+    return cands[0][1] if cands[0][0] < math.log(20) else None
+
+
+def mmp_scoped(m, p):
+    """The part of MMP's model the filed statement is actually about.
+
+    A pit-constrained statement set against MMP's whole deposit compares a pit to a
+    deposit. Where the filing says which it is and MMP has split the model the same
+    way, the matching half is used and the comparison means something."""
+    scope = p.get("scope")
+    S = (m.get("by_metal") or {}).get("method")
+    if not scope or scope == "both" or not S:
+        return None, None
+    key = {"in_pit": "open_pit", "underground": "underground"}.get(scope)
+    row = S.get(key) if key else None
+    if not row or not row.get("tonnes"):
+        return None, None
+    return row, scope
+
+
 def at_their_grade(m, filed_grade, el):
     """MMP's tonnage at the cut-off where MMP's grade equals the filed grade.
 
@@ -177,14 +281,17 @@ def score(site="site"):
         vc = _is_value_cut(p.get("cutoff_unit"))
         got = mmp_at(m, float(p["cutoff"]), vc) if p.get("cutoff") is not None else None
         cats = p.get("categories") or {}
-        # the grade-matched score, which needs no stated cut-off
-        prim = m.get("primary")
+        # the grade-matched score, which needs no stated cut-off — against the
+        # element the statement is actually about, not whichever we happened to model
+        prim = filed_element(m, p) or m.get("primary")
         fg = None
         for k in ("M+I", "Total", "Measured", "Indicated", "Inferred"):
             v = (cats.get(k) or {}).get("grade")
             if v:
                 fg = float(v); break
         gm = at_their_grade(m, fg, prim) if fg else None
+        scoped, scope = mmp_scoped(m, p)
+        curve = curve_score(m, p, filed)
         if not got and not gm:
             continue
         row = {"slug": m.get("slug"), "project": m.get("project"),
@@ -205,6 +312,13 @@ def score(site="site"):
                "grade_matched_cut": round(gm["cut"], 4) if gm else None,
                "grade_matched_ratio": round(gm["tonnes"] / filed, 3) if gm and gm["tonnes"] else None,
                "grade_matched_clamped": (gm or {}).get("clamped"),
+               "element_scored": prim, "element_named": p.get("element"),
+               "scope": scope,
+               "curve_n": (curve or {}).get("n"),
+               "curve_median": (curve or {}).get("median"),
+               "curve_span": (curve or {}).get("span"),
+               "scoped_tonnes": round(scoped["tonnes"]) if scoped else None,
+               "scoped_ratio": round(scoped["tonnes"] / filed, 3) if scoped else None,
                "suspect": filed < MIN_FILED_T,
                "filed_cats": {k: (cats.get(k) or {}).get("tonnes") for k in FILED
                               if cats.get(k)},
@@ -324,6 +438,16 @@ def main():
               f"  within 1.5x {head['within_1_5x']}  2x {head['within_2x']}  3x {head['within_3x']}")
         if head.get("value_cut_n"):
             print(f"    of those, value cut-offs: {head['value_cut_n']}, median {head['value_cut_median_ratio']}x")
+    cv = [x for x in rows if x.get("curve_median") and not x["suspect"]]
+    if cv:
+        print(f"  WHOLE CURVE        n={len(cv)}  median "
+              f"{statistics.median(x['curve_median'] for x in cv):.3f}x"
+              f"  (MMP's grade-tonnage curve against filed sensitivity tables)")
+    sc = [x for x in rows if x.get("scoped_ratio") and not x["suspect"]]
+    if sc:
+        print(f"  LIKE FOR LIKE      n={len(sc)}  median "
+              f"{statistics.median(x['scoped_ratio'] for x in sc):.3f}x"
+              f"  (filed statement's own pit/underground scope vs MMP's same half)")
     if head.get("grade_matched_n"):
         print(f"  AT THEIR GRADE     n={head['grade_matched_n']}  median {head['grade_matched_median']}x"
               f"  within 1.5x {head['grade_matched_within_1_5x']}  2x {head['grade_matched_within_2x']}")

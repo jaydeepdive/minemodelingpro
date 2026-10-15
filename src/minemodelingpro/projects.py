@@ -816,6 +816,7 @@ def _materialise(p, news_holes, news_ivs, ov):
             res.append({"source": r["id"], "date": r.get("date"), "url": _filing_url(r),
                         "archive": r.get("archive_url"),
                         "title": sources[[s.get("id") for s in sources].index(r["id"])]["title"] if r["id"] in [s.get("id") for s in sources] else r["id"],
+                        "sensitivity": r.get("sensitivity"),
                         **r["resource"]})
     imported = [r for r in reports if r.get("source") == "import"]
     ds_params = {}

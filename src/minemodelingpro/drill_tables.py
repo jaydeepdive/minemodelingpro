@@ -927,6 +927,7 @@ def extract_resources(doc, pages_text):
             pscore -= 1
         tm_hint, cm_hint = _unit_hints(t)
         cog, cog_unit = _page_cutoff(t)
+        pscope = _page_scope(t)
         years = [int(y) for y in re.findall(r"effective\s+date[^.\n]{0,60}?((?:19|20)\d\d)", t, re.I)]
         pyear = max(years) if years else None
         try:
@@ -991,9 +992,41 @@ def extract_resources(doc, pages_text):
                          "year": pyear, "total": is_total,
                          "el": _page_element(t, kind, G),
                          "grade_unit": grade_unit_for(kind),
+                         "scope": pscope,
                          "text": txt[:160]})
     return rows
 
+
+
+_SCOPE = [
+    ("in_pit", r"in[- ]pit|pit[- ]constrained|within (?:the )?(?:optimi[sz]ed )?pit|open[- ]pit"),
+    ("underground", r"\bunderground\b|out[- ]of[- ]pit|below (?:the )?pit"),
+]
+_SCOPE_CTX = re.compile(r"mineral resource|resource estimate|resource statement", re.I)
+
+
+def _page_scope(t):
+    """Whether a filed statement is pit-constrained, underground, or neither.
+
+    It matters because MMP now reports those separately, and a pit-constrained
+    statement compared against MMP's whole deposit is not a comparison at all —
+    Murray Brook's filed table is titled "In-Pit Mineral Resource Estimate". The
+    wording lives in the table's caption rather than its rows, so it is read from
+    the page text around wherever the resource is introduced.
+
+    Returns "in_pit", "underground", "both" or None."""
+    flat = re.sub(r"\s+", " ", t or "")
+    found = set()
+    for m in _SCOPE_CTX.finditer(flat):
+        win = flat[max(0, m.start() - 160): m.end() + 160]
+        for name, pat in _SCOPE:
+            if re.search(pat, win, re.I):
+                found.add(name)
+    if len(found) == 1:
+        return found.pop()
+    if len(found) > 1:
+        return "both"
+    return None
 
 
 def _page_cutoff(t):
@@ -1097,6 +1130,134 @@ def _page_element(t, kind=None, grade=None):
     return e1
 
 
+_SENS_CTX = re.compile(r"sensitiv|at (?:various|a range of|different) cut|"
+                       r"cut[- ]?off (?:grade )?sensitiv|resource.{0,30}by cut[- ]?off", re.I)
+
+
+def extract_sensitivity(doc, pages_text):
+    """Grade-tonnage tables: what the deposit holds at a range of cut-offs.
+
+    Reports print these, and they are worth more to MMP than the headline statement
+    is. A single filed tonnage can only be compared against one point on MMP's own
+    grade-tonnage curve; a sensitivity table can be compared against the whole
+    curve, which tests the shape of the estimate rather than one number on it. They
+    also carry a cut-off by construction, so they are scorable where two thirds of
+    filed statements are not.
+
+    The table validates itself: a cut-off series must rise while its tonnage falls.
+    Nothing else in a technical report does that, so a monotone run of three or more
+    rows is strong evidence the columns were read in the right order."""
+    out = []
+    for pno, t in enumerate(pages_text):
+        if not _SENS_CTX.search(t or ""):
+            continue
+        _tm, cm = _unit_hints(t)
+        tm_hint, _cm2 = _unit_hints(t)
+        unit = None
+        # flattened: a table header extracts as "Cut-off \n(NSR \nCAD$/t)", and a
+        # pattern that cannot cross a newline sees a cut-off with no unit at all
+        um = re.search(r"cut[- ]?off[^.]{0,40}?"
+                       r"((?:NSR\s*)?(?:CAD?\$|C\$|US\$|A\$|\$)\s*/\s*t|g\s*/\s*t|gpt|%|ppm|oz/t)",
+                       re.sub(r"\s+", " ", t or ""), re.I)
+        if um:
+            u = re.sub(r"\s+", "", um.group(1))
+            if "/t" in u and "$" in u:
+                cur = "C$" if re.match(r"(?:NSR)?CAD?\$|(?:NSR)?C\$", u, re.I) else (
+                    "US$" if "US$" in u.upper() else "$")
+                unit = f"{cur}/t NSR"
+            else:
+                unit = u.lower().replace("gpt", "g/t")
+        try:
+            lines = page_lines(doc[pno])
+        except Exception:
+            continue
+        rows = []
+        for ln in lines:
+            nums = [num(c["t"]) for c in ln["cells"] if _is_num(c["t"])]
+            nums = [n for n in nums if n is not None]
+            if len(nums) < 2:
+                continue
+            rows.append(nums)
+        series = _monotone_series(rows, tm_hint)
+        if len(series) >= 3:
+            out.append({"page": pno + 1, "cutoff_unit": unit,
+                        "rows": [{"cutoff": c, "tonnes": round(tn), "grade": g}
+                                 for c, tn, g in series]})
+    # the fullest table on any page wins; summaries repeat shortened versions
+    out.sort(key=lambda x: -len(x["rows"]))
+    return out[:1]
+
+
+def _monotone_series(rows, tm_hint):
+    """Find the reading of a table that behaves like a grade-tonnage curve.
+
+    What identifies one is the RELATIONSHIP, not the row order: tonnage falls as the
+    cut-off rises, whichever way round the table is printed. P&E print Murray Brook's
+    from the highest cut-off down (100, 50, 45 ... 15) with tonnage climbing beside
+    it, so a reader that insists on ascending cut-offs finds nothing at all.
+
+    A monotone run alone is still not enough — a column of rounded tonnages marches
+    just as obediently — so the series must also SPAN something: the cut-off roughly
+    half again across it and the tonnage down by a quarter.
+    """
+    best = []
+    for ci in range(0, 2):
+        for ti in range(ci + 1, min(ci + 4, 8)):
+            for gi in range(ci + 1, min(ci + 5, 9)):
+                if gi == ti:
+                    continue
+                run = []
+                for nums in rows:
+                    if len(nums) <= max(ci, ti, gi):
+                        continue
+                    c, tn, g = nums[ci], nums[ti], nums[gi]
+                    if None in (c, tn, g):
+                        continue
+                    if not (0 < c < 1e4 and tn > 0 and 0 < g < 1e4):
+                        continue
+                    run.append((float(c), float(tn), float(g)))
+                ok = []
+                for row in run:
+                    if len(ok) < 2:
+                        ok.append(row)
+                        if len(ok) == 2 and not _opposed(ok[0], ok[1]):
+                            ok = [ok[1]]
+                        continue
+                    if _opposed(ok[-1], row) and _same_way(ok[-2], ok[-1], row):
+                        ok.append(row)
+                    else:
+                        if len(ok) > len(best):
+                            best = ok
+                        ok = [row]
+                if len(ok) > len(best):
+                    best = ok
+    if len(best) < 3:
+        return []
+    if best[0][0] > best[-1][0]:          # printed high cut-off first
+        best = best[::-1]
+    cuts = [b[0] for b in best]
+    tons = [b[1] for b in best]
+    if cuts[-1] / max(cuts[0], 1e-9) < 1.5:
+        return []
+    if tons[-1] / max(tons[0], 1e-9) > 0.8:
+        return []
+    if not all(0.005 <= c <= 500 for c in cuts):
+        return []
+    mult = tm_hint or (1e3 if max(tons) < 5e4 else 1.0)
+    return [(c, tn * mult, g) for c, tn, g in best]
+
+
+def _opposed(a, b):
+    """Cut-off and tonnage must move in opposite directions between two rows."""
+    dc, dt = b[0] - a[0], b[1] - a[1]
+    return dc != 0 and dt != 0 and (dc > 0) != (dt > 0)
+
+
+def _same_way(a, b, c):
+    """And the whole run must keep going the same way."""
+    return ((b[0] - a[0]) > 0) == ((c[0] - b[0]) > 0)
+
+
 def headline_resource(rows):
     """Pick the CURRENT resource statement: latest effective date first, then the
     most complete category set / statement-like page, earliest page (summary)."""
@@ -1165,6 +1326,7 @@ def headline_resource(rows):
         el = None                        # the rows disagree about the metal
     return {"page": page, "contained_unit": cunit, "categories": cats, "year": rs[0].get("year"),
             "cutoff": cog, "cutoff_unit": cogu, "grade_unit": gu,
+            "scope": next((r.get("scope") for r in rs if r.get("scope")), None),
             "element": el, **tot}
 
 
@@ -1529,6 +1691,7 @@ def extract_report(pdf_path, meta=None):
         "pages": len(doc),
         "crs": crs, "center": center or tcenter, "text_center": tcenter,
         "block_size": block, "density": density,
+        "sensitivity": (extract_sensitivity(doc, pages_text) or [None])[0],
         "model_params": mp or None, "effective_date": eff,
         "resource": head, "resource_rows": res_rows[:80],
         "counts": {"collars": len(collars), "intervals": len(intervals), "surveyed_holes": len({x["hole"] for x in surveys}),
