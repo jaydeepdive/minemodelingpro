@@ -406,7 +406,7 @@ function drawBreakdown(){
     (val&&order.some(e=>V.metals[e]&&V.metals[e].priced===false)
       ? `<p class="note">* in the rock, but paid nothing in this formula — the report prices only
          ${esc(Object.keys(V.factors||{}).join(", "))}.</p>` : "")+
-    tiers+cmp;
+    tiers+cmp+trackRecord();
   box.querySelectorAll("button[data-bm]").forEach(b=>b.onclick=()=>{BMCUT=+b.dataset.bm;BMUSER=true;drawBreakdown();});
   box.querySelectorAll("button[data-basis]").forEach(b=>b.onclick=()=>{
     BMBASIS=b.dataset.basis;BMCUT=null;BMUSER=false;drawBreakdown();});
@@ -416,6 +416,28 @@ function drawBreakdown(){
     BMCUT=best;BMUSER=true;drawBreakdown();};
   box.querySelectorAll("tr[data-el]").forEach(tr=>tr.onclick=()=>{if(M.elements[tr.dataset.el])setEl(tr.dataset.el);});
 }
+/* What this method is worth where the answer is known.
+
+   A model of a deposit with no filed resource cannot be checked against anything,
+   so the only honest basis for trusting it is how the same pipeline scores on the
+   deposits that do have one. That record is measured by scripts/validate.py over
+   every project whose filings carry a statement, at each statement's own cut-off,
+   and is stamped into every model. It is a small sample and is quoted as one. */
+function trackRecord(){const R=M.track_record;if(!R||!R.n)return"";
+  const pub=(M.resources||[]).some(r=>r.tonnes>0);
+  const t=R.tiers;
+  return `<div class="bdhead" style="margin-top:8px">How far off is MMP, where we can check?</div>`+
+    `<div class="kv"><span>Deposits with a filed statement</span><b>${R.n}</b></div>`+
+    `<div class="kv"><span>Median MMP ÷ filed tonnage</span><b>${R.median_ratio}×</b></div>`+
+    `<div class="kv"><span>Within 1.5× of filed</span><b>${R.within_1_5x} of ${R.n}</b></div>`+
+    (t?`<div class="kv"><span>Filed measured + indicated</span><b>${Math.round(t.filed_mi_share*100)}% of tonnes</b></div>`+
+       `<div class="kv"><span>MMP's top two tiers</span><b>${Math.round(t.mmp_top2_share*100)}% of tonnes</b></div>`:"")+
+    `<p class="note">${pub?"This project has a filed statement, compared above."
+      :"<b>This deposit has no filed resource</b>, so nothing here can be checked against one directly."}
+      The figures above are how the same pipeline scores across every project whose filings do carry a statement,
+      each at its own cut-off. ${t?`Our tiers stay deliberately short of the filed categories — we hold a fraction of the
+      assay data a qualified person had — so read the top tier as "well supported by the public drilling", not as measured.`:""}
+      A small sample, and an estimate of an estimate.</p>`;}
 /* models built before the one-tonnage pass: each metal on its own blocks */
 function drawBreakdownLegacy(box){
   const els=Object.keys(M.elements||{}).filter(e=>M.elements[e].gt&&M.elements[e].gt.length);

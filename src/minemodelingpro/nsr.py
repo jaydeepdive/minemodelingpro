@@ -55,11 +55,22 @@ _SYM = {"cu": "Cu", "pb": "Pb", "zn": "Zn", "ni": "Ni", "co": "Co", "mo": "Mo",
         "u3o8": "U3O8", "li2o": "Li2O", "gold": "Au", "silver": "Ag", "copper": "Cu",
         "lead": "Pb", "zinc": "Zn", "nickel": "Ni", "cobalt": "Co"}
 
-# "NSR $/t = (Cu % x 81) + (Pb % x 12) + (Zn % x 13) + (Ag g/t x 0.90)"
-_FORMULA = re.compile(
-    r"\bNSR\b[^=\n]{0,40}=\s*((?:\(?\s*[A-Za-z][A-Za-z0-9]{0,4}\s*(?:%|g\s*/\s*t|gpt|ppm)\s*"
-    r"[x*×X]\s*\$?\s*[\d.]+\s*\)?\s*[+\-]?\s*){2,})", re.I)
-_TERM = re.compile(r"([A-Za-z][A-Za-z0-9]{0,4})\s*(%|g\s*/\s*t|gpt|ppm)\s*[x*×X]\s*\$?\s*([\d.]+)", re.I)
+# Reports write the formula both ways round and with or without the unit:
+#   "NSR $/t = (Cu % x 81) + (Pb % x 12) + (Zn % x 13) + (Ag g/t x 0.90)"
+#   "NSR for Tesorito = (73.73 * Au grade) ... + (0.72 * Ag grade)"
+# so the formula is found by its "NSR ... =" opening and the terms are read out of
+# the window that follows, in either order. Matching only one order found 2 formulas
+# in a corpus with 34 value cut-offs.
+_FORMULA = re.compile(r"\bNSR\b[^=\n]{0,60}=", re.I)
+_UNIT = r"(?:%|g\s*/\s*t|gpt|ppm|\$?/\s*t)"
+# metal first:  Cu % x 81   |   Au grade * 73.73
+_TERM_A = re.compile(r"([A-Za-z][A-Za-z0-9]{0,4})\s*(" + _UNIT + r")?\s*(?:grade)?\s*"
+                     r"[x*×X]\s*\$?\s*([\d.]+)", re.I)
+# factor first: 73.73 * Au grade   |   81 x Cu %
+_TERM_B = re.compile(r"\$?\s*([\d.]+)\s*[x*×X]\s*([A-Za-z][A-Za-z0-9]{0,4})\s*"
+                     r"(" + _UNIT + r")?\s*(?:grade)?", re.I)
+# a formula carrying a recovery curve is read for its linear factors only
+_NONLINEAR = re.compile(r"\b(?:min|max|ln|log|exp)\s*\(", re.I)
 _CURRENCY = re.compile(r"\b(CAD?\$|C\$|US\$|A\$|AUD\$)", re.I)
 
 
@@ -73,24 +84,19 @@ def stated(pages_text):
     for t in (pages_text if isinstance(pages_text, (list, tuple)) else [pages_text]):
         flat = re.sub(r"\s+", " ", t or "")
         for m in _FORMULA.finditer(flat):
+            win = flat[m.end(): m.end() + 420]
+            win = re.split(r"(?<=[a-z0-9\)])\.\s+[A-Z]", win)[0]    # stop at the sentence end
             factors, units = {}, {}
-            for el, unit, val in _TERM.findall(m.group(1)):
-                sym = _SYM.get(el.lower())
-                if not sym:
-                    continue
-                u = "%" if unit == "%" else "g/t"
-                try:
-                    f = float(val)
-                except ValueError:
-                    continue
-                if not (0.0001 < f < 100000):
-                    continue
-                factors[sym], units[sym] = f, u
-            if len(factors) < 2:
+            for el, unit, val in _TERM_A.findall(win):
+                _add_term(factors, units, el, unit, val)
+            for val, el, unit in _TERM_B.findall(win):
+                _add_term(factors, units, el, unit, val)
+            if not plausible(factors, units):
                 continue
             cur = _currency_of_cutoff(pages_text) or _currency_near(flat, m.start())
             cand = {"factors": factors, "units": units, "currency": cur,
-                    "source": m.group(0)[:160].strip()}
+                    "approximate": bool(_NONLINEAR.search(win)) or None,
+                    "source": (m.group(0) + win)[:200].strip()}
             # the fullest formula on any page wins: a summary often quotes a
             # shortened version of the one the block model actually used
             if best is None or len(cand["factors"]) > len(best["factors"]):
@@ -117,6 +123,59 @@ def _currency_of_cutoff(pages_text):
             if got:
                 return got
     return None
+
+
+# pounds in a tonne per one per cent, and troy ounces in a gramme: the constants that
+# turn a grade into a quantity of metal. A line built from them is a unit conversion,
+# not a revenue formula, and reports print plenty of both.
+_CONVERSIONS = (2204.62262 / 100.0, 1.0 / 31.1034768, 31.1034768, 2204.62262)
+
+
+def _is_conversion(f):
+    return any(abs(f - c) / c < 0.005 for c in _CONVERSIONS)
+
+
+def plausible(factors, units=None):
+    """Does this look like money per tonne, or like arithmetic?
+
+    An NSR formula prices metals differently — copper is not worth the same as lead.
+    A line whose coefficients are all the same number, or are the pounds-per-tonne
+    and ounces-per-gramme constants, is converting grades to metal content and must
+    not be mistaken for a value formula: cutting a deposit on one would be cutting it
+    on nothing at all."""
+    if not factors or len(factors) < 2:
+        return False
+    vals = sorted(factors.values())
+    if all(_is_conversion(f) for f in vals):
+        return False
+    if len(set(round(f, 4) for f in vals)) == 1:
+        return False                      # one number for every metal: a conversion
+    if sum(1 for f in vals if _is_conversion(f)) >= max(2, len(vals) - 1):
+        return False
+    return True
+
+
+def _add_term(factors, units, el, unit, val):
+    """One term of a stated formula, whichever way round it was written."""
+    sym = _SYM.get(str(el).lower())
+    if not sym or sym in factors:
+        return
+    try:
+        f = float(val)
+    except (TypeError, ValueError):
+        return
+    if not (0.0001 < f < 100000):
+        return
+    if _is_conversion(f):
+        return          # a grade-to-metal conversion constant, not a price
+    u = str(unit or "").replace(" ", "").lower()
+    if u.startswith("%"):
+        u = "%"
+    elif u in ("g/t", "gpt", "ppm"):
+        u = "g/t"
+    else:                                   # the unit was left implicit
+        u = "g/t" if sym in GPT else "%"
+    factors[sym], units[sym] = f, u
 
 
 def _currency_near(flat, at, window=1400):

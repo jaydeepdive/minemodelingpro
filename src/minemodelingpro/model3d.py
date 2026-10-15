@@ -207,8 +207,21 @@ def _passes(radius, max_gap, min_holes, min_samples, given=None):
     further from the drilling than before — the passes only tier what is inside it."""
     if given:
         return [(float(r), float(gp), int(mh), int(ms)) for r, gp, mh, ms in given][:3]
-    return [(radius * 0.6, max_gap * 0.5, max(3, min_holes + 1), max(6, min_samples * 2)),
-            (radius * 0.85, max_gap * 0.8, max(2, min_holes), max(4, min_samples)),
+    # Tiers are decided by HOW MANY HOLES see the block and how close they are, not
+    # by how many composites fall inside the radius. Sample counts measure how much
+    # assay detail a filing happened to print — a report publishing significant
+    # intercepts gives barely one interval per hole — so a sample-count rule grades
+    # MMP's paperwork rather than the deposit's drilling. Hole count and distance are
+    # properties of the drill pattern itself, which is what classification turns on:
+    # P&E's own measured rule at Murray Brook is four holes at under 25 m spacing.
+    # All three passes count holes over the same search radius — roughly 1.6 x the
+    # drill spacing — and differ in how many of them must see the block. Tiering by a
+    # shrinking radius instead was self-defeating: the envelope is already about
+    # three quarters of the drill spacing, so "within half of that" is closer than
+    # any second hole ever gets, and the top tier stayed empty no matter how the
+    # sample counts moved.
+    return [(radius, max_gap * 0.75, max(3, min_holes + 1), 3),
+            (radius, max_gap, max(2, min_holes), 2),
             (radius, max_gap, 1, 2)]
 def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None):
     """Grade estimate on a regular grid of `block` (bx,by,bz) cells, only within
@@ -360,9 +373,18 @@ def grade_at(pts, g, hid, centres, opts=None, params=None):
     return out
 
 
-def _composite_el(per_hole, H, clen, gap_fill=True):
+def _composite_el(per_hole, H, clen, gap_fill=True, margin=None):
     """Downhole composites for one element: fixed-length samples along every hole
     that assayed it, with un-assayed ground carried as zero grade.
+
+    ``margin`` limits how far those zeros run. A technical report usually prints
+    significant intercepts rather than the whole assay file, so compositing the
+    entire hole at zero grade buries a 6 m intercept in 300 m of invented barren
+    rock and drags the interpolated grade down with it. Scored against the filings,
+    that showed up as MMP needing an extreme cut-off to reach a filed grade and then
+    finding almost no tonnage there. Keeping the zeros but stopping them a search
+    distance beyond the reported intervals preserves what they are for — bounding
+    the deposit, since MMP has no mineralisation wireframe — without the dilution.
 
     Pulled out of ``build_project`` so that a metal MMP does not draw as its own
     block model can still be composited and estimated on another metal's blocks
@@ -399,6 +421,12 @@ def _composite_el(per_hole, H, clen, gap_fill=True):
                 mid = (s[0] + s[1]) / 2
                 j = min(len(mids) - 1, int(mid // clen))
                 gg[j] = max(gg[j], s[2] * (s[1] - s[0]) / clen)
+        if margin and len(mids):
+            near = np.zeros(len(mids), bool)
+            for s in segs:
+                near |= (mids >= s[0] - margin) & (mids <= s[1] + margin)
+            if near.any():
+                mids, gg = mids[near], gg[near]
         xyz = hole_xyz(h, mids)
         comp_p.append(xyz); comp_g.append(gg); comp_h.append(np.full(len(mids), hi))
         pos = gg > 0
@@ -466,7 +494,7 @@ def _class_split(cls_sorted, ks, bt):
     return out
 
 
-def _by_metal(primary, grids, by_el, units, key2i, H, PS, verbose=False):
+def _by_metal(primary, grids, by_el, units, key2i, H, PS, margin=None, verbose=False):
     """Every metal reported on ONE deposit tonnage.
 
     A deposit is a single body of rock. Estimating each metal on its own blocks
@@ -529,7 +557,8 @@ def _by_metal(primary, grids, by_el, units, key2i, H, PS, verbose=False):
             if len(per_hole) < 2:
                 continue
             _, cp, cg, ch, _ = _composite_el(per_hole, H, clen,
-                                             gap_fill=PS.get("gap_fill") is not False)
+                                             gap_fill=PS.get("gap_fill") is not False,
+                                             margin=margin)
             if not cp:
                 continue
             pts = np.concatenate(cp); g = np.concatenate(cg); hid = np.concatenate(ch)
@@ -771,6 +800,13 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
     if geo:
         lat0 = lat0 + cy / fr["mN"]; lon0 = lon0 + cx / fr["mE"]
 
+    # how far the zero-filled gaps may run past a reported interval: about one
+    # drill spacing, measured from the collars, so the barren envelope reaches
+    # roughly as far as the estimator does and no further
+    collar_sp = _spacing([[h["x"], h["y"]] for h in H])
+    gap_margin = (float(PS["gap_fill_margin_m"]) if PS.get("gap_fill_margin_m")
+                  else float(np.clip(collar_sp, 15.0, 80.0)))
+
     # --- per element: segments, composites, blocks, GT curve
     elements = {}
     grids = {}
@@ -784,7 +820,8 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
         blk = [float(v) for v in blk]
         clen = float(PS.get("composite_m") or max(1.0, min(blk[2], 5.0)))
         segs_out, comp_p, comp_g, comp_h, cent = _composite_el(
-            per_hole, H, clen, gap_fill=PS.get("gap_fill") is not False)
+            per_hole, H, clen, gap_fill=PS.get("gap_fill") is not False,
+            margin=gap_margin)
         if not segs_out:
             continue
         grades = [s[3] for s in segs_out]
@@ -817,6 +854,7 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                                       else "project settings" if PS.get("block")
                                       else "default for " + el)
             params["gap_fill"] = PS.get("gap_fill") is not False
+            params["gap_fill_margin_m"] = round(gap_margin, 1)
             params["custom"] = sorted(k for k in PS if k in PARAMS.ALL
                                       and PORIGIN.get(k) != "auto")
             params["auto"] = {k: v for k, v in base_src.items() if PORIGIN.get(k) == "auto"}
@@ -858,11 +896,12 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
         raise ValueError("no modelable element")
     primary = els[0] if els[0] in elements else next(iter(elements))
     try:
-        by_metal = _by_metal(primary, grids, by_el, units, key2i, H, PS, verbose=verbose)
+        by_metal = _by_metal(primary, grids, by_el, units, key2i, H, PS,
+                             margin=gap_margin, verbose=verbose)
     except Exception as e:                   # never lose a model over its summary table
         by_metal = None
-        if verbose:
-            print("  by_metal failed:", str(e)[:120])
+        print(f"[model3d] {ds.get('slug')}: by_metal failed: {type(e).__name__}: {str(e)[:140]}",
+              flush=True)
 
     # --- terrain over a padded footprint
     terr = None
@@ -901,6 +940,7 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
         "frame": {"kind": fr["kind"], "lat0": round(lat0, 6) if geo else None, "lon0": round(lon0, 6) if geo else None,
                   "grid": fr.get("grid")},
         "holes": hole_rows, "elements": elements, "primary": primary, "by_metal": by_metal,
+        "track_record": _validation(),
         "settings": {k: v for k, v in PS.items() if k in PARAMS.ALL},
         "param_sources": {k: (base_src.get(k) if o == "auto" else o)
                           for k, o in PORIGIN.items() if k in PARAMS.ALL},
@@ -1092,6 +1132,29 @@ def card_of(m):
 
 
 # --------------------------------------------------------------- build all
+def _validation():
+    """MMP's measured track record, for the pages to quote.
+
+    A deposit with no filed resource is the case MMP exists for, and the only
+    honest basis for trusting one of those models is how the same method scores
+    where a filed statement does exist. ``scripts/validate.py`` writes that file."""
+    try:
+        path = os.path.join(_ROOT, "data", "keep", "mmp_validation.json")
+        d = json.load(open(path))
+        h = d.get("headline") or {}
+        if not h.get("n"):
+            return None
+        return {"n": h["n"], "median_ratio": h.get("median_ratio"),
+                "within_1_5x": h.get("within_1_5x"), "within_2x": h.get("within_2x"),
+                "tiers": (d.get("tiers") or {}).get("n") and {
+                    "n": d["tiers"]["n"],
+                    "filed_mi_share": d["tiers"].get("filed_mi_share_median"),
+                    "mmp_top2_share": d["tiers"].get("mmp_top2_share_median")},
+                "generated": d.get("generated")}
+    except Exception:
+        return None
+
+
 def build_all(site_dir="site", only=None, verbose=True):
     """One model page per PROJECT (all sources merged), the gallery, and
     models_index.json (Closeology's drill radar deep-links release URLs to it)."""
