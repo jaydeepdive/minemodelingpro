@@ -1,0 +1,61 @@
+{
+ "n": 114,
+ "median_abs_error": 0.185,
+ "median_signed_error": -0.075,
+ "by_style": {
+  "vein": {
+   "n": 49,
+   "stated_median": 2.74,
+   "mmp_median": 2.6,
+   "median_error": -0.14
+  },
+  "pegmatite": {
+   "n": 12,
+   "stated_median": 2.69,
+   "mmp_median": 2.7,
+   "median_error": 0.015
+  },
+  "iron": {
+   "n": 4,
+   "stated_median": 2.75,
+   "mmp_median": 3.0,
+   "median_error": 0.255
+  },
+  "vms": {
+   "n": 8,
+   "stated_median": 3.22,
+   "mmp_median": 2.95,
+   "median_error": -0.075
+  },
+  "skarn": {
+   "n": 7,
+   "stated_median": 2.83,
+   "mmp_median": 3.2,
+   "median_error": 0.37
+  },
+  "bulk": {
+   "n": 20,
+   "stated_median": 2.66,
+   "mmp_median": 2.7,
+   "median_error": 0.04
+  },
+  "porphyry": {
+   "n": 6,
+   "stated_median": 2.68,
+   "mmp_median": 2.65,
+   "median_error": -0.035
+  },
+  "laterite": {
+   "n": 5,
+   "stated_median": 2.69,
+   "mmp_median": 1.7,
+   "median_error": -0.99
+  },
+  "orogenic": {
+   "n": 3,
+   "stated_median": 2.8,
+   "mmp_median": 2.78,
+   "median_error": -0.02
+  }
+ }
+}

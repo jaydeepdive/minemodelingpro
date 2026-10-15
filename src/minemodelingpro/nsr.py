@@ -189,7 +189,17 @@ def _currency_near(flat, at, window=1400):
     return {"C": "C$", "US": "US$", "A": "A$", "AUD": "A$"}.get(last, "$")
 
 
-def indicative(elements, units=None, prices=None, fx=1.0, currency="US$"):
+# What survives AFTER metallurgical recovery: the payable share the smelter credits,
+# less treatment and refining charges and freight. Separated out so that a recovery a
+# report actually states can replace the assumed one without discarding the rest.
+# Derived from P&E's Murray Brook factors against the recoveries stated beside them
+# (Cu 80%, Zn 87%, Pb 75%, Ag 90%).
+NET_OF_CHARGES = {"Cu": 0.875, "Pb": 0.587, "Zn": 0.414, "Ag": 1.02, "Au": 0.97,
+                  "Ni": 0.75, "Co": 0.70, "Mo": 0.80, "Sn": 0.85, "Pt": 0.85, "Pd": 0.85}
+
+
+def indicative(elements, units=None, prices=None, fx=1.0, currency="US$",
+               recoveries=None):
     """An NSR formula from metal prices, for a deposit whose reports state none.
 
     This is an estimate of an estimate — smelter terms are specific to a concentrate
@@ -203,7 +213,13 @@ def indicative(elements, units=None, prices=None, fx=1.0, currency="US$"):
         p = px.get(el)
         if not p:
             continue
-        r = REALISATION.get(el, 0.75)
+        rec = (recoveries or {}).get(el)
+        if rec and 20.0 <= float(rec) <= 99.9:
+            # the report says what this plant recovers; only the smelter terms are
+            # left to assume
+            r = float(rec) / 100.0 * NET_OF_CHARGES.get(el, 0.80)
+        else:
+            r = REALISATION.get(el, 0.75)
         u = units.get(el) or ("g/t" if el in GPT else "%")
         if u == "%":
             f = p * LB_PER_T / 100.0 * r          # $/t of rock per 1% metal
@@ -214,10 +230,14 @@ def indicative(elements, units=None, prices=None, fx=1.0, currency="US$"):
         factors[el], used[el] = round(f * fx, 4), u
     if len(factors) < 2:
         return None
+    said = sorted(el for el in factors if (recoveries or {}).get(el))
     return {"factors": factors, "units": used, "currency": currency,
-            "approximate": True,
-            "source": "indicative: metal prices less typical recovery, payables and "
-                      "treatment charges"}
+            "approximate": True, "recoveries": {k: v for k, v in (recoveries or {}).items()
+                                                if k in factors} or None,
+            "source": "indicative: metal prices less "
+                      + (f"the recoveries this project's report states for "
+                         f"{', '.join(said)}, " if said else "typical recovery, ")
+                      + "payables and treatment charges"}
 
 
 def value(grades, model):

@@ -406,7 +406,7 @@ function drawBreakdown(){
     (val&&order.some(e=>V.metals[e]&&V.metals[e].priced===false)
       ? `<p class="note">* in the rock, but paid nothing in this formula — the report prices only
          ${esc(Object.keys(V.factors||{}).join(", "))}.</p>` : "")+
-    tiers+cmp+trackRecord();
+    tiers+methodSplit()+cmp+trackRecord();
   box.querySelectorAll("button[data-bm]").forEach(b=>b.onclick=()=>{BMCUT=+b.dataset.bm;BMUSER=true;drawBreakdown();});
   box.querySelectorAll("button[data-basis]").forEach(b=>b.onclick=()=>{
     BMBASIS=b.dataset.basis;BMCUT=null;BMUSER=false;drawBreakdown();});
@@ -416,6 +416,44 @@ function drawBreakdown(){
     BMCUT=best;BMUSER=true;drawBreakdown();};
   box.querySelectorAll("tr[data-el]").forEach(tr=>tr.onclick=()=>{if(M.elements[tr.dataset.el])setEl(tr.dataset.el);});
 }
+/* Open pit or underground — how the tonnage would actually be presented.
+   A tonne near surface and a tonne at depth are not mined for the same money, so a
+   company reports them separately at different cut-offs and so does this. */
+function methodSplit(){const B=M.by_metal,S=B&&B.method;if(!S||!S.open_pit)return"";
+  const cur=(B.value||{}).currency||"$";
+  const row=(k,lbl)=>{const r=S[k];if(!r)return"";
+    const cut=S.basis==="value"?`${cur}${fmtN(r.cutoff,r.cutoff<10?1:0)}/t`:fmtG(r.cutoff,B.basis_unit||"g/t");
+    const mets=(B.order||[]).filter(e=>r.metals&&r.metals[e]).slice(0,5)
+      .map(e=>`${esc(e)} ${fmtG(r.metals[e].grade,r.metals[e].unit)}`).join(" · ");
+    return `<tr><td style="cursor:default">${lbl}</td><td class="n" style="cursor:default">≥ ${esc(cut)}</td>`+
+      `<td class="n" style="cursor:default"><b>${fmtT(r.tonnes)}</b></td></tr>`+
+      (mets?`<tr><td colspan="3" class="note" style="padding:0 4px 6px;cursor:default">${mets}</td></tr>`:"");};
+  return `<div class="bdhead" style="margin-top:10px">How it would be mined</div>`+
+    `<table class="bd"><colgroup><col style="width:34%"><col style="width:30%"><col style="width:36%"></colgroup>`+
+    `<tbody>${row("open_pit","Open pit")}${row("underground","Underground")}</tbody></table>`+
+    `<p class="note">${esc(S.note||"")}</p>`;}
+/* What the rock is and what you would have to do to it to get the metal out.
+   Two deposits of the same grade are not the same asset if one heap leaches and the
+   other is refractory and needs an autoclave. */
+function metallurgy(){const T=M.metallurgy;if(!T||!T.summary)return"";
+  const rec=T.recoveries||{};
+  const rows=Object.keys(rec).sort((a,b)=>rec[b]-rec[a])
+    .map(e=>`<div class="kv"><span>${esc(e)} recovery</span><b>${rec[e]}%</b></div>`).join("");
+  return `<p class="lab" style="margin-top:10px">Ore and processing</p>`+
+    `<p class="note" style="margin-top:2px">${esc(T.summary[0].toUpperCase()+T.summary.slice(1))}.</p>`+
+    rows+`<p class="note">As stated in this project's technical report. Recoveries are
+      what the report assumes, not what a plant has achieved.</p>`;}
+/* Anything implausible that survived the repairs, said out loud. A model that is
+   wrong and says so is worth more than one that is wrong and does not. */
+function integrity(){const F=M.integrity;if(!F||!F.length)return"";
+  const bad=F.filter(f=>f.level==="bad"), other=F.filter(f=>f.level!=="bad");
+  let h="";
+  if(bad.length)h+=`<div class="warn"><b>This model has a problem.</b><ul>`+
+    bad.map(f=>`<li>${esc(f.message)}</li>`).join("")+
+    `</ul><span>Treat its grades and tonnages as unreliable until this is fixed.</span></div>`;
+  if(other.length)h+=`<div class="fixnote"><b>Repaired on the way in:</b><ul>`+
+    other.map(f=>`<li>${esc(f.message)}</li>`).join("")+`</ul></div>`;
+  return h;}
 /* What this method is worth where the answer is known.
 
    A model of a deposit with no filed resource cannot be checked against anything,
@@ -480,6 +518,14 @@ function drawParams(){const E=M.elements[EL],B=E.blocks,box=$("params");
     ["Search shape",q.anisotropy?("along the body "+q.anisotropy[0]+" · across "+q.anisotropy[2]):"isotropic"],
     ["Unsampled hole length",q.gap_fill===false?"not composited":"composited at zero grade"],["Blocks estimated",fmtN(B.n_total)]]
     .map(([k,v])=>`<div class="kv"><span>${k}</span><b>${esc(v)}</b></div>`).join("")
+    +(function(){const C=E.check;if(!C)return"";
+       const bits=[];
+       if(C.bias_pct!=null)bits.push(`<div class="kv"><span>Bias vs nearest-neighbour</span><b>${C.bias_pct>0?"+":""}${C.bias_pct}%</b></div>`);
+       if(C.dilution_pct!=null)bits.push(`<div class="kv"><span>Grade lost to compositing</span><b>${C.dilution_pct}%</b></div>`);
+       return bits.length?bits.join("")+`<p class="note">Two checks that need no published resource to be useful.
+         Inverse distance smooths and nearest neighbour does not, so a large gap between them means this model is
+         smoothing rather than interpolating. The second is what filling un-assayed ground at zero grade costs:
+         it bounds the deposit, and this is the price.</p>`:"";})()
     +(ST.label?`<p class="note">${ST.why?esc(ST.why[0].toUpperCase()+ST.why.slice(1))+". ":""}${ST.note?esc(ST.note)+" ":""}
        The style sets the density, how far mineralisation is carried from an intercept and how big a block may be —
        a narrow vein and a massive sulphide lens are not the same rock and cannot be modelled as though they were.
@@ -737,6 +783,8 @@ function updHud(){const mpp=2*dist*Math.tan(camera.fov*Math.PI/360)/Hh();const n
 
 /* ---------------- start ---------------- */
 drawEls();buildIntervals();drawLegend();drawSources();buildBlocks();setupGT();drawData();drawBreakdown();drawSize();
+{const ib=$("intbox");if(ib)ib.innerHTML=integrity();
+ const mb=$("metbox");if(mb)mb.innerHTML=metallurgy();}
 resize();F=framing();view("3d",0);
 addEventListener("resize",()=>{resize();place();});
 if(!store.get("seen-pivot",false)){setTimeout(()=>toast(MOBILE?"Double-tap any hole to pivot around it":"Tip: double-click any hole or block to pivot around it",4200),900);store.set("seen-pivot",true);}

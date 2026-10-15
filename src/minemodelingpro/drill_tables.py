@@ -1344,6 +1344,15 @@ def extract_model_params(pages_text):
             out["nsr"] = f
     except Exception:
         pass
+    # what the rock is and what must be done to it: two deposits of the same grade
+    # are not the same asset if one heap leaches and the other needs an autoclave
+    try:
+        from minemodelingpro import metallurgy as _met
+        mm = _met.extract(pages_text)
+        if mm:
+            out["metallurgy"] = mm
+    except Exception:
+        pass
     # what the report calls the deposit — the strongest evidence there is for how
     # it should be modelled, and the report usually says it outright
     try:

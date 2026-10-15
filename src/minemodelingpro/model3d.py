@@ -139,10 +139,18 @@ def min_curve(stations, depth):
     return np.array(md), np.array(x), np.array(y), np.array(z)
 
 
-def _segments(ivs):
+def _segments(ivs, max_grade=None):
     """Resolve overlapping intervals of ONE hole/element into non-overlapping
     segments. Longest first; an interval inside an accepted segment is an
-    'including' and splits it (parent remainder grade back-calculated)."""
+    'including' and splits it (parent remainder grade back-calculated).
+
+    The back-calculation is where impossible grades are manufactured. When the
+    'including' interval is nearly the whole of its host — 9.9 m of a 10 m intercept
+    — the remainder is a tenth of a metre carrying all of the host's remaining
+    metal, and the arithmetic hands back 50% copper off two perfectly ordinary
+    numbers. So the remainder has to be long enough to mean something before it is
+    trusted, and it is capped at what the element can physically reach. These were
+    the last impossible grades left in the gallery after the unit repairs."""
     ivs = sorted(ivs, key=lambda x: (-(x["to"] - x["from"]), x["from"]))
     segs = []            # [from, to, grade]
     for x in ivs:
@@ -159,9 +167,14 @@ def _segments(ivs):
                 overlap = True
         if host is not None:
             L, l = host[1] - host[0], t - f
-            if L - l < 0.05:
+            # a sliver of remainder cannot carry a meaningful back-calculated grade
+            if L - l < max(0.25, 0.08 * L):
+                segs.remove(host)
+                segs.append([host[0], host[1], g] if l / L > 0.8 else host)
                 continue
             rem = max(0.0, (L * host[2] - l * g) / (L - l))
+            if max_grade and rem > max_grade:
+                rem = min(rem, float(max_grade))
             segs.remove(host)
             if f - host[0] > 0.05:
                 segs.append([host[0], f, rem])
@@ -190,6 +203,26 @@ def _spacing(hole_centroids):
 # These are MMP's own confidence tiers on public data, not CIM categories assigned
 # by a qualified person — the model page says so.
 CLASSES = ("well drilled", "moderately drilled", "thinly drilled")
+
+
+def _limit_per_hole(hid_cols, near, max_per_hole):
+    """Keep at most `max_per_hole` samples from any one drill hole.
+
+    Without this an inverse-distance estimate is not really inverse-distance: a
+    single densely sampled hole can supply every one of the nearest neighbours, and
+    the block simply inherits that hole's grade while a second hole fifteen metres
+    away counts for nothing. It is the practical form of the declustering the CIM
+    guidelines ask for — clustered data must not be allowed to carry weight in
+    proportion to how clustered it is. Columns arrive sorted by distance, so the
+    samples kept are the closest ones from each hole."""
+    keep = near.copy()
+    k = hid_cols.shape[1]
+    for j in range(1, k):
+        seen = np.zeros(len(hid_cols), np.int16)
+        for i in range(j):
+            seen += (keep[:, i] & (hid_cols[:, i] == hid_cols[:, j])).astype(np.int16)
+        keep[:, j] &= seen < max_per_hole
+    return keep
 
 
 def _passes(radius, max_gap, min_holes, min_samples, given=None):
@@ -272,6 +305,7 @@ def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None)
     min_samples = int(o.get("min_samples") or 3)
     power = float(o.get("power") if o.get("power") is not None else 2.0)
     method = o.get("method") or "idw"
+    max_per_hole = int(o.get("max_per_hole") or 4)
     passes = _passes(radius, max_gap, min_holes, min_samples, o.get("passes"))
     # the deposit's own frame: searching a vein in world axes bridges between veins
     rot, aniso = (None, None)
@@ -318,6 +352,9 @@ def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None)
         near = np.isfinite(dd)
         iis0 = np.where(near, ii, 0)
         hh = np.where(near, hid[iis0], -1)
+        near = _limit_per_hole(hh, near, max_per_hole)
+        hh = np.where(near, hh, -1)
+        dd = np.where(near, dd, np.inf)
         hs = np.sort(hh, axis=1)
         nuniq = (np.diff(hs, axis=1) != 0).sum(1) + 1 - (hs[:, 0] == -1)
         nsamp = near.sum(1)
@@ -356,6 +393,7 @@ def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None)
     params = {"block": [bx, by, bz], "radius_m": round(radius, 1), "max_gap_m": round(max_gap, 1),
               "spacing_m": round(spacing, 1), "power": power, "min_holes": min_holes,
               "min_samples": min_samples, "method": method, "coarsened": coarsened,
+              "max_per_hole": max_per_hole,
               "anisotropy": [round(float(x), 2) for x in aniso] if aniso is not None else None,
               "passes": [{"range_m": round(r, 1), "max_gap_m": round(gp, 1),
                           "min_holes": mh, "min_samples": ms, "class": CLASSES[i]}
@@ -415,7 +453,7 @@ def grade_at(pts, g, hid, centres, opts=None, params=None):
     return out
 
 
-def _composite_el(per_hole, H, clen, gap_fill=True, margin=None):
+def _composite_el(per_hole, H, clen, gap_fill=True, margin=None, max_grade=None):
     """Downhole composites for one element: fixed-length samples along every hole
     that assayed it, with un-assayed ground carried as zero grade.
 
@@ -436,7 +474,7 @@ def _composite_el(per_hole, H, clen, gap_fill=True, margin=None):
     segs_out = []          # [hole_idx, from, to, grade]
     comp_p, comp_g, comp_h, cent = [], [], [], []
     for hi, ivs in per_hole.items():
-        segs = _segments(ivs)
+        segs = _segments(ivs, max_grade=max_grade)
         if not segs:
             continue
         h = H[hi]
@@ -536,7 +574,8 @@ def _class_split(cls_sorted, ks, bt):
     return out
 
 
-def _by_metal(primary, grids, by_el, units, key2i, H, PS, margin=None, verbose=False):
+def _by_metal(primary, grids, by_el, units, key2i, H, PS, margin=None, style=None,
+              med_w=None, verbose=False):
     """Every metal reported on ONE deposit tonnage.
 
     A deposit is a single body of rock. Estimating each metal on its own blocks
@@ -598,9 +637,11 @@ def _by_metal(primary, grids, by_el, units, key2i, H, PS, margin=None, verbose=F
                     per_hole[key2i[x["key"]]].append(x)
             if len(per_hole) < 2:
                 continue
+            from minemodelingpro import sanity as _SAN
             _, cp, cg, ch, _ = _composite_el(per_hole, H, clen,
                                              gap_fill=PS.get("gap_fill") is not False,
-                                             margin=margin)
+                                             margin=margin,
+                                             max_grade=_SAN.MAX_PLAUSIBLE.get(el.replace("Eq", "")))
             if not cp:
                 continue
             pts = np.concatenate(cp); g = np.concatenate(cg); hid = np.concatenate(ch)
@@ -660,7 +701,63 @@ def _by_metal(primary, grids, by_el, units, key2i, H, PS, margin=None, verbose=F
                     and len(gp["cls"]) == len(gr) else None, verbose=verbose)
     if val:
         out["value"] = val
+    meth = _by_method(gp, by_metal_grades, order_out, units, bt,
+                      val.get("_values") if val else None, cuts, H, style, med_w, PS)
+    if val:
+        val.pop("_values", None)          # a block-length array, not for the page
+    if meth:
+        out["method"] = meth
     return out
+
+
+def _by_method(gp, grades, order, units, bt, value, basis_cuts, H, style, med_w, PS):
+    """The same deposit split the way a company would present it: what an open pit
+    could reach, and what would have to be mined from underground at a higher
+    cut-off. See minemodelingpro.mining_method for why the split is geometric."""
+    from minemodelingpro import mining_method as MM
+    from scipy.spatial import cKDTree
+    try:
+        lo, bsz, ijk = gp["lo"], gp["bsz"], gp["ijk"]
+        if ijk is None or not len(ijk):
+            return None
+        centres = lo + (ijk.astype(np.float32) + 0.5) * np.asarray(bsz, np.float32)
+        # the surface above each block: the nearest collar's elevation
+        cz = np.asarray([[h["x"], h["y"]] for h in H], float)
+        czz = np.asarray([h["z"] for h in H], float)
+        _d, idx = cKDTree(cz).query(centres[:, :2], k=1)
+        is_pit, limit = MM.split(centres, czz[idx], style, med_w)
+        if is_pit is None:
+            return None
+        # the value of each block, when there is a value model, else the basis grade
+        v = value if value is not None else gp["gr"].astype(np.float64)
+        cut = PS.get("value_cutoff") if value is not None else None
+        if cut is None:
+            cut = basis_cuts[1] if len(basis_cuts) > 1 else basis_cuts[0]
+        out = {"limit_m": limit, "note": MM.describe(limit, style),
+               "basis": "value" if value is not None else "grade"}
+        for name, mask in (("open_pit", is_pit), ("underground", ~is_pit)):
+            c = MM.cutoff_for("underground" if name == "underground" else "pit", cut)
+            sel = mask & (np.asarray(v, float) >= c)
+            n = int(sel.sum())
+            row = {"cutoff": c, "tonnes": round(n * bt), "blocks": n, "metals": {}}
+            for el in order:
+                g = grades.get(el)
+                if g is None:
+                    continue
+                gv = np.asarray(g, float)[sel]
+                gv = gv[np.isfinite(gv)]
+                if not len(gv):
+                    continue
+                unit = units.get(el) or ("g/t" if el in PRECIOUS else "%")
+                gm = float(gv.mean()); tn = len(gv) * bt
+                row["metals"][el] = {"grade": round(gm, 4), "unit": unit,
+                                     "contained": round(contained(tn, gm, el, unit)),
+                                     "contained_unit": contained_unit(el, unit),
+                                     "coverage": round(len(gv) / max(n, 1), 3)}
+            out[name] = row
+        return out
+    except Exception:
+        return None
 
 
 def _by_value(grids, grades, order, units, bt, PS, cls=None, verbose=False):
@@ -679,7 +776,9 @@ def _by_value(grids, grades, order, units, bt, PS, cls=None, verbose=False):
     model = PS.get("nsr")
     approx = False
     if not model or not model.get("factors"):
-        model = NSR.indicative([e for e in order], {e: units.get(e) for e in order})
+        met = PS.get("metallurgy") or {}
+        model = NSR.indicative([e for e in order], {e: units.get(e) for e in order},
+                               recoveries=(met or {}).get("recoveries"))
         approx = True
     if not model:
         return None
@@ -727,7 +826,7 @@ def _by_value(grids, grades, order, units, bt, PS, cls=None, verbose=False):
     nsr_avg = []
     for k in ks:
         nsr_avg.append(round(float(vs[:k].mean()), 2) if k > 0 else None)
-    return {"currency": model.get("currency") or "$", "formula": NSR.describe(model),
+    return {"_values": v, "currency": model.get("currency") or "$", "formula": NSR.describe(model),
             "classes": _class_split(cls[order_v] if cls is not None else None, ks, bt),
             "factors": model["factors"], "approximate": bool(approx or model.get("approximate")),
             "covers": NSR.covered(have, model), "source": model.get("source"),
@@ -758,6 +857,15 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
             units.setdefault(x["el"], x.get("unit") or ("g/t" if x["el"] in PRECIOUS else "%"))
     if not by_el:
         raise ValueError("no intervals on located holes")
+    # repair or drop grades that cannot be true before they reach a model: a column
+    # of parts per million read as per cent sets the grade, the cut-off, the cap and
+    # the tonnage, all wrong, and nothing downstream can tell
+    from minemodelingpro import sanity as SANITY
+    integrity, _dropped = SANITY.fix_intervals(by_el, verbose=verbose)
+    for _el in _dropped:
+        units.pop(_el, None)
+    if not by_el:
+        raise ValueError("every element's grades were impossible for their unit")
     # primary element: the published resource's commodity when known, else most data
     res_unit = next((r.get("contained_unit") for r in ds.get("resources") or []), None)
     res_el = next((r.get("element") for r in ds.get("resources") or [] if r.get("element")), None)
@@ -895,7 +1003,7 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
         clen = float(PS.get("composite_m") or max(1.0, min(blk[2], 5.0)))
         segs_out, comp_p, comp_g, comp_h, cent = _composite_el(
             per_hole, H, clen, gap_fill=PS.get("gap_fill") is not False,
-            margin=gap_margin)
+            margin=gap_margin, max_grade=SANITY.MAX_PLAUSIBLE.get(el.replace("Eq", "")))
         if not segs_out:
             continue
         grades = [s[3] for s in segs_out]
@@ -916,6 +1024,9 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
             tcp = float(PS.get("top_cut_pct") or 99.5)
             top = float(PS.get("top_cut") or (float(np.percentile(g[g > 0], tcp))
                                               if (g > 0).sum() > 20 else float(g.max())))
+            top, _capwhy = SANITY.top_cut_floor(g[g > 0], top)
+            if _capwhy:
+                integrity.append({"level": "repaired", "element": el, "message": _capwhy})
             g = np.minimum(g, top)
             spacing = float(PS.get("spacing_m") or _spacing(cent))
             eopts = dict(PS)
@@ -960,6 +1071,9 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                 show *= 1.25
                 keep = gr >= show
             grids[el].update({"bt": bt, "dens": dens, "unit": unit})
+            if el == els[0]:
+                el_out["check"] = _self_check(el, segs_out, pts, g, hid, lo, bsz,
+                                              ijk, gr, params)
             el_out["blocks"] = {"cls": (_b64(bcls[keep].astype(np.uint8))
                                        if len(bcls) == len(gr) else None),
                                 "classes": list(CLASSES),
@@ -977,7 +1091,7 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
     primary = els[0] if els[0] in elements else next(iter(elements))
     try:
         by_metal = _by_metal(primary, grids, by_el, units, key2i, H, PS,
-                             margin=gap_margin, verbose=verbose)
+                             margin=gap_margin, style=skey, med_w=med_w, verbose=verbose)
     except Exception as e:                   # never lose a model over its summary table
         by_metal = None
         print(f"[model3d] {ds.get('slug')}: by_metal failed: {type(e).__name__}: {str(e)[:140]}",
@@ -1013,14 +1127,16 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
             pm, px, py, pz = h["path"]
             row.append([round(float(v), 2) for t in zip(pm, px, py, pz) for v in t])   # md,dx,dy,dz,...
         hole_rows.append(row)
-    return {
+    return _finish({
         "slug": ds["slug"], "project": ds["name"], "company": ds.get("company"), "region": region,
         "kinds": ds.get("kinds"), "updated": ds.get("updated"),
         "generated": datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z",
         "frame": {"kind": fr["kind"], "lat0": round(lat0, 6) if geo else None, "lon0": round(lon0, 6) if geo else None,
                   "grid": fr.get("grid")},
         "holes": hole_rows, "elements": elements, "primary": primary, "by_metal": by_metal,
-        "style": style_info, "track_record": _validation(),
+        "style": style_info, "metallurgy": PS.get("metallurgy") or ds.get("metallurgy"),
+        "track_record": _validation(),
+        "integrity": integrity or None,
         "settings": {k: v for k, v in PS.items() if k in PARAMS.ALL},
         "param_sources": {k: (base_src.get(k) if o == "auto" else o)
                           for k, o in PORIGIN.items() if k in PARAMS.ALL},
@@ -1031,7 +1147,61 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                    "blocks": (elements[primary].get("blocks") or {}).get("n_total", 0),
                    "reports": sum(1 for s in ds["sources"] if s["kind"].startswith("NI")),
                    "releases": sum(1 for s in ds["sources"] if s["kind"] == "news release")},
-    }
+    })
+
+
+def _self_check(el, segs, pts, g, hid, lo, bsz, ijk, gr, params):
+    """Checks that need no filed statement to be useful.
+
+    This is the case MMP exists for: a deposit nobody has published a resource on.
+    Nothing external can be compared against, but two internal comparisons still
+    say a great deal, and the CIM guidelines ask for both.
+
+    **Global bias against a nearest-neighbour model.** Inverse distance smooths;
+    nearest neighbour does not. If the two disagree badly on the mean grade of the
+    same blocks, the estimate is smoothing or diluting rather than interpolating.
+
+    **Composites against raw assays.** Compositing is supposed to regularise the
+    sampling, not change what it says. MMP fills un-assayed ground with zero grade
+    to bound the deposit, and this measures what that costs — the dilution the
+    accuracy scoring eventually found the hard way, visible here directly."""
+    out = {}
+    try:
+        if len(gr):
+            centres = lo + (ijk.astype(np.float32) + 0.5) * np.asarray(bsz, np.float32)
+            o = dict(params); o["method"] = "nn"
+            nn = grade_at(pts, g, hid, centres, params=o)
+            ok = np.isfinite(nn)
+            if ok.sum() > 50:
+                a, b = float(gr[ok].mean()), float(nn[ok].mean())
+                out["idw_mean"] = round(a, 4)
+                out["nn_mean"] = round(b, 4)
+                out["bias_pct"] = round((a - b) / b * 100.0, 1) if b else None
+    except Exception:
+        pass
+    try:
+        raw = np.asarray([s[3] for s in segs], float)
+        wts = np.asarray([max(s[2] - s[1], 0.01) for s in segs], float)
+        if len(raw) and wts.sum():
+            rm = float((raw * wts).sum() / wts.sum())
+            cm = float(g.mean()) if len(g) else 0.0
+            out["assay_mean"] = round(rm, 4)
+            out["composite_mean"] = round(cm, 4)
+            out["dilution_pct"] = round((1 - cm / rm) * 100.0, 1) if rm else None
+    except Exception:
+        pass
+    return out or None
+
+
+def _finish(model):
+    """A last look for anything implausible that survived the repairs, so a model
+    that is wrong says so instead of being presented as sound."""
+    from minemodelingpro import sanity as SANITY
+    flags = list(model.get("integrity") or [])
+    flags += SANITY.check_model(model)
+    model["integrity"] = flags or None
+    model["ok"] = not any(f.get("level") == "bad" for f in flags)
+    return model
 
 
 def hole_xyz(h, md):

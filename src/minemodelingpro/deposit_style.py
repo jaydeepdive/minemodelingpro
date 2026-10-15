@@ -53,7 +53,7 @@ import numpy as np
 STYLES = {
     "vein": {
         "label": "narrow vein system",
-        "density": 2.60, "density_per_pct": 0.0, "density_drivers": (),
+        "density": 2.75, "density_per_pct": 0.0, "density_drivers": (),
         "halo_k": 3.0, "halo_max_m": 12.0, "block": [5, 5, 5],
         "anisotropy": (1.0, 0.90, 0.22),
         "note": "Narrow, high-contrast bodies. Mineralisation is not assumed to "
@@ -85,7 +85,7 @@ STYLES = {
     },
     "skarn": {
         "label": "skarn / replacement",
-        "density": 3.20, "density_per_pct": 0.03, "density_drivers": ("Cu", "Pb", "Zn", "Fe"),
+        "density": 2.90, "density_per_pct": 0.03, "density_drivers": ("Cu", "Pb", "Zn", "Fe"),
         "halo_k": 2.5, "halo_max_m": 40.0, "block": [10, 10, 10],
         "anisotropy": (1.0, 0.92, 0.75),
     },
@@ -112,11 +112,11 @@ STYLES = {
     },
     "laterite": {
         "label": "laterite / saprolite",
-        "density": 1.70, "density_per_pct": 0.0, "density_drivers": (),
+        "density": 2.45, "density_per_pct": 0.0, "density_drivers": (),
         "halo_k": 4.0, "halo_max_m": 80.0, "block": [25, 25, 2],
         "anisotropy": (1.0, 1.00, 0.15),
-        "note": "A weathering blanket — wide, flat and light. The low density is not "
-                "a rounding matter: it is most of the tonnage.",
+        "note": "A weathering blanket — wide, flat and lighter than fresh rock. The "
+                "density is not a rounding matter: it is most of the tonnage.",
     },
     "phosphate": {
         "label": "sedimentary phosphate",
@@ -139,7 +139,8 @@ DEFAULT = "bulk"
 _WORDS = [
     ("vms", r"volcanogenic massive sulphide|\bVMS\b|volcanic[- ]hosted massive sulphide|\bVHMS\b"),
     ("sedex", r"\bSEDEX\b|sediment[- ]hosted (?:massive sulphide|lead[- ]zinc)|Mississippi Valley|\bMVT\b"),
-    ("laterite", r"\blaterit|saprolit|nickel laterite|bauxit"),
+    ("laterite", r"(?:nickel|ni|cobalt|co)[- ]laterit|laterit\w*\s+(?:nickel|ni\b|deposit\s+of\s+nickel)|"
+                 r"\bbauxit|limonite\s+zone|garnierite"),
     ("iron", r"iron formation|\bBIF\b|banded iron|taconite|magnetite deposit"),
     ("pegmatite", r"pegmatit|\bLCT\b|spodumene"),
     ("phosphate", r"phosphorit|sedimentary phosphate|\bphosphate (?:deposit|horizon)"),

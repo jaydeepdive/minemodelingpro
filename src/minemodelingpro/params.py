@@ -19,6 +19,8 @@ Keys (all optional; anything absent falls back to the data-driven default):
   spacing_m        override the measured drill spacing that drives the two above
   min_holes        distinct holes needed to estimate a block (default 2)
   min_samples      composites needed within the radius (default 3)
+  max_per_hole     most samples one drill hole may contribute to a block (default 4) —
+                   declustering: without it a single hole can supply every neighbour
   power            inverse-distance power (default 2)
   method           "idw" (default) | "nn" (nearest neighbour) | "mean" (equal weights)
   top_cut          grade cap applied to composites (default: 99.5th percentile)
@@ -53,19 +55,20 @@ PATH = os.path.join(_ROOT, "data", "keep", "mmp_model_params.json")
 
 NUMERIC = {"composite_m", "radius_m", "max_gap_m", "spacing_m", "power", "top_cut", "top_cut_pct",
            "density", "default_cutoff", "value_cutoff", "gap_fill_margin_m"}
-INTEGER = {"min_holes", "min_samples", "max_elements"}
+INTEGER = {"min_holes", "min_samples", "max_elements", "max_per_hole"}
 BOOLEAN = {"gap_fill"}
 LISTS = {"block", "elements", "bins"}
 STRINGS = {"method", "name", "company", "note", "deposit_style"}
 # the net-smelter-return formula: {"factors": {el: $/t per unit grade}, "units": ...}.
 # Not a number and not a list, so it travels as an object of its own.
-OBJECTS = {"nsr"}
+OBJECTS = {"nsr", "metallurgy"}
 ALL = NUMERIC | INTEGER | BOOLEAN | LISTS | STRINGS | OBJECTS
 
 LIMITS = {"block": (0.5, 200.0), "composite_m": (0.25, 50.0), "radius_m": (5.0, 2000.0),
           "max_gap_m": (1.0, 1000.0), "spacing_m": (1.0, 2000.0), "power": (0.0, 8.0),
           "top_cut": (0.0, 1e6), "top_cut_pct": (50.0, 100.0), "density": (1.0, 8.0),
           "min_holes": (1, 20), "min_samples": (1, 100), "max_elements": (1, 8),
+          "max_per_hole": (1, 24),
           "default_cutoff": (0.0, 1e6), "value_cutoff": (0.0, 1e5), "bins": (0.0, 1e6),
           "gap_fill_margin_m": (1.0, 1000.0)}
 
@@ -147,7 +150,11 @@ def validate(values):
             errors.append(f"unknown parameter '{k}'")
             continue
         try:
-            if k in OBJECTS:
+            if k == "metallurgy":
+                if not isinstance(v, dict):
+                    errors.append("metallurgy: expected an object")
+                    continue
+            elif k in OBJECTS:
                 if not isinstance(v, dict) or not isinstance(v.get("factors"), dict):
                     errors.append(f"{k}: expected an object with a 'factors' map")
                     continue
