@@ -1556,6 +1556,9 @@ def _validation():
             return None
         return {"n": h["n"], "median_ratio": h.get("median_ratio"),
                 "within_1_5x": h.get("within_1_5x"), "within_2x": h.get("within_2x"),
+                "covered_n": h.get("covered_n"),
+                "covered_median": h.get("covered_median"),
+                "covered_within_1_5x": h.get("covered_within_1_5x"),
                 "tiers": (d.get("tiers") or {}).get("n") and {
                     "n": d["tiers"]["n"],
                     "filed_mi_share": d["tiers"].get("filed_mi_share_median"),

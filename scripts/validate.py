@@ -419,6 +419,9 @@ def stamp(site, head, cal):
            "within_1_5x": head.get("within_1_5x"), "within_2x": head.get("within_2x"),
            "grade_matched_n": head.get("grade_matched_n"),
            "grade_matched_median": head.get("grade_matched_median"),
+           "covered_n": head.get("covered_n"),
+           "covered_median": head.get("covered_median"),
+           "covered_within_1_5x": head.get("covered_within_1_5x"),
            "tiers": ({"n": cal["n"], "filed_mi_share": cal.get("filed_mi_share_median"),
                       "mmp_top2_share": cal.get("mmp_top2_share_median")}
                      if cal.get("n") else None)}
@@ -475,6 +478,10 @@ def main():
     if head.get("grade_matched_n"):
         print(f"  AT THEIR GRADE     n={head['grade_matched_n']}  median {head['grade_matched_median']}x"
               f"  within 1.5x {head['grade_matched_within_1_5x']}  2x {head['grade_matched_within_2x']}")
+    if head.get("covered_n"):
+        print(f"  WHERE WE HOLD IT   n={head['covered_n']}  median {head['covered_median']}x"
+              f"  within 1.5x {head['covered_within_1_5x']}  2x {head['covered_within_2x']}"
+              f"  (>= {int(head['covered_min_coverage'] * 100)}% of the body the report describes)")
     print(f"  tier calibration           {cal.get('n', 0)} project(s)"
           + (f", filed M+I share {cal['filed_mi_share_median']} vs MMP top-two {cal['mmp_top2_share_median']}"
              if cal.get("n") else ""))

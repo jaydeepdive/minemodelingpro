@@ -1007,6 +1007,50 @@ _MAX_CONTAINED_T = {"Au": 6_000.0, "AuEq": 8_000.0, "Ag": 120_000.0, "AgEq": 150
 _CUNIT_T = {"oz": 1.0 / 32_150.7, "lb": 1.0 / 2204.62262, "t": 1.0}
 
 
+# The most ORE one deposit of a given metal can plausibly hold. Copper, iron,
+# phosphate, bauxite and lithium brine get no ceiling: a porphyry or a laterite of
+# ten billion tonnes is ordinary for them. The rest have real limits — the largest
+# gold-only ore bodies run to a couple of billion tonnes at very low grade, the
+# whole Sudbury basin to about a billion tonnes of nickel ore — and a statement
+# above them is a column read a thousand times too large. The arithmetic cannot
+# catch that, because scaling tonnes and contained metal together keeps the row
+# internally consistent, so the limit has to come from what deposits actually are.
+_MAX_ORE_T = {"Au": 2.5e9, "AuEq": 3.0e9, "Ag": 2.0e9, "AgEq": 2.5e9,
+              "Zn": 1.0e9, "ZnEq": 1.2e9, "Pb": 1.0e9, "Ni": 2.0e9,
+              "Co": 2.0e9, "Mo": 5.0e9, "Sn": 1.0e9, "WO3": 5.0e8,
+              "U3O8": 1.0e9, "Pt": 1.5e9, "Pd": 1.5e9, "PGM": 1.5e9,
+              "PGE": 1.5e9, "3E": 1.5e9}
+
+
+def ore_plausible(el, tonnes):
+    """Whether a deposit of this metal can hold this much ore at all."""
+    cap = _MAX_ORE_T.get(el)
+    return True if not cap or not tonnes else float(tonnes) <= cap
+
+
+def grade_ceiling_ok(el, grade, unit):
+    """A deposit does not average a grade no rock reaches."""
+    if not el or grade is None:
+        return True
+    from minemodelingpro import sanity as _S
+    base = str(el).replace("Eq", "")
+    # a metal is often reported as its oxide, and the ceiling is tabulated under
+    # whichever form the corpus uses most
+    base = {"Li": "Li2O", "Ta": "Ta2O5", "U": "U3O8", "V": "V2O5",
+            "W": "WO3", "P": "P2O5", "Al": "Al2O3", "Ti": "TiO2"}.get(base, base)
+    cap = _S.MAX_PLAUSIBLE.get(base)
+    if not cap:
+        return True
+    g = float(grade)
+    if unit == "ppm" and _DEFAULT_UNIT.get(el) == "%":
+        g /= 10_000.0
+    elif unit == "ppb":
+        g /= 1_000.0
+    elif unit == "oz/t":
+        g *= 34.2857
+    return g <= cap
+
+
 def contained_plausible(el, contained, cunit):
     """Whether a statement's contained metal is within what a deposit can hold."""
     cap = _MAX_CONTAINED_T.get(el)
@@ -1225,9 +1269,9 @@ def _res_by_header(lines, ctx):
                         continue            # the columns do not agree: not this table
                 else:
                     C = calc
-                if not res_grade_ok(el, G, unit):
+                if not res_grade_ok(el, G, unit) or not grade_ceiling_ok(el, G, unit):
                     continue
-                if not contained_plausible(el, C, kind):
+                if not contained_plausible(el, C, kind) or not ore_plausible(el, T):
                     continue
                 if kind == "oz" and C > 1.5e8:
                     continue
@@ -1345,9 +1389,11 @@ def extract_resources(doc, pages_text):
             if not (_RES_MIN_T <= T * tmul <= 2e10):
                 continue
             _el0 = _page_element(t, kind, G)
-            if not res_grade_ok(_el0, G, grade_unit_for(kind)):
+            _u0 = grade_unit_for(kind)
+            if not res_grade_ok(_el0, G, _u0) or not grade_ceiling_ok(_el0, G, _u0):
                 continue
-            if not contained_plausible(_el0, C * cmul, kind):
+            if not contained_plausible(_el0, C * cmul, kind) \
+                    or not ore_plausible(_el0, T * tmul):
                 continue
             if kind == "oz" and (C * cmul > 1.5e8 or G > 60):
                 continue
