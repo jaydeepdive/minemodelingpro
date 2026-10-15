@@ -542,6 +542,26 @@ function drawSources(){const S=M.sources||[],L=$("srclist");$("src-n").textConte
   L.innerHTML=S.map(s=>{const href=bestUrl(s),pdf=href&&href===s.archive;
     const extra=pdf&&s.url&&!stale(s.url)?` · <a href="${esc(s.url)}" target="_blank" rel="noopener">listing</a>`:"";
     return `<a class="${s.kind==="news release"?"":"rep"}" href="${esc(href||"#")}" target="_blank" rel="noopener">${esc(s.title||s.kind)}<br><em>${esc(s.kind)}${s.date?" · "+esc(String(s.date).slice(0,10)):""}${s.intervals!=null?" · "+s.collars+" collars, "+s.intervals+" intervals":""}${pdf?" · opens the filed PDF":""}${extra}</em></a>`;}).join("");}
+/* ---- how much of the deposit this model reaches -------------------------
+   The measured driver of MMP's error is reach, not grade: across the projects
+   with a filed statement, the error tracks the share of the deposit's volume the
+   model covers at all. A report describes its body in prose — "traced over
+   1,200 m of strike, to 450 m depth, true widths of 2 to 15 m" — and that is a
+   slab we can compare the model against WITHOUT a filed tonnage, which is the
+   case this site exists for. Reported, never applied: it says how much of the
+   deposit the estimate is of, and changes no estimate. */
+function coverNote(){const C=M.coverage;if(!C||!C.stated_text)return"";
+  const mo=C.model||{},r=C.volume_ratio,st=C.stated_tonnes;
+  const pct=r!=null?Math.round(r*100):null;
+  return `<div class="kv"><span>Body described in the report</span><b>${esc(C.stated_text)}</b></div>`
+   +(st?`<div class="kv"><span>That shape would hold</span><b>${fmtN(Math.round(st/1e6))} Mt</b></div>`:"")
+   +(mo.strike_m?`<div class="kv"><span>This model spans</span><b>${fmtN(Math.round(mo.strike_m))} m × ${fmtN(Math.round(mo.depth_m))} m deep</b></div>`:"")
+   +(pct!=null?`<div class="kv"><span>Share of that volume modelled</span><b>${pct<1?"<1":pct}%</b></div>`:"")
+   +`<p class="note">${pct!=null&&pct<25
+      ?`The filings we hold place only part of this deposit in 3D, so the block model covers roughly ${pct<1?"under one":pct} per cent of the body the report describes. Read the grades, not the totals.`
+      :pct!=null&&pct>160
+      ?`The model reaches beyond the body the report describes, so some estimated ground may be outside the mineralised envelope.`
+      :`Broadly the extent the report describes.`} The dimensions are read from the report's own words and the implied tonnage is a slab of that shape at this model's density — an upper bound on one lens, not a resource.</p>`;}
 /* ---------------- what drill data this model is built on ---------------- */
 function drawData(){
   const C=M.counts||{},box=$("datasum");
@@ -553,6 +573,7 @@ function drawData(){
               ["Blocks estimated",fmtN(C.blocks)],
               ["Sources",fmtN((M.sources||[]).length)]];
   box.innerHTML=rows.map(([k,v])=>`<div class="kv"><span>${k}</span><b>${v}</b></div>`).join("")
+    +coverNote()
     +(holes&&assayed/holes<0.6?`<p class="note">Only ${fmtN(assayed)} of ${fmtN(holes)} holes carry assay intervals in the filings we hold — technical reports usually publish a <em>significant intercepts</em> table rather than the full assay file. The block model is therefore estimated around those holes only; the rest are drawn as traces so you can see where the drilling actually is.</p>`:"");
   // every hole, searchable, click to fly to it
   const byHole={};IV.forEach(x=>{const k=x.h.id;(byHole[k]=byHole[k]||[]).push(x);});

@@ -1073,32 +1073,61 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
             spacing = float(PS.get("spacing_m") or _spacing(cent))
             eopts = dict(PS)
             eopts.setdefault("anisotropy", sdef.get("anisotropy"))
-            # the deposit's own skeleton: mineralised intercepts joined between
-            # neighbouring holes, so the ground a geologist would draw a body
-            # through is inside the model instead of falling outside every search
+            # The deposit's own wireframe: a surface (or, for a body with no
+            # plane to it, a solid) through the mineralised intercepts, inflated
+            # to the thickness those intercepts show, so the ground a geologist
+            # would draw a body through is inside the model instead of falling
+            # outside every search.
+            #
+            # It took four measured corrections to earn its place. It replaced the
+            # composite reach instead of extending it; then membership was never
+            # the binding constraint; then the link reach was measured on composite
+            # spacing rather than on the distance between the intercepts being
+            # linked; and finally — the one that mattered — it joined intercepts
+            # with LINES, and a line has no area. Three holes define a patch of
+            # ground, not two, so inflating a line gave a sleeve a few metres wide
+            # that added nothing to a model whose composites already carried that
+            # halo. Triangulating a surface through the intercepts instead moved
+            # every project with a filed statement towards its filed tonnage and
+            # none away: Aurmac 0.83 -> 1.01, Empire 0.89 -> 1.07, Murray Brook
+            # 0.70 -> 0.74, and the median distance from the filed figure from
+            # 0.391 to 0.371.
+            #
+            # Where a project publishes five mineralised intercepts of a six
+            # hundred million tonne deposit it still adds nothing, and that is
+            # correct: the alpha criterion drops any patch wider than the drill
+            # pattern rather than closing the body over ground nobody has tested.
+            # What those projects need is more drilling in the model, not a longer
+            # reach in the estimator.
             from minemodelingpro import domain as DOM
             dom_pts, dom_info = (None, None)
-            # Off until it earns its place. Built, and three real defects in it
-            # found and fixed by measurement — it replaced the composite reach
-            # instead of extending it, then membership was never the binding
-            # constraint, then the link reach was measured on composite spacing
-            # rather than on the distance between the intercepts being linked.
-            # After all three it still scores exactly neutral (0.519 to 0.519
-            # across the seventeen projects with a filed statement), so it stays
-            # switched off rather than shipping cost and complexity for no measured
-            # gain. domain=true turns it on per project; worth re-measuring once
-            # the enlarged report corpus gives a steadier baseline.
-            if PS.get("domain") is True:
+            if PS.get("domain") is not False:
                 rot_d, an_d = anisotropy(pts, g, sdef.get("anisotropy"))
                 reach = DOM.reach_for(PS.get("link_reach_m") or spacing,
                                       style_reach=sdef.get("halo_max_m", 0) * 3 or None)
-                dom_pts, dom_info = DOM.skeleton(pts, g, hid, max(bins[0], 1e-9),
-                                                 rot=rot_d, aniso=an_d, reach=reach,
-                                                 step=max(float(blk[0]), 3.0))
+                dom_pts, dom_info = DOM.wireframe(
+                    pts, g, hid, max(bins[0], 1e-9), rot=rot_d, aniso=an_d,
+                    reach=reach, step=max(float(blk[0]), 3.0), thickness=med_w)
+                # How THICK the body is, and how far to look for grade inside it.
+                # Both were wrong, which is why the skeleton measured neutral: a
+                # domain the thickness of the composite halo is a sleeve a few
+                # metres wide around a line, and adds almost no rock to a model
+                # whose composites already carry that halo. The body is as thick as
+                # the intercepts say it is; and to estimate the middle of a link the
+                # search has to reach the ends of it, so the reach follows the link
+                # length rather than the drill spacing.
+                # the cloud now fills the body rather than tracing its spine, so
+                # membership is "inside this wireframe", a block's own size, not
+                # "within a halo of a line"
+                dom_r = max(0.75 * float(max(blk)), 2.0)
+                dom_reach = max(float(PS.get("radius_m") or 0.0), 0.6 * float(reach))
+                if dom_info:
+                    dom_info["thickness_m"] = round(dom_r, 1)
+                    dom_info["grade_reach_m"] = round(dom_reach, 1)
             lo, bsz, ijk, gr, params, bcls = estimate_blocks(
                 pts, g, hid, blk, spacing, opts=eopts,
-                domain_pts=dom_pts, domain_radius=gap_margin,
-                domain_reach=(reach if dom_pts is not None else None))
+                domain_pts=dom_pts, domain_radius=dom_r,
+                domain_reach=dom_reach)
             if dom_info:
                 params["domain"] = dom_info
             grids[el] = {"lo": lo, "bsz": bsz, "ijk": ijk, "gr": gr, "clen": clen,
@@ -1166,6 +1195,13 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
         print(f"[model3d] {ds.get('slug')}: by_metal failed: {type(e).__name__}: {str(e)[:140]}",
               flush=True)
 
+    try:
+        _cover = _coverage(ds, grids, primary, (grids.get(primary) or {}).get("dens"))
+    except Exception as e:
+        _cover = None
+        print(f"[model3d] {ds.get('slug')}: coverage failed: {type(e).__name__}: {str(e)[:120]}",
+              flush=True)
+
     # --- terrain over a padded footprint
     terr = None
     xs = [h["x"] for h in H]; ys = [h["y"] for h in H]
@@ -1204,6 +1240,7 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                   "grid": fr.get("grid")},
         "holes": hole_rows, "elements": elements, "primary": primary, "by_metal": by_metal,
         "style": style_info, "metallurgy": PS.get("metallurgy") or ds.get("metallurgy"),
+        "coverage": _cover,
         "track_record": _validation(),
         "integrity": integrity or None,
         "settings": {k: v for k, v in PS.items() if k in PARAMS.ALL},
@@ -1217,6 +1254,60 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                    "reports": sum(1 for s in ds["sources"] if s["kind"].startswith("NI")),
                    "releases": sum(1 for s in ds["sources"] if s["kind"] == "news release")},
     })
+
+
+def _coverage(ds, grids, primary, dens):
+    """How much of the deposit the model actually reaches.
+
+    The measured driver of MMP's error is not grade but reach: across the projects
+    with a filed statement, the grade-matched error correlates at +0.91 with the
+    share of the deposit's volume the model covers at all. Until now that share
+    could only be computed where somebody had filed a tonnage — which is precisely
+    the case MMP does not need help with.
+
+    A report's own description of the body gives the same check without a filed
+    statement: "traced over 1,200 m of strike, to 450 m depth, true widths of 2 to
+    15 m" is a slab, and a model that fills a fiftieth of that slab is reaching a
+    corner of its deposit whatever its grades say. It cuts the other way too — a
+    model far larger than the described body is estimating ground the report says
+    is barren.
+
+    Reported, never applied: this does not change an estimate, it says how much of
+    the deposit the estimate is of."""
+    from minemodelingpro import extent as EXT
+    st = ds.get("extent") or None
+    g = (grids or {}).get(primary) or {}
+    ijk, bsz = g.get("ijk"), g.get("bsz")
+    out = {}
+    if st:
+        out["stated"] = st
+        out["stated_text"] = EXT.describe(st)
+        out["stated_from"] = ds.get("extent_from")
+    if ijk is not None and len(ijk) and bsz is not None:
+        bv = float(bsz[0]) * float(bsz[1]) * float(bsz[2])
+        c = ijk.astype(float) * np.asarray(bsz, float)
+        span = c.max(0) - c.min(0) + np.asarray(bsz, float)
+        # the body's own long axis, not the map's: a vein striking north-east spans
+        # the same distance in x and y while being one body half as long
+        horiz = float(np.hypot(span[0], span[1]))
+        out["model"] = {"volume_m3": round(len(ijk) * bv),
+                        "strike_m": round(max(float(span[0]), float(span[1])), 1),
+                        "diagonal_m": round(horiz, 1),
+                        "depth_m": round(float(span[2]), 1),
+                        "blocks": int(len(ijk))}
+    sv = EXT.volume(st) if st else None
+    if sv:
+        out["stated_volume_m3"] = round(sv)
+        if dens:
+            out["stated_tonnes"] = round(sv * float(dens))
+        mv = (out.get("model") or {}).get("volume_m3")
+        if mv:
+            out["volume_ratio"] = round(mv / sv, 3)
+    sm = (st or {}).get("strike", {}).get("median") if st else None
+    mm = (out.get("model") or {}).get("strike_m")
+    if sm and mm:
+        out["strike_ratio"] = round(mm / float(sm), 3)
+    return out or None
 
 
 def _self_check(el, segs, pts, g, hid, lo, bsz, ijk, gr, params):

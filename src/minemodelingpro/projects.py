@@ -823,6 +823,7 @@ def _materialise(p, news_holes, news_ivs, ov):
     for r in imported:
         ds_params.update(r.get("params") or {})
     rp, rp_from = _report_params(reports)
+    ext, ext_from = _report_extent(reports)
     return {"slug": slug, "name": name, "company": company, "region": region,
             "params": ds_params or None,
             "private": any(r.get("private") for r in imported) or None,
@@ -830,6 +831,7 @@ def _materialise(p, news_holes, news_ivs, ov):
             "frame": frame, "holes": holes, "intervals": intervals, "sources": sources,
             "resources": res,
             "report_params": rp or None, "report_params_from": rp_from or None,
+            "extent": ext or None, "extent_from": ext_from or None,
             "report_style": rp.get("deposit_style"),
             "metallurgy": rp.get("metallurgy"),
             "report_block": rp.get("block"),
@@ -850,6 +852,22 @@ def _recency(r):
     if y:
         return "%04d-07-01" % int(y)
     return str(r.get("date") or "")[:10]
+
+
+def _report_extent(reports):
+    """The body's stated dimensions, from the most recent report that gives them.
+
+    Each dimension is taken whole from one report rather than assembled from
+    several: a strike length from a 2024 resource update and a true width from a
+    2011 property report describe different interpretations of the deposit, and
+    multiplying them together describes neither."""
+    rpt = [r for r in reports if r.get("source") != "import"]
+    rpt.sort(key=_recency, reverse=True)
+    for r in rpt:
+        e = r.get("extent")
+        if e and (e.get("strike") or e.get("dip") or e.get("depth")):
+            return e, {"id": r.get("id"), "date": _recency(r) or None}
+    return None, None
 
 
 def _report_params(reports):

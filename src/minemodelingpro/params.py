@@ -29,10 +29,10 @@ Keys (all optional; anything absent falls back to the data-driven default):
   gap_fill         True (default): unreported hole length is composited as zero grade
   gap_fill_margin_m  how far those zeros run past a reported interval (default: one
                    drill spacing) — they bound the deposit, they should not dilute it
-  domain           join mineralised intercepts between neighbouring holes into a
-                   body and estimate inside it, as well as within a search distance
-                   of a sample. Default OFF: it measures neutral so far and is kept
-                   for re-measurement against the enlarged report corpus
+  domain           triangulate a body through the mineralised intercepts and
+                   estimate inside it, as well as within a search distance of a
+                   sample — the wireframe a qualified person would draw. Default
+                   ON; set False to estimate only around the samples themselves
   link_reach_m     how far two holes may be joined (default: about two drill spacings)
   default_cutoff   cut-off the model page opens at
   value_cutoff     dollars-per-tonne cut-off (the report's NSR cut-off by default)

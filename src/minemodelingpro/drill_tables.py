@@ -38,7 +38,7 @@ from minemodelingpro import holeid
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 OUT_DIR = os.path.join(_ROOT, "data", "keep", "mmp_reports")
-EXTRACTOR = "dt17"
+EXTRACTOR = "dt18"
 
 # ------------------------------------------------------------------ elements
 _EL = {"au": "Au", "gold": "Au", "ag": "Ag", "silver": "Ag", "cu": "Cu", "copper": "Cu",
@@ -74,9 +74,68 @@ def num(s):
 
 
 # ------------------------------------------------------------ page -> rows/cells
+class TextDoc:
+    """A stand-in for a PDF, backed by text that already has its layout preserved.
+
+    The MineTerminalPro partner API serves every report's text page by page, run
+    through ``pdftotext -layout``, which keeps table columns aligned as runs of
+    spaces. That is enough for every extractor here, and it means a report can be
+    read without downloading a hundred-megabyte PDF — which matters at four and a
+    half thousand reports. ``doc[n]`` yields the page's text, and ``page_lines``
+    knows what to do with a string."""
+
+    def __init__(self, pages):
+        self.pages = list(pages or [])
+
+    def __len__(self):
+        return len(self.pages)
+
+    def __iter__(self):
+        return iter(self.pages)
+
+    def __getitem__(self, i):
+        return self.pages[i]
+
+    @property
+    def page_count(self):
+        return len(self.pages)
+
+
+def _lines_from_layout(text):
+    """Cells from layout-preserved text: two or more spaces separate columns.
+
+    A single space is inside a cell ("Measured + Indicated"), two or more is the
+    gutter between columns — which is exactly the convention pdftotext -layout
+    writes and the same distinction page_lines makes from word gaps."""
+    out = []
+    for i, raw in enumerate(str(text or "").split("\n")):
+        if not raw.strip():
+            continue
+        # Column positions come from where the text sits on the line, which is what
+        # -layout preserves; vertical position from the line's order on the page.
+        # The table readers compare these, they do not measure them, so a nominal
+        # line height carries the same information a PDF's baselines do.
+        cells, words = [], []
+        for m in re.finditer(r"\S(?:.*?\S)?(?=\s{2,}|$)", raw):
+            t = m.group(0).strip()
+            if not t:
+                continue
+            cells.append({"t": t, "x0": float(m.start()), "x1": float(m.end())})
+        for m in re.finditer(r"\S+", raw):
+            words.append({"t": m.group(0), "x0": float(m.start()), "x1": float(m.end())})
+        if cells:
+            out.append({"y": float(i) * 12.0, "cells": cells, "words": words})
+    return out
+
+
 def page_lines(page):
     """Rebuild visual lines of cells from word boxes: words sharing a baseline form
-    a line; within a line words separated by a small gap form one cell."""
+    a line; within a line words separated by a small gap form one cell.
+
+    Given a string instead of a page, the layout has already been flattened to
+    spaces and the columns are split on those."""
+    if isinstance(page, str):
+        return _lines_from_layout(page)
     words = page.get_text("words")
     if not words:
         return []
@@ -563,21 +622,34 @@ def utm_to_latlon(e, n, zone, hemi="N", datum=None):
 _TR = {}
 
 
+_DMS = re.compile(r"(\d{1,3})[ ]{0,2}[°º][ ]{0,2}"
+                  r"(?:(\d{1,2})[ ]{0,2}['’′][ ]{0,2})?"
+                  r"(?:(\d{1,2}(?:\.\d+)?)[ ]{0,2}[\"”″][ ]{0,2})?"
+                  r"([NSEW])")
+
+
 def _center_from_text(pages_text):
-    """Project centre from prose ('latitude 49°06'N ... longitude 79°27'W' or
-    decimal degrees) — used to sanity-check / infer the UTM zone."""
-    rx = re.compile(r"(\d{1,2})\s*[°º]\s*(\d{1,2})?\s*['’′]?\s*(\d{1,2}(?:\.\d+)?)?\s*[\"”″]?\s*([NS])"
-                    r"[^\n]{0,40}?(\d{1,3})\s*[°º]\s*(\d{1,2})?\s*['’′]?\s*(\d{1,2}(?:\.\d+)?)?\s*[\"”″]?\s*([EW])")
+    """Project centre from prose ("latitude 49°06'N ... longitude 79°27'W") — used
+    to sanity-check or infer the UTM zone.
+
+    One pattern per coordinate, paired by proximity, rather than one pattern for
+    both: a single expression with a lazy span between the two halves and optional
+    minutes and seconds in each backtracks catastrophically on a page that mentions
+    degrees many times, and a report of a hundred pages then took minutes instead of
+    milliseconds."""
     for t in pages_text[:60]:
-        m = rx.search(t)
-        if m:
-            la = float(m.group(1)) + float(m.group(2) or 0) / 60 + float(m.group(3) or 0) / 3600
-            lo = float(m.group(5)) + float(m.group(6) or 0) / 60 + float(m.group(7) or 0) / 3600
-            if m.group(4) == "S":
-                la = -la
-            if m.group(8) == "W":
-                lo = -lo
-            if abs(la) <= 80 and abs(lo) <= 180:
+        last_ns = None
+        for m in _DMS.finditer(t):
+            d = float(m.group(1)) + float(m.group(2) or 0) / 60 + float(m.group(3) or 0) / 3600
+            hemi = m.group(4)
+            if hemi in "NS":
+                last_ns = (d if hemi == "N" else -d, m.end())
+                continue
+            if last_ns is None or m.start() - last_ns[1] > 60:
+                continue
+            la = last_ns[0]
+            lo = d if hemi == "E" else -d
+            if abs(la) <= 80 and abs(lo) <= 180 and (la or lo):
                 return [round(la, 4), round(lo, 4)]
     return None
 
@@ -888,7 +960,8 @@ def _unit_hints(text):
     tm = None
     if re.search(r"\bmt\b|million tonnes|tonnes? \(m\)|\(mt\)|mtonnes|m tonnes|tonnage \(m", low):
         tm = 1e6
-    elif re.search(r"\bkt\b|\(000\s?t|000's|'000|000s\b|x ?1,?000|thousand tonnes|tonnes? \(000|tonnes? \(k\)|ktonnes", low):
+    elif re.search(r"\bkt\b|\(000\s?t|000's|'000|000s\b|x ?1,?000|thousand tonnes|"
+                    r"tonn(?:es?|age) ?\(0?00|tonnes? \(k\)|ktonnes|\(000\)|\(k ?t\)", low):
         tm = 1e3
     cm = {}
     if re.search(r"\bmoz\b|million (troy )?ounces|oz \(m\)", low):
@@ -902,6 +975,228 @@ def _unit_hints(text):
     elif re.search(r"\bklbs?\b|lbs? \(000|000 ?lbs|pounds \(000", low):
         cm["lb"] = 1e3
     return tm, cm
+
+
+# The smallest real filed statement in the corpus is a few tens of thousands of
+# tonnes — a single high-grade vein. Below that a "resource" row is something else
+# read by mistake: a contact-ratio table, a composite summary, a QA batch. And a
+# resource is not reported at a grade nobody would mine; a gold row at 0.005 g/t is
+# a boundary-condition average, not ore.
+_RES_MIN_T = 2e4
+_RES_MIN_G = {"Au": 0.08, "AuEq": 0.08, "Ag": 3.0, "AgEq": 3.0, "Pt": 0.05, "Pd": 0.05,
+              "PGM": 0.05, "PGE": 0.05, "3E": 0.05, "Cu": 0.03, "Zn": 0.1, "Pb": 0.1,
+              "Ni": 0.03, "Co": 0.005, "Mo": 0.003, "Sn": 0.02, "WO3": 0.02,
+              "U3O8": 0.005, "Li2O": 0.1, "P2O5": 1.0, "Fe": 5.0}
+
+
+def res_grade_ok(el, grade, unit):
+    """Whether a row's grade is high enough to be ore of that metal at all."""
+    if not el or grade is None:
+        return True
+    lo = _RES_MIN_G.get(el)
+    if lo is None:
+        return True
+    g = float(grade)
+    if unit == "ppm" and _DEFAULT_UNIT.get(el) == "%":
+        g /= 10_000.0
+    elif unit == "ppb":
+        g /= 1_000.0
+    elif unit == "oz/t":
+        g *= 34.2857
+    return g >= lo
+
+
+# ------------------------------------------------------- resource tables, by column
+_RH_T = re.compile(r"\b(tonn?es?|tonnage|tonnes?|tons?|kt|mt|ore|quantity|mass)\b", re.I)
+_RH_C = re.compile(r"contained|recoverable|\b(oz|ozs|ounces|koz|moz|lbs?|klbs?|mlbs?|"
+                   r"blbs?|tonnes? of metal|metal)\b", re.I)
+_RH_SKIP = re.compile(r"recovery|recover(ed|ies)|cut-?off|dilut|density|specific gravity|"
+                      r"strip|waste|npv|irr|cost|capex|price|\$|年", re.I)
+
+
+def _res_header(lines, i0, look=4):
+    """The columns of the table whose first data row is lines[i0].
+
+    A resource table says in its header what each column is — "Tonnage (000)",
+    "Au g/t", "Contained koz" — and reading that is how a person knows that
+    18,720 means 18.7 million tonnes. Guessing it from arithmetic cannot: tonnes
+    x grade = contained balances just as well with every column multiplied by a
+    thousand, which is how a 26 Mt silver deposit was read as 50,000 tonnes.
+
+    A header is often stacked over two or three lines ("Tonnage" above "(000)",
+    "Au" above "g/t"), so the band above the data is merged by column position."""
+    band = []
+    for j in range(max(0, i0 - look), i0):
+        ln = lines[j]
+        if sum(1 for c in ln["cells"] if _is_num(c["t"])) >= 3:
+            band = []                      # another data row: the header is below it
+            continue
+        txt = " ".join(c["t"] for c in ln["cells"])
+        if re.match(r"\s*(table|figure|exhibit)\s*\d", txt, re.I):
+            band = []                      # a caption, and everything above it
+            continue
+        # A caption or a sentence is one wide cell that spans the whole table, so
+        # merging it by position welds every column into one. Only a line that is
+        # itself divided into columns can say what the columns are.
+        if len(ln["cells"]) >= 2:
+            band.append(ln)
+    if not band:
+        return None
+    cols = []
+    for ln in band:
+        for c in ln["cells"]:
+            hit = None
+            for col in cols:
+                if min(col["x1"], c["x1"]) - max(col["x0"], c["x0"]) > -1.5:
+                    hit = col
+                    break
+            if hit:
+                hit["t"] += " " + c["t"]
+                hit["x0"] = min(hit["x0"], c["x0"]); hit["x1"] = max(hit["x1"], c["x1"])
+            else:
+                cols.append({"t": c["t"], "x0": c["x0"], "x1": c["x1"]})
+    cols.sort(key=lambda c: c["x0"])
+    out = []
+    for c in cols:
+        txt = re.sub(r"\s+", " ", c["t"]).strip()
+        role, el, unit, mul, kind = None, None, None, 1.0, None
+        eu = _elem_of(txt)
+        if _RH_SKIP.search(txt):
+            role = None
+        elif _RH_T.search(txt) and not _RH_C.search(txt):
+            role = "tonnes"
+            tm, _ = _unit_hints(txt)
+            mul = tm or 1.0
+        elif _RH_C.search(txt):
+            role = "contained"
+            _, cmh = _unit_hints(txt)
+            low = txt.lower()
+            kind = ("lb" if re.search(r"lbs?|pound", low) else
+                    "oz" if re.search(r"oz|ounce", low) else "t")
+            mul = cmh.get(kind, 1.0)
+            if eu:
+                el = eu[0]
+        elif eu and eu[1]:
+            role, el, unit = "grade", eu[0], eu[1]
+        elif eu:
+            role, el, unit = "grade", eu[0], None
+        out.append({**c, "label": txt, "role": role, "el": el, "unit": unit,
+                    "mul": float(mul), "kind": kind})
+    if not any(c["role"] == "tonnes" for c in out):
+        return None
+    if not any(c["role"] in ("grade", "contained") for c in out):
+        return None
+    return out
+
+
+def _res_assign(line, cols):
+    """Each numeric cell to the header column it sits under."""
+    got = {}
+    for c in line["cells"]:
+        v = num(c["t"])
+        if v is None:
+            continue
+        mid = (c["x0"] + c["x1"]) / 2.0
+        best, bov = None, -1e9
+        for k, col in enumerate(cols):
+            ov = min(col["x1"], c["x1"]) - max(col["x0"], c["x0"])
+            if not (col["x0"] - 6 <= mid <= col["x1"] + 6) and ov <= 0:
+                continue
+            if ov > bov:
+                best, bov = k, ov
+        if best is not None and best not in got:
+            got[best] = v
+    return got
+
+
+def _res_by_header(lines, ctx):
+    """Resource rows read from a page's own table headers."""
+    rows, i, tbl = [], 0, 0
+    while i < len(lines):
+        if not _is_data_line(lines[i], 2) or not _cat_of(
+                " ".join(c["t"] for c in lines[i]["cells"] if not _is_num(c["t"]))):
+            i += 1
+            continue
+        cols = _res_header(lines, i)
+        if not cols:
+            i += 1
+            continue
+        ti = next(k for k, c in enumerate(cols) if c["role"] == "tonnes")
+        gi = [k for k, c in enumerate(cols) if c["role"] == "grade"]
+        ci = [k for k, c in enumerate(cols) if c["role"] == "contained"]
+        body = []
+        while i < len(lines):
+            ln = lines[i]
+            label = " ".join(c["t"] for c in ln["cells"] if not _is_num(c["t"]))
+            cat = _cat_of(label)
+            if not _is_data_line(ln, 2):
+                if label.strip() and not cat:
+                    break                   # a caption or prose line ends the table
+                i += 1
+                continue
+            got = _res_assign(ln, cols)
+            if ti not in got:
+                break
+            body.append((cat, label, got))
+            i += 1
+        if not body:
+            i += 1
+            continue
+        tbl += 1
+        # A resource table carries a column per metal and often an equivalent
+        # beside each. The deposit's own metal is the one the table leads with,
+        # and an equivalent is a derived figure, not a metal — so prefer the
+        # leftmost column that names a real element.
+        pref_k = next((k for k in gi if cols[k]["el"]
+                       and not re.search(r"eq$", cols[k]["el"], re.I)), gi[0] if gi else None)
+        # the page's units are the fallback where a column names none
+        tmp, cmp_ = ctx["tm_hint"], ctx["cm_hint"]
+        for cat, label, got in body:
+            if not cat:
+                continue
+            T = got[ti] * (cols[ti]["mul"] if cols[ti]["mul"] != 1.0 else (tmp or 1.0))
+            if not (_RES_MIN_T <= T <= 2e10):
+                continue
+            is_total = bool(re.search(r"total|\+|combined|all zones|global|overall",
+                                      label, re.I))
+            for k in (gi or [None]):
+                if k is None:
+                    continue
+                G = got.get(k)
+                if G is None or G <= 0:
+                    continue
+                el = cols[k]["el"]
+                unit = cols[k]["unit"] or _DEFAULT_UNIT.get(el, "%")
+                # the contained column for this element, where the table has one
+                cc = next((c for c in ci if cols[c]["el"] in (el, None)), None)
+                kind = cols[cc]["kind"] if cc is not None else (
+                    "t" if unit == "%" else "oz")
+                f = {"oz": 31.1034768, "lb": 100.0 / 2204.62262, "t": 100.0}[kind]
+                if unit == "ppm":
+                    G, unit = G / 1.0, "g/t"
+                calc = T * G / f
+                if cc is not None and got.get(cc) is not None:
+                    C = got[cc] * (cols[cc]["mul"] if cols[cc]["mul"] != 1.0
+                                   else (cmp_.get(kind) or 1.0))
+                    if not calc or not (0.6 <= C / calc <= 1.7):
+                        continue            # the columns do not agree: not this table
+                else:
+                    C = calc
+                if not res_grade_ok(el, G, unit):
+                    continue
+                if kind == "oz" and C > 1.5e8:
+                    continue
+                rows.append({"page": ctx["pno"] + 1, "cat": cat,
+                             "cutoff": ctx["cog"], "cutoff_unit": ctx["cog_unit"],
+                             "tonnes": round(T), "grade": G, "contained": round(C),
+                             "cunit": kind, "hist": ctx["hist"],
+                             "reserve": cat in ("Proven", "Probable", "P+P"),
+                             "pscore": ctx["pscore"] + 2, "year": ctx["pyear"],
+                             "total": is_total, "el": el,
+                             "grade_unit": unit, "scope": ctx["pscope"],
+                             "byhdr": True, "tbl": tbl, "primary": k == pref_k,
+                             "text": label[:160]})
+    return rows
 
 
 def extract_resources(doc, pages_text):
@@ -933,6 +1228,18 @@ def extract_resources(doc, pages_text):
         try:
             lines = page_lines(doc[pno])
         except Exception:
+            continue
+        ctx = {"pno": pno, "tm_hint": tm_hint, "cm_hint": cm_hint, "cog": cog,
+               "cog_unit": cog_unit, "pscope": pscope, "pyear": pyear, "hist": hist,
+               "pscore": pscore}
+        try:
+            hdr = _res_by_header(lines, ctx)
+        except Exception:
+            hdr = []
+        if hdr:
+            # the table said what its columns are; arithmetic guessing on the same
+            # page is strictly weaker evidence and is dropped rather than mixed in
+            rows.extend(hdr)
             continue
         cur_cat = None
         for ln in lines:
@@ -979,7 +1286,10 @@ def extract_resources(doc, pages_text):
                 return (tok, cok, kind != "t", T)
             best = max(tr, key=pref)
             T, G, C, kind, tmul, cmul = best
-            if not (5e3 <= T * tmul <= 2e10):
+            if not (_RES_MIN_T <= T * tmul <= 2e10):
+                continue
+            _el0 = _page_element(t, kind, G)
+            if not res_grade_ok(_el0, G, grade_unit_for(kind)):
                 continue
             if kind == "oz" and (C * cmul > 1.5e8 or G > 60):
                 continue
@@ -1267,12 +1577,15 @@ def headline_resource(rows):
     for r in rows:
         if r["hist"] or r["reserve"]:
             continue
-        by_page[(r["page"], r["cunit"])].append(r)
+        # three tables on one page are three statements, not one jumbled one: a
+        # page of silver resources by area read as a single table mixed the
+        # underground tonnage with the open-pit grades.
+        by_page[(r["page"], r["cunit"], r.get("tbl"))].append(r)
     if not by_page:
         return None
 
     def score(item):
-        (pg, _), rs = item
+        (pg, _, _tb), rs = item
         cats = {r["cat"] for r in rs}
         named = len(cats & {"Measured", "Indicated", "Inferred", "M+I"})
         tot = any(r["total"] for r in rs)
@@ -1282,7 +1595,10 @@ def headline_resource(rows):
         ident = 1 if any(r.get("el") for r in rs) else 0
         return ((rs[0].get("year") or 0), named + (1 if tot else 0) + rs[0].get("pscore", 0),
                 ident, len(rs), -pg)
-    (page, cunit), rs = max(by_page.items(), key=score)
+    (page, cunit, _tb), rs = max(by_page.items(), key=score)
+    # within a table, the deposit's own metal rather than every column of it
+    if any(r.get("primary") for r in rs):
+        rs = [r for r in rs if r.get("primary")]
     named = [r for r in rs if r["cat"] in ("Measured", "Indicated", "Inferred", "M+I")]
     cats = {}
     if named:
@@ -1342,6 +1658,13 @@ def _cats_consistent(cats, tot):
     if mi and (m or i):
         s = m + i
         if s and not (0.75 * s <= mi <= 1.25 * s):
+            # "M&I 18,7230" against Measured 5,470 and Indicated 13,250 is a digit
+            # dropped into the wrong column. Where measured and indicated are
+            # themselves present, they ARE the statement and the combined row adds
+            # nothing, so discard the row rather than the whole table.
+            if m and i:
+                cats.pop("M+I", None)
+                return _cats_consistent(cats, tot)
             return False
     total = float((tot or {}).get("tonnes") or 0)
     if total:
@@ -1656,9 +1979,16 @@ def title_project(pages_text):
 
 
 # ----------------------------------------------------------------- main entry
+def extract_report_text(pages, meta=None):
+    """Everything extract_report finds, from page text alone.
+
+    Same extractors, same validation; only the source of the lines differs."""
+    doc = TextDoc(pages)
+    return _extract(doc, list(pages), meta or {}, pages_n=len(pages))
+
+
 def extract_report(pdf_path, meta=None):
     import pymupdf
-    meta = dict(meta or {})
     doc = pymupdf.open(pdf_path)
     pages_text = []
     for p in doc:
@@ -1666,6 +1996,11 @@ def extract_report(pdf_path, meta=None):
             pages_text.append(p.get_text())
         except Exception:
             pages_text.append("")
+    return _extract(doc, pages_text, meta, pages_n=len(doc))
+
+
+def _extract(doc, pages_text, meta=None, pages_n=None):
+    meta = dict(meta or {})
     surveys = []
     collars, intervals = extract_tables(doc, surveys=surveys)
     surveys = _clean_surveys(surveys)
@@ -1675,6 +2010,15 @@ def extract_report(pdf_path, meta=None):
     head = headline_resource(res_rows)
     mp = extract_model_params(pages_text)
     block, density = mp.get("block"), mp.get("density")
+    # the body's shape, as the report describes it in prose: the one part of the
+    # qualified person's wireframe that cannot be recovered from the published
+    # assays, and the only independent check on whether a model reaches the
+    # deposit at all or a corner of it
+    try:
+        from minemodelingpro import extent as EXT
+        ext = EXT.stated(pages_text) or None
+    except Exception:
+        ext = None
     eff = effective_date(pages_text)
     # link collars <-> intervals via normalised hole ids
     ckeys = {holeid.key(c["hole"]) for c in collars}
@@ -1688,10 +2032,11 @@ def extract_report(pdf_path, meta=None):
         "cover_company": title_company(pages_text),
         "extractor": EXTRACTOR,
         "extracted": datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z",
-        "pages": len(doc),
+        "pages": pages_n if pages_n is not None else len(doc),
         "crs": crs, "center": center or tcenter, "text_center": tcenter,
         "block_size": block, "density": density,
         "sensitivity": (extract_sensitivity(doc, pages_text) or [None])[0],
+        "extent": ext,
         "model_params": mp or None, "effective_date": eff,
         "resource": head, "resource_rows": res_rows[:80],
         "counts": {"collars": len(collars), "intervals": len(intervals), "surveyed_holes": len({x["hole"] for x in surveys}),
