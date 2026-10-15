@@ -286,7 +286,8 @@ def anisotropy(pts, g, ratios):
         return None, None
 
 
-def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None):
+def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None,
+                    domain_pts=None, domain_radius=None, domain_reach=None):
     """Grade estimate on a regular grid of `block` (bx,by,bz) cells, only within
     max_gap of real composites and informed by >= min_holes holes. Returns
     (origin, block, ijk, grade, params).
@@ -311,8 +312,30 @@ def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None)
     rot, aniso = (None, None)
     if o.get("anisotropy"):
         rot, aniso = anisotropy(pts, g, o["anisotropy"])
-    lo = pts.min(0) - max_gap
-    hi = pts.max(0) + max_gap
+    # The deposit is where the skeleton says it is; the composites say what grade it
+    # carries. Keeping the two apart is what lets a block between two holes be
+    # estimated at all — before this every block had to sit within a search distance
+    # of a sample, so the model was a string of bubbles around intercepts and, on
+    # sparsely published projects, covered a twentieth of the deposit.
+    dom = np.asarray(domain_pts, float) if domain_pts is not None and len(domain_pts) else None
+    dr = float(domain_radius or max_gap)
+    # The skeleton ADDS reach; it must never take any away. Seeding the candidate
+    # search from the skeleton alone shrank every model — a skeleton is a handful of
+    # intercept centroids and the links between them, where the composites are
+    # thousands of points — and the measured error went from 0.54 to 0.11. The
+    # deposit is the union: everything near real data, plus everything inside the
+    # body the data describes.
+    seeds = np.concatenate([pts, dom]) if dom is not None else pts
+    seed_reach = max(max_gap, dr) if dom is not None else max_gap
+    # How far to look for composites when a block is inside the body. Membership
+    # alone changed nothing, because the binding constraint was never membership —
+    # a block halfway between two holes eighty metres apart has no sample inside a
+    # thirty-seven metre search however certain we are that it is ore. To estimate
+    # the middle of a link the search has to reach the ends of it.
+    d_reach = float(domain_reach or max(radius, dr))
+    pad = max(max_gap, dr)
+    lo = np.minimum(pts.min(0), seeds.min(0)) - pad
+    hi = np.maximum(pts.max(0), seeds.max(0)) + pad
     dims = np.ceil((hi - lo) / [bx, by, bz]).astype(int) + 1
     coarsened = 1.0
     while dims.max() > 65000:                  # uint16 cell index limit (>300 km at 5 m)
@@ -325,12 +348,12 @@ def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None)
         f += 1
     cd = np.ceil(dims / f).astype(int)
     occ = np.zeros(cd, dtype=bool)
-    ci = np.floor((pts - lo) / (np.array([bx, by, bz]) * f)).astype(int)
+    ci = np.floor((seeds - lo) / (np.array([bx, by, bz]) * f)).astype(int)
     ci = np.clip(ci, 0, cd - 1)
     occ[ci[:, 0], ci[:, 1], ci[:, 2]] = True
     dist = ndimage.distance_transform_edt(~occ, sampling=(bx * f, by * f, bz * f))
     cdiag = math.sqrt((bx * f) ** 2 + (by * f) ** 2 + (bz * f) ** 2)
-    cand_c = np.argwhere(dist <= max_gap + cdiag)
+    cand_c = np.argwhere(dist <= seed_reach + cdiag)
     # expand to fine cells
     off = np.stack(np.meshgrid(np.arange(f), np.arange(f), np.arange(f), indexing="ij"), -1).reshape(-1, 3)
     if rot is not None:
@@ -340,6 +363,8 @@ def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None)
     else:
         W = None
         tree = cKDTree(pts)
+    dtree = cKDTree(dom @ W.T if (dom is not None and W is not None) else dom) \
+        if dom is not None else None
     ijk_out, g_out, c_out = [], [], []
     CH = max(1, 400_000 // len(off))
     for s in range(0, len(cand_c), CH):
@@ -347,8 +372,15 @@ def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None)
         fine = (cc[:, None, :] * f + off[None, :, :]).reshape(-1, 3)
         fine = fine[(fine < dims).all(1)]
         ctr = lo + (fine + 0.5) * [bx, by, bz]
+        in_domain = None
+        if dom is not None:
+            dsd, _di = dtree.query(ctr @ W.T if W is not None else ctr, k=1,
+                                   distance_upper_bound=dr)
+            in_domain = np.isfinite(dsd)
+        # the last pass reaches further for its samples, because inside the body the
+        # nearest hole may be most of a drill spacing away
         dd, ii = tree.query(ctr @ W.T if W is not None else ctr, k=24,
-                            distance_upper_bound=radius)
+                            distance_upper_bound=max(radius, d_reach) if dom is not None else radius)
         near = np.isfinite(dd)
         iis0 = np.where(near, ii, 0)
         hh = np.where(near, hid[iis0], -1)
@@ -364,6 +396,14 @@ def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None)
                 break
             ok = ((cls == 0) & near[:, 0] & (dd[:, 0] <= p_gap)
                   & (nsamp >= p_samp) & (nuniq >= p_holes))
+            if dom is not None and pi == len(passes):
+                # the last pass also takes the body itself: inside the skeleton a
+                # block is real rock however far the nearest sample happens to be,
+                # and the tier records that it is thinly drilled. OR, not AND —
+                # this pass widens the deposit, it does not narrow it.
+                ok |= ((cls == 0) & in_domain & near[:, 0]
+                       & (dd[:, 0] <= d_reach)
+                       & (nsamp >= p_samp) & (nuniq >= p_holes))
             # a pass only counts samples inside its own, shorter range
             if p_rad < radius:
                 ok &= (np.where(near, dd, np.inf) <= p_rad).sum(1) >= p_samp
@@ -394,6 +434,8 @@ def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None)
               "spacing_m": round(spacing, 1), "power": power, "min_holes": min_holes,
               "min_samples": min_samples, "method": method, "coarsened": coarsened,
               "max_per_hole": max_per_hole,
+              "domain_radius_m": round(dr, 1) if dom is not None else None,
+              "domain_reach_m": round(d_reach, 1) if dom is not None else None,
               "anisotropy": [round(float(x), 2) for x in aniso] if aniso is not None else None,
               "passes": [{"range_m": round(r, 1), "max_gap_m": round(gp, 1),
                           "min_holes": mh, "min_samples": ms, "class": CLASSES[i]}
@@ -1031,7 +1073,34 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
             spacing = float(PS.get("spacing_m") or _spacing(cent))
             eopts = dict(PS)
             eopts.setdefault("anisotropy", sdef.get("anisotropy"))
-            lo, bsz, ijk, gr, params, bcls = estimate_blocks(pts, g, hid, blk, spacing, opts=eopts)
+            # the deposit's own skeleton: mineralised intercepts joined between
+            # neighbouring holes, so the ground a geologist would draw a body
+            # through is inside the model instead of falling outside every search
+            from minemodelingpro import domain as DOM
+            dom_pts, dom_info = (None, None)
+            # Off until it earns its place. Built, and three real defects in it
+            # found and fixed by measurement — it replaced the composite reach
+            # instead of extending it, then membership was never the binding
+            # constraint, then the link reach was measured on composite spacing
+            # rather than on the distance between the intercepts being linked.
+            # After all three it still scores exactly neutral (0.519 to 0.519
+            # across the seventeen projects with a filed statement), so it stays
+            # switched off rather than shipping cost and complexity for no measured
+            # gain. domain=true turns it on per project; worth re-measuring once
+            # the enlarged report corpus gives a steadier baseline.
+            if PS.get("domain") is True:
+                rot_d, an_d = anisotropy(pts, g, sdef.get("anisotropy"))
+                reach = DOM.reach_for(PS.get("link_reach_m") or spacing,
+                                      style_reach=sdef.get("halo_max_m", 0) * 3 or None)
+                dom_pts, dom_info = DOM.skeleton(pts, g, hid, max(bins[0], 1e-9),
+                                                 rot=rot_d, aniso=an_d, reach=reach,
+                                                 step=max(float(blk[0]), 3.0))
+            lo, bsz, ijk, gr, params, bcls = estimate_blocks(
+                pts, g, hid, blk, spacing, opts=eopts,
+                domain_pts=dom_pts, domain_radius=gap_margin,
+                domain_reach=(reach if dom_pts is not None else None))
+            if dom_info:
+                params["domain"] = dom_info
             grids[el] = {"lo": lo, "bsz": bsz, "ijk": ijk, "gr": gr, "clen": clen,
                          "opts": {k: v for k, v in params.items() if k != "passes"},
                          "bins": list(bins), "cls": bcls}

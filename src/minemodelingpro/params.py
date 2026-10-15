@@ -29,6 +29,11 @@ Keys (all optional; anything absent falls back to the data-driven default):
   gap_fill         True (default): unreported hole length is composited as zero grade
   gap_fill_margin_m  how far those zeros run past a reported interval (default: one
                    drill spacing) — they bound the deposit, they should not dilute it
+  domain           join mineralised intercepts between neighbouring holes into a
+                   body and estimate inside it, as well as within a search distance
+                   of a sample. Default OFF: it measures neutral so far and is kept
+                   for re-measurement against the enlarged report corpus
+  link_reach_m     how far two holes may be joined (default: about two drill spacings)
   default_cutoff   cut-off the model page opens at
   value_cutoff     dollars-per-tonne cut-off (the report's NSR cut-off by default)
   elements         restrict/order the elements modelled
@@ -54,9 +59,9 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 PATH = os.path.join(_ROOT, "data", "keep", "mmp_model_params.json")
 
 NUMERIC = {"composite_m", "radius_m", "max_gap_m", "spacing_m", "power", "top_cut", "top_cut_pct",
-           "density", "default_cutoff", "value_cutoff", "gap_fill_margin_m"}
+           "density", "default_cutoff", "value_cutoff", "gap_fill_margin_m", "link_reach_m"}
 INTEGER = {"min_holes", "min_samples", "max_elements", "max_per_hole"}
-BOOLEAN = {"gap_fill"}
+BOOLEAN = {"gap_fill", "domain"}
 LISTS = {"block", "elements", "bins"}
 STRINGS = {"method", "name", "company", "note", "deposit_style"}
 # the net-smelter-return formula: {"factors": {el: $/t per unit grade}, "units": ...}.
@@ -70,7 +75,7 @@ LIMITS = {"block": (0.5, 200.0), "composite_m": (0.25, 50.0), "radius_m": (5.0, 
           "min_holes": (1, 20), "min_samples": (1, 100), "max_elements": (1, 8),
           "max_per_hole": (1, 24),
           "default_cutoff": (0.0, 1e6), "value_cutoff": (0.0, 1e5), "bins": (0.0, 1e6),
-          "gap_fill_margin_m": (1.0, 1000.0)}
+          "gap_fill_margin_m": (1.0, 1000.0), "link_reach_m": (5.0, 500.0)}
 
 
 def load(path=PATH):
