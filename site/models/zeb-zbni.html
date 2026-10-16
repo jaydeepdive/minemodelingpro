@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Zeb — ZBNI · 3D model · MineModelingPro</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bitter:wght@600;700;800&family=Roboto:wght@400;500;700&display=swap">
+<style>
+:root{
+  --red:#D71920; --ink:#111418; --mut:#5f6670; --line:#e3e6ea; --panel:#f5f7fa; --card:#ffffff;
+  --bg:#e9edf2; --chip:#fdecec; --shadow:0 6px 24px rgba(17,20,24,.12);
+  --serif:'Bitter',Georgia,serif; --sans:'Roboto',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --bar:52px;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);overflow:hidden;
+  -webkit-text-size-adjust:100%;touch-action:none}
+#scene{position:fixed;left:0;right:0;bottom:0;top:var(--bar);z-index:0}
+#scene canvas{display:block;width:100%;height:100%;touch-action:none}
+/* ---------- top bar ---------- */
+#bar{position:fixed;top:0;left:0;right:0;height:var(--bar);z-index:30;background:#fff;border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:12px;padding:0 14px}
+#bar a.back{font-size:13px;font-weight:500;color:var(--red);text-decoration:none;white-space:nowrap}
+#bar .ttl{min-width:0;flex:1;display:flex;flex-direction:column;line-height:1.15}
+#bar .ttl b{font-family:var(--serif);font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#bar .ttl span{font-size:11.5px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#bar .brand{font-family:var(--serif);font-weight:800;font-size:13px;color:var(--ink);text-decoration:none;white-space:nowrap}
+#bar .brand em{color:var(--red);font-style:normal}
+/* ---------- panels ---------- */
+.panel{position:fixed;z-index:20;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);
+  display:flex;flex-direction:column;max-height:calc(100vh - var(--bar) - 28px);overflow:hidden}
+.phead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px 10px 14px;cursor:pointer;
+  user-select:none;border-bottom:1px solid var(--line)}
+.phead h2{font-family:var(--serif);font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--ink);margin:0}
+.pbtn{border:1px solid var(--line);background:var(--panel);border-radius:7px;width:28px;height:26px;display:grid;place-items:center;
+  cursor:pointer;color:var(--mut);font-size:15px;line-height:1;padding:0;flex:none}
+.pbtn:hover{border-color:var(--red);color:var(--red)}
+.pbody{padding:12px 14px 14px;overflow-y:auto;overscroll-behavior:contain}
+.panel.min .pbody{display:none}
+.panel.min .phead{border-bottom:0}
+#leftcol{position:fixed;z-index:20;top:calc(var(--bar) + 12px);left:12px;width:306px;display:flex;flex-direction:column;gap:10px;
+  max-height:calc(100vh - var(--bar) - 86px);pointer-events:none}
+#leftcol>.panel{position:static;width:auto;max-height:none;pointer-events:auto;flex:0 1 auto;min-height:0}
+#leftcol>.panel .pbody{max-height:42vh}
+#pModel{top:calc(var(--bar) + 12px);left:12px;width:306px}
+#pGrade{top:calc(var(--bar) + 12px);right:12px;width:318px}
+#pLegend{bottom:14px;left:330px;width:236px}
+@media (max-width:1180px) and (min-width:761px){#pLegend{left:12px}#pModel{max-height:calc(100vh - var(--bar) - 300px)}}
+/* ---------- controls ---------- */
+.sec{border-top:1px solid var(--line);padding-top:11px;margin-top:11px}
+.sec:first-child{border-top:0;padding-top:0;margin-top:0}
+.lab{font-family:var(--serif);font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);margin:0 0 7px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+.stat b{display:block;font-family:var(--serif);font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
+.stat span{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:4px 11px;font-size:12.5px;font-weight:700;cursor:pointer;color:var(--ink)}
+.chip.on{background:var(--red);border-color:var(--red);color:#fff}
+.tg{display:flex;align-items:center;gap:9px;padding:4px 0;cursor:pointer;user-select:none;font-size:13.5px}
+.tg input{appearance:none;-webkit-appearance:none;width:32px;height:18px;border-radius:10px;background:#cfd6e0;position:relative;cursor:pointer;
+  transition:background .15s;flex:none;margin:0}
+.tg input:checked{background:var(--red)}
+.tg input::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:transform .15s;
+  box-shadow:0 1px 2px rgba(0,0,0,.25)}
+.tg input:checked::after{transform:translateX(14px)}
+.tg input:disabled{opacity:.4}
+.tg small{color:var(--mut);font-size:11px;margin-left:auto}
+.rng{margin:6px 0 2px}
+.rng .row{display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;margin-bottom:5px}
+.rng .v{font-weight:700;color:var(--red);font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;-webkit-appearance:none;appearance:none;height:5px;border-radius:3px;background:#d7dde5;outline:none;margin:6px 0}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:#fff;border:2px solid var(--red);
+  cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.3)}
+input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:#fff;border:2px solid var(--red);cursor:pointer}
+.btns{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.btn{padding:7px 4px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font-size:12px;font-weight:500;border-radius:8px;cursor:pointer;
+  font-family:var(--sans)}
+.btn:hover{background:var(--chip);border-color:var(--red);color:var(--red)}
+.find{display:flex;gap:6px}
+.find input{flex:1;min-width:0;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:13px;font-family:var(--sans)}
+.hint{font-size:11.5px;color:var(--mut);line-height:1.45;margin:8px 0 0}
+.kv{display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:13px;color:var(--mut)}
+.kv b{color:var(--ink);font-weight:700;font-variant-numeric:tabular-nums;text-align:right}
+.big{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin:4px 0 2px}
+.big div{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:7px 8px}
+.big b{display:block;font-family:var(--serif);font-size:15.5px;font-weight:700;font-variant-numeric:tabular-nums}
+.big span{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut)}
+.big div.hl{background:#fff5f5;border-color:#f3c9cb}
+.cmp{margin-top:6px}
+.cmpbar{height:10px;border-radius:5px;background:#eef1f5;position:relative;overflow:hidden;margin:3px 0 7px}
+.cmpbar i{position:absolute;left:0;top:0;bottom:0;background:var(--red);border-radius:5px}
+.cmpbar.pub i{background:#274b8f}
+.note{font-size:11.5px;color:var(--mut);line-height:1.5;margin:6px 0 0}
+.res{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:6px;font-size:12.5px}
+.res a{color:var(--red);text-decoration:none;font-size:11.5px}
+.res table{width:100%;border-collapse:collapse;margin-top:4px;font-variant-numeric:tabular-nums}
+.res td{padding:2px 0;font-size:12px}
+.res td:nth-child(n+2){text-align:right}
+.src{display:flex;flex-direction:column;gap:6px;max-height:190px;overflow-y:auto}
+.src a{display:block;font-size:12px;line-height:1.35;color:var(--ink);text-decoration:none;padding-left:12px;position:relative}
+.src a::before{content:"";position:absolute;left:0;top:6px;width:6px;height:6px;border-radius:50%;background:var(--red)}
+.src a.rep::before{background:#274b8f;border-radius:1px}
+.src a:hover{color:var(--red)}
+.src a em{font-style:normal;color:var(--mut);font-size:10.5px}
+svg.gt{width:100%;height:110px;display:block;margin-top:4px}
+/* legend */
+.lg{display:flex;flex-direction:column;gap:3px}
+.lg div{display:flex;align-items:center;gap:8px;font-size:12px;font-variant-numeric:tabular-nums}
+.lg i{width:22px;height:9px;border-radius:3px;flex:none}
+.lg i.lo{background:#c3cad4;height:3px}
+/* overlays */
+table.bd{width:100%;table-layout:fixed;border-collapse:collapse;font-size:11px;font-variant-numeric:tabular-nums;margin-top:4px}
+table.bd th{text-align:left;font-size:9px;letter-spacing:.04em;text-transform:uppercase;color:var(--mut);padding:4px 4px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.bd td{padding:5px 4px;border-bottom:1px solid #f1f3f6;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+table.bd td.n,table.bd th.n{text-align:right}
+table.bd tr.on td{background:var(--chip)}
+table.bd tr:hover td{color:var(--red)}
+table.bd td em{font-style:normal;font-size:9px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
+table.bd td.thin{color:var(--mut)}
+.bdhead{font-size:12px;padding:6px 0 2px;border-bottom:1px solid var(--line)}
+.bdhead b{font-size:15px}
+.bdcuts{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 2px}
+.bdcuts .mini{font-size:10px;padding:3px 7px}
+.bdcuts .mini.on{background:var(--red);border-color:var(--red);color:#fff}
+.disc{margin-top:10px;padding:9px 10px;border:1px solid var(--line);border-radius:7px;background:#fbfcfd}
+.disc p{margin:4px 0;font-size:11px;line-height:1.5}
+.disc ul{margin:4px 0 4px 15px;padding:0;font-size:11px;line-height:1.5}
+.disc li{margin:2px 0}
+.warn{margin:8px 0;padding:9px 10px;border:1px solid #d9534f;border-left:3px solid #d9534f;
+  border-radius:7px;background:#fdf4f4;font-size:11px;line-height:1.5}
+.warn ul{margin:4px 0 4px 15px;padding:0}
+.warn span{color:var(--mut)}
+.fixnote{margin:8px 0;padding:8px 10px;border:1px solid var(--line);border-radius:7px;
+  background:#fafbfc;font-size:10.5px;line-height:1.5;color:var(--mut)}
+.fixnote ul{margin:3px 0 3px 15px;padding:0}
+#holetbl{max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:8px;margin-top:6px}
+#holetbl table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:11.5px;font-variant-numeric:tabular-nums}
+#holetbl th{position:sticky;top:0;background:#fff;text-align:left;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--mut);padding:5px 7px;border-bottom:1px solid var(--line)}
+#holetbl td{padding:4px 7px;border-bottom:1px solid #f1f3f6;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#holetbl tr:hover td{background:var(--panel);color:var(--red)}
+#holetbl td.n{text-align:right}
+#hfilter{width:100%;border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:12.5px;font-family:var(--sans);margin-top:4px}
+button.mini{border:1px solid var(--line);background:#fff;border-radius:6px;font-family:var(--sans);font-size:10.5px;font-weight:700;
+  color:var(--red);padding:2px 7px;cursor:pointer;margin-left:6px}
+button.mini:hover{background:var(--chip)}
+#tip{position:fixed;z-index:40;pointer-events:none;background:#fff;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:12px;
+  display:none;box-shadow:0 8px 24px rgba(17,20,24,.18);line-height:1.5;font-variant-numeric:tabular-nums;max-width:260px}
+#tip .g{font-weight:700}
+#hud2{position:fixed;z-index:15;bottom:14px;right:12px;display:flex;align-items:flex-end;gap:10px;pointer-events:none}
+#scalebar{display:flex;align-items:center;gap:8px;font-size:11px;background:rgba(255,255,255,.9);border:1px solid var(--line);border-radius:8px;padding:4px 9px}
+#scalebar .sb{height:8px;border-left:2px solid var(--ink);border-right:2px solid var(--ink);display:flex;align-items:center;width:90px}
+#scalebar .sb span{display:block;height:2px;width:100%;background:var(--ink)}
+#compass{width:46px;height:46px;border-radius:50%;background:rgba(255,255,255,.9);border:1px solid var(--line);display:grid;place-items:center}
+#compass svg{width:34px;height:34px;transition:none}
+#nav{position:fixed;z-index:18;bottom:14px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:4px;
+  background:rgba(255,255,255,.94);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:4px}
+#nav .nb{display:flex;align-items:center;gap:6px;border:0;background:transparent;border-radius:9px;padding:7px 10px;cursor:pointer;
+  color:var(--ink);font-family:var(--sans);font-size:12.5px;font-weight:700}
+#nav .nb svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round}
+#nav .nb:hover{background:var(--panel)}
+#nav .nb.on{background:var(--chip);color:var(--red)}
+#nav .nb.sq{padding:7px 11px;font-size:15px;line-height:1;font-weight:700;color:var(--mut)}
+#nav .sep{width:1px;height:20px;background:var(--line);margin:0 3px}
+@media (max-width:760px){#nav{bottom:66px;padding:3px}#nav .nb{padding:8px 9px;font-size:12px}#nav .nb b{display:none}#nav .nb.sq{padding:8px 11px}
+  /* the scale bar and compass move out from under the controls */
+  #hud2{bottom:auto;top:calc(var(--bar) + 8px);right:8px;flex-direction:column;align-items:flex-end;gap:6px}
+  #compass{width:38px;height:38px}#compass svg{width:28px;height:28px}
+  #scalebar{font-size:10.5px;padding:3px 7px}#scalebar .sb{width:62px}}
+
+/* A phone on its side has ~350 px of height: a bottom sheet would cover the model,
+   so the open panel docks to the right and the controls shrink. */
+@media (max-height:560px) and (orientation:landscape){
+  #leftcol{display:contents}
+  :root{--bar:40px}
+  #bar .ttl span{display:none}
+  .panel{left:auto!important;right:8px!important;width:300px!important;max-width:46vw;
+    top:calc(var(--bar) + 6px)!important;bottom:8px!important;max-height:none;border-radius:12px}
+  .panel.open{display:flex}
+  #mtools{left:auto;right:316px;bottom:auto;top:calc(var(--bar) + 6px);width:auto;flex-direction:column;gap:4px;padding:4px}
+  #mtools button{flex:none;padding:7px 10px;font-size:11.5px}
+  #nav{bottom:10px;left:12px;transform:none;padding:3px}
+  #nav .nb{padding:7px 8px;font-size:11.5px}#nav .nb b{display:none}
+  #hud2{top:calc(var(--bar) + 6px);right:auto;left:12px;bottom:auto;flex-direction:column;align-items:flex-start;gap:6px}
+  #compass{width:34px;height:34px}#compass svg{width:26px;height:26px}
+  #scalebar{font-size:10px;padding:3px 6px}#scalebar .sb{width:56px}
+  svg.gt{height:78px}
+}
+#pivot{position:fixed;z-index:14;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;border:2px solid var(--red);background:rgba(215,25,32,.18);
+  pointer-events:none;opacity:0;transition:opacity .4s}
+#toast{position:fixed;z-index:35;left:50%;top:calc(var(--bar) + 12px);transform:translateX(-50%);background:rgba(17,20,24,.86);color:#fff;
+  font-size:12.5px;padding:7px 13px;border-radius:20px;opacity:0;transition:opacity .4s;pointer-events:none;white-space:nowrap}
+#labels{position:fixed;inset:0;top:var(--bar);pointer-events:none;z-index:12;overflow:hidden}
+#labels span{position:absolute;font-size:10.5px;font-weight:500;color:#1d2530;background:rgba(255,255,255,.78);padding:0 4px;border-radius:3px;
+  transform:translate(6px,-50%);white-space:nowrap}
+#mtools{display:none}
+@media (max-width:760px){
+  #leftcol{display:contents}
+  :root{--bar:48px}
+  #bar .brand{display:none}
+  #bar .ttl b{font-size:14.5px}
+  .panel{left:8px!important;right:8px!important;width:auto!important;top:auto!important;bottom:62px!important;max-height:58vh;display:none;
+    border-radius:14px}
+  .panel.open{display:flex}
+  .panel.min .pbody{display:block}
+  .phead{cursor:default}
+  #mtools{display:flex;position:fixed;z-index:25;bottom:10px;left:8px;right:8px;gap:6px;background:#fff;border:1px solid var(--line);
+    border-radius:14px;box-shadow:var(--shadow);padding:5px}
+  #mtools button{flex:1;border:0;background:transparent;font-family:var(--sans);font-size:12px;font-weight:700;color:var(--ink);padding:9px 2px;border-radius:10px}
+  #mtools button.on{background:var(--chip);color:var(--red)}
+  #hud2{bottom:66px;right:8px}
+  #compass{width:40px;height:40px}
+  #toast{white-space:normal;text-align:center;max-width:90vw}
+}
+</style>
+</head>
+<body>
+<div id="bar">
+  <a class="back" href="../models.html">← Models</a>
+  <div class="ttl"><b id="t-name">Zeb</b><span id="t-sub"></span></div>
+  <a class="brand" href="../models.html">Mine<em>Modeling</em>Pro</a>
+</div>
+<div id="scene"></div>
+<div id="labels"></div>
+<div id="pivot"></div>
+<div id="toast"></div>
+
+<div id="leftcol">
+<section id="pModel" class="panel">
+  <div class="phead" data-p="pModel"><h2>Model</h2><button class="pbtn" aria-label="Minimise">–</button></div>
+  <div class="pbody">
+    <div class="sec">
+      <div class="stats">
+        <div class="stat"><b id="s-holes">–</b><span>Holes</span></div>
+        <div class="stat"><b id="s-int">–</b><span>Intervals</span></div>
+        <div class="stat"><b id="s-src">–</b><span>Sources</span></div>
+      </div>
+      <p class="lab" style="margin-top:10px">Size</p><div id="sizebox"></div>
+    </div>
+    <div class="sec" id="elsec"><p class="lab">Colour by</p><div class="chips" id="els"></div></div>
+    <div class="sec">
+      <p class="lab">Layers</p>
+      <label class="tg"><input type="checkbox" id="L-int" checked>Drill intervals by grade</label>
+      <label class="tg"><input type="checkbox" id="L-trace" checked>Drill traces &amp; collars</label>
+      <label class="tg"><input type="checkbox" id="L-blocks" checked>Block model<small id="blk-note"></small></label>
+      <label class="tg"><input type="checkbox" id="L-terrain">Terrain<small id="ter-note"></small></label>
+      <label class="tg"><input type="checkbox" id="L-labels">Hole labels</label>
+      <div class="rng" id="ter-op-row"><div class="row"><span>Terrain opacity</span><span class="v" id="ter-op-v">45%</span></div>
+        <input type="range" id="ter-op" min="10" max="100" value="45"></div>
+      <div class="rng"><div class="row"><span>Block opacity</span><span class="v" id="blk-op-v">35%</span></div>
+        <input type="range" id="blk-op" min="10" max="100" value="35"></div>
+    </div>
+    <div class="sec">
+      <p class="lab">View</p>
+      <div class="btns">
+        <button class="btn" id="v-3d">3D</button><button class="btn" id="v-plan">Plan</button>
+        <button class="btn" id="v-ns" title="Section looking east">Sec E</button><button class="btn" id="v-ew" title="Section looking north">Sec N</button>
+      </div>
+      <div class="find" style="margin-top:8px"><input id="find" list="holelist" placeholder="Go to hole…" autocomplete="off"><button class="btn" id="find-go" style="width:52px">Go</button></div>
+      <datalist id="holelist"></datalist>
+      <p class="hint" id="navhint">Drag to orbit · <b>Pan</b> button (or hold space / right-drag) to move around · scroll to zoom at the cursor · double-click anything to pivot around it · arrow keys or WASD pan, Q/E up-down.</p>
+    </div>
+  </div>
+</section>
+
+<section id="pData" class="panel min">
+  <div class="phead" data-p="pData"><h2>Drill data</h2><button class="pbtn" aria-label="Minimise">–</button></div>
+  <div class="pbody">
+    <div class="sec"><div id="datasum"></div></div>
+    <div class="sec"><p class="lab">Holes <span id="hole-n" style="font-weight:400"></span></p>
+      <input type="search" id="hfilter" placeholder="Filter holes…" aria-label="Filter holes">
+      <div id="holetbl"></div></div>
+    <div class="sec"><p class="lab">Data sources <span id="src-n" style="font-weight:400"></span></p><div class="src" id="srclist"></div></div>
+  </div>
+</section>
+</div>
+
+
+<section id="pGrade" class="panel">
+  <div class="phead" data-p="pGrade"><h2>Grade, tonnes &amp; metal</h2><button class="pbtn" aria-label="Minimise">–</button></div>
+  <div class="pbody">
+    <div class="sec" id="gtsec">
+      <div class="rng"><div class="row"><span>Cut-off grade</span><span class="v"><span id="cut-v">–</span></span></div>
+        <input type="range" id="cut" min="0" max="10" value="0" step="1"></div>
+      <p class="lab" style="margin-top:6px">MMP block model above cut-off</p>
+      <div class="big">
+        <div><b id="g-t">–</b><span>Tonnes</span></div>
+        <div><b id="g-g">–</b><span>Grade</span></div>
+        <div class="hl"><b id="g-c">–</b><span id="g-cu">Contained</span></div>
+      </div>
+      <svg class="gt" id="gtchart" viewBox="0 0 300 110" preserveAspectRatio="none"></svg>
+      <div id="cmp"></div>
+    </div>
+    <div class="sec" id="nogt" hidden><p class="note" id="nogt-msg"></p></div>
+    <div class="sec"><div id="intbox"></div><div id="metbox"></div></div>
+    <div class="sec"><p class="lab">One deposit, every metal</p><div id="bdown"></div></div>
+    <div class="sec" id="ressec"><p class="lab">Published resource</p><div id="res"></div></div>
+    <div class="sec"><p class="lab">Block model parameters</p><div id="params"></div></div>
+    <div class="sec"><p class="note">Grades are inverse-distance estimates for <b>visualisation only</b> — not a mineral resource estimate. Verify every figure against the source filings.</p></div>
+  </div>
+</section>
+
+
+<section id="pLegend" class="panel">
+  <div class="phead" data-p="pLegend"><h2 id="lg-h">Grade</h2><button class="pbtn" aria-label="Minimise">–</button></div>
+  <div class="pbody"><div class="lg" id="legend"></div></div>
+</section>
+
+<div id="mtools">
+  <button data-open="pModel">Model</button><button data-open="pGrade">Grade</button><button data-open="pData">Data</button><button data-open="pLegend">Legend</button>
+</div>
+<div id="hud2">
+  <div id="scalebar"><div class="sb"><span></span></div><b id="sb-l"></b></div>
+  <div id="compass" title="North"><svg viewBox="-20 -20 40 40"><g id="needle"><path d="M0,-16 L5,2 L0,-2 L-5,2Z" fill="#D71920"/><path d="M0,16 L5,2 L0,-2 L-5,2Z" fill="#9aa3ae"/><text x="0" y="-9" font-size="0" fill="#fff">N</text></g></svg></div>
+</div>
+<div id="tip"></div>
+
+<script id="model" type="application/json">{"slug":"zeb-zbni","project":"Zeb","company":"ZBNI","region":"South Africa","kinds":["report"],"updated":"2023-07-17","generated":"2026-10-16T17:26:05Z","frame":{"kind":"geo","lat0":-90.410017,"lon0":23.15805,"grid":null},"holes":[["Z01",0.0,0.0,33.19,52.0,-50.0,168.1],["Z02",0.0,0.0,444.25,52.0,-50.0,255.4],["Z03",0.0,0.0,898.47,52.0,-50.0,336.0],["Z04",0.0,0.0,822.64,52.0,-50.0,364.1],["Z05",0.0,0.0,323.41,52.0,-50.0,396.1],["Z06",-1.0,-0.01,699.7,52.0,-50.0,370.3],["Z07",0.0,0.0,803.82,52.0,-50.0,474.2],["Z08",-1.0,-0.01,246.52,52.0,-50.0,381.1],["Z09",0.0,0.0,177.26,52.0,-50.0,350.4],["Z010",0.0,0.0,723.67,52.0,-50.0,219.4],["Z011",0.0,0.0,282.45,52.0,-45.0,198.2],["Z012",-1.0,-0.01,646.28,52.0,-50.0,338.4],["Z013",-1.0,-0.01,528.14,52.0,-50.0,342.6],["Z014",-1.0,-0.01,412.98,52.0,-50.0,321.7],["Z015",-1.0,-0.01,602.47,52.0,-50.0,255.4],["Z016",-1.0,-0.01,904.13,52.0,-50.0,316.4]],"elements":{"Ni":{"unit":"%","bins":[0.1,0.2,0.3,0.5,1,2],"colors":["#3b4cc0","#2fb38a","#9bcf3c","#f39a1f","#e0521b","#7a0b6e"],"segments":[[0,35.0,59.54,0.26],[0,59.54,96.0,0.26],[1,51.7,174.0,0.2075],[1,174.0,228.0,0.25],[1,228.0,235.53,0.2075],[2,59.34,83.0,0.1999],[2,83.0,178.0,0.28],[2,178.0,312.37,0.1999],[3,47.0,203.0,0.2338],[3,203.0,314.0,0.28],[3,314.0,364.0,0.2338],[4,44.82,59.0,0.25],[4,59.0,167.0,0.28],[4,167.0,368.0,0.25],[5,57.65,93.08,0.2228],[5,93.08,201.0,0.27],[5,201.0,354.1,0.2228],[6,51.17,76.0,0.2171],[6,76.0,200.0,0.29],[6,200.0,446.25,0.2171],[7,60.94,230.0,0.2544],[7,230.0,345.0,0.27],[7,345.0,381.0,0.2544],[8,58.0,158.0,0.26],[8,158.0,329.35,0.1967],[9,50.8,71.0,0.1962],[9,71.0,137.0,0.2067],[9,137.0,159.0,0.26],[9,159.0,202.8,0.1962],[10,35.1,119.0,0.1795],[10,119.0,141.0,0.25],[10,141.0,183.2,0.1795],[11,59.0,132.0,0.2003],[11,132.0,335.0,0.31],[11,335.0,338.4,0.2003],[12,72.6,225.0,0.2114],[12,225.0,342.65,0.3],[13,46.0,160.85,0.172],[13,160.85,321.7,0.22],[14,38.03,153.54,0.1977],[14,153.54,215.0,0.35],[14,215.0,217.0,0.1977],[15,34.0,316.4,0.17]],"n_holes":16,"stats":{"max":0.35,"mean":0.234,"p50":0.223},"check":{"idw_mean":0.1346,"nn_mean":0.1265,"bias_pct":6.4,"assay_mean":0.2346,"composite_mean":0.1857,"dilution_pct":20.9},"blocks":{"cls":"AwMDAwMDAwMDAwMDAwMDAwIDAgICAwMCAwMCAgICAwMDAwMDAwICAgMDAwMCAgIDAwMCAgMCAgICAgICAgIDAwMDAgMDAwMDAwMDAgMCAgICAwMCAgMDAgICAgICAgMDAwMDAwMDAwMCAwMCAgICAwMDAwMCAgMDAwIDAwICAwICAgICAgICAgICAgICAgIDAwMDAwMDAwMDAgMDAwICAgIDAwIDAwMCAgMDAgMDAwMCAwMCAgMCAgICAgIDAgICAgICAgICAgICAwMDAwIDAwMDAwMDAwMCAwMCAgICAgMDAwMCAgIDAgMDAwMDAgIDAgICAgIDAgICAgICAgICAgMDAwMDAwMDAwMDAwIDAwICAgICAwMCAwMCAgIDAwIDAwMDAwMDAgIDAgICAgIDAgICAgICAgICAgICAgMDAwMDAwMDAwMDAgMDAgICAgIDAwIDAwICAgMDAgMDAwMCAwMDAgIDAgICAgIDAgICAgICAgECAgICAgIDAwMDAwIDAwMCAgICAwMCAwMCAgIDAwIDAwMDAgMDAwICAwICAgICAwMCAgICAgICAgICAgIDAwMDAwMCAgICAwMCAgIDAwMDAgMDAgICAgICAgICAgIDAwMDAwMDAgIDAwICAgICAwMCAwMCAgIDAwIDAwMDAgMDAgIDAwICAgICAwIDAgICAgMCAgICAgIDAwMDAwMDAwICAwMCAgICAgMDAgMDAgICAwMCAwMDAwIDAwICAwMCAgICAgMCAwICAgIDAgICAgICAgMDAwMDAgIDAwMCAgICAwMCAwMCAgIDAwIDAwMDAgMDAgIDAwICAgICAwIDAgICAgMCAgICAgICAwMDAwICAwMDAgICAgIDAwMCAgIDAwIDAwMDAgMDAgIDAwIDAgICAwIDAgICAgMCAgICAgIDAwMDAgMDAwICAgICAwMDAgIDAwMDAwMDAwICAwMCAgICAgMCAgICAgICAgICAgMDAwMDAgMDAwICAgICAwMCAwMCAgMDAgIDAwMDAgMDAgIDAwICAgICAwICAgICAgICAgICAgIDAwMDAwMCAwMDAgICAgIDAwIDAwICAwMDAgMDAwMCAwMCAgMDAgICAgIDAgMCAgICAgICAgICAgIDAwMDAwIDAwMDAgICAgIDAgMDAgICAwICAwMDAwMDAgIDAwICAgICAwIDAgICAgICAgICAgICAwMDAwIDAwMDAgICAgMDAgICAwMDAwMCAgMDAgMCAgIDAgICAgICAgICAgMDAwMCAwMDAgICAgIDAgMDAgICAwMCAwMDAwICAwMCAgMCAgICAgMDAgICAgICAgICAgICAwMDAwMDAgMDAwICAgIDAgMDAgICAwMCAwMDAwIDAwICAwICAgICAwMCAgICAgICAgICAgICAwMDAwMDAgMDAwMBAgICAgIDAwMCAgMDAgMDAwMCAgIDAgIDAgMCAgICAgICAgICAgICAgMDAwMDAgMDAwMCAwICAgIDAwMCAgMCAwMDAwMCAgMCAgMDAgECAgICAgICAgICAgICAwMDAwMDAwMDAwMDAgICAwIDAwICAgICAgMDAwMDAgMDAwICAgICAgIDAwICAgMDAgMDAwMCAgIDAgIDAgICAgICAgICAgICAgIDAwMDAwMCAwMDAwIDAgICAgMDAwIDAgMDAwMDAgIDAgIDAwICAgICAgICAgICAgICAwMDAwMDAgMDAwMCAwMDAwIDAwMDAgMDAwMDAgICAwICAwMDAgICAgICAgICAgICAgICAwMDAwMCAwMDAwIDAwMDAgIDAwMDAgICAwMDAwMDAgICAwICAwMDAwMCAgICAgICAgICAgIDAwICAgMDAwMDAgIDAwMCAwMDAwMCAwMDAwICAgMDAwMDAgICAwMCAwMDAwMCAwICAgIDAgICAgICAwMDAwMCAgMDAwIDAwMDAwICAwMDAwICAwMDAwMDAgICAwMCAgMDAwMDAwICAgIDAQICAgICAgMDAwICAwMDAgMDAwMDAgIDAwMDAwICAwMDAwMDAgIDAwMCAgMDAwMDAwICAgICAgICAgICAwICAwMDAgIDAwMDAgMDAwIDAwMDAgICAgIDAwMDAgICAgMCAgICAwMDAwMDAwMDAwMCAwMDAwMDAwMDAwMDAwICAgICAgIDAwMCAwMDAwIDAwMDAwICAwMDAwMCAgMDAwMDAgIDAwMCAwMDAwIDAgICAgIDAgICAgIDAgMDAwMCAwMDAwMDAgIDAwMDAgIDAwMDAwICAgICAwMDAwIDAwICAgIDAgICAgICAwMDAgMDAwMDAgMDAwIDAwMDAwICAgIDAwMCAwMCAgICAwMCAgICAwMCAgMDAwMCAgMDAwICAgIDAgMDAwMDAwMDAwMCAwMDAgICAgMDAwICAgICAwICAgIDAwMCAwMDAwMCAwMDAgMDAwMCAgICAwMDAgMDAgICAgMDAgICAwMCAwMDAwMCAwMDAwICAwIDAwMCAgICAwICAwIDAwICAwMDAwMCAgIDAwMDAgIDAwIDAwMDAwMDAgICAgIDAgMCAgMDAwMDAgICAgICAgMDAwMDAwICAwMDAwIDAwMDAwMDAwMDAwMDAwM=","classes":["well drilled","moderately drilled","thinly drilled"],"origin":[-40.5,-39.63,-130.1],"size":[20.0,20.0,15.0],"ijk":"AQACAAcAAQADAAgAAgABAAcAAgACAAYAAgACAAcAAgACAAgAAgACAA8AAgACACAAAgACAC0AAgADAAUAAgADAAYAAgADAAcAAgADAAgAAgADAAkAAgADAA8AAgADABAAAgADABQAAgADABkAAgADABoAAgADABsAAgADAB8AAgADACAAAgADACEAAgADACwAAgADAC0AAgADAC4AAgADADkAAgADADoAAgADADwAAgADAEAAAgAEAAYAAgAEAAcAAgAEAAgAAgAEABAAAgAEABEAAgAEABQAAgAEABUAAgAEABgAAgAEABkAAgAEABoAAgAEABsAAgAEABwAAgAEAB8AAgAEACAAAgAEACEAAgAEACIAAgAEACMAAgAEACcAAgAEACwAAgAEAC0AAgAEAC4AAgAEAC8AAgAEADAAAgAEADIAAgAEADMAAgAEADQAAgAEADUAAgAEADoAAgAEADsAAgAEADwAAgAEAEAAAgAEAEEAAwABAAcAAwABAAgAAwABACAAAwABAC0AAwABADoAAwACAAUAAwACAAYAAwACAAcAAwACAAgAAwACAAkAAwACAA4AAwACAA8AAwACABAAAwACABQAAwACABUAAwACABgAAwACABkAAwACABoAAwACABsAAwACAB8AAwACACAAAwACACEAAwACACwAAwACAC0AAwACAC4AAwACAC8AAwACADMAAwACADkAAwACADoAAwACADsAAwACADwAAwACAEAAAwADAAUAAwADAAYAAwADAAcAAwADAAgAAwADAAkAAwADAA0AAwADAA4AAwADAA8AAwADABAAAwADABEAAwADABMAAwADABQAAwADABUAAwADABcAAwADABgAAwADABkAAwADABoAAwADABsAAwADABwAAwADAB4AAwADAB8AAwADACAAAwADACEAAwADACIAAwADACMAAwADACYAAwADACcAAwADACsAAwADACwAAwADAC0AAwADAC4AAwADAC8AAwADADAAAwADADIAAwADADMAAwADADQAAwADADUAAwADADYAAwADADgAAwADADkAAwADADoAAwADADsAAwADADwAAwADAD0AAwADAD4AAwADAD8AAwADAEAAAwADAEEAAwADAEIAAwAEAAUAAwAEAAYAAwAEAAcAAwAEAAgAAwAEAAkAAwAEAA0AAwAEAA4AAwAEAA8AAwAEABAAAwAEABEAAwAEABIAAwAEABMAAwAEABQAAwAEABUAAwAEABYAAwAEABcAAwAEABgAAwAEABkAAwAEABoAAwAEABsAAwAEABwAAwAEAB0AAwAEAB4AAwAEAB8AAwAEACAAAwAEACEAAwAEACIAAwAEACMAAwAEACQAAwAEACUAAwAEACYAAwAEACcAAwAEACgAAwAEACoAAwAEACsAAwAEACwAAwAEAC0AAwAEAC4AAwAEAC8AAwAEADAAAwAEADEAAwAEADIAAwAEADMAAwAEADQAAwAEADUAAwAEADYAAwAEADcAAwAEADgAAwAEADkAAwAEADoAAwAEADsAAwAEADwAAwAEAD0AAwAEAD4AAwAEAD8AAwAEAEAAAwAEAEEAAwAEAEIAAwAFABMAAwAFACYAAwAFACsAAwAFAC4AAwAFAD8ABAACAAUABAACAAYABAACAAcABAACAAgABAACAAkABAACAA4ABAACAA8ABAACABAABAACABEABAACABMABAACABQABAACABUABAACABYABAACABcABAACABgABAACABkABAACABoABAACABsABAACABwABAACAB4ABAACAB8ABAACACAABAACACEABAACACIABAACACMABAACACUABAACACYABAACACcABAACACsABAACACwABAACAC0ABAACAC4ABAACAC8ABAACADAABAACADEABAACADIABAACADMABAACADQABAACADUABAACADYABAACADgABAACADkABAACADoABAACADsABAACADwABAACAD0ABAACAD4ABAACAD8ABAACAEAABAACAEEABAADAAYABAADAAcABAADAAgABAADAAkABAADAAoABAADAAsABAADAAwABAADAA0ABAADAA4ABAADAA8ABAADABAABAADABEABAADABIABAADABMABAADABQABAADABUABAADABYABAADABcABAADABgABAADABkABAADABoABAADABsABAADABwABAADAB0ABAADAB4ABAADAB8ABAADACAABAADACEABAADACIABAADACMABAADACQABAADACUABAADACYABAADACcABAADACgABAADACoABAADACsABAADACwABAADAC0ABAADAC4ABAADAC8ABAADADAABAADADEABAADADIABAADADMABAADADQABAADADUABAADADYABAADADcABAADADgABAADADkABAADADoABAADADsABAADADwABAADAD0ABAADAD4ABAADAD8ABAADAEAABAADAEEABAADAEIABAAEAAYABAAEAAcABAAEAAgABAAEAAkABAAEAAoABAAEAAsABAAEAAwABAAEAA0ABAAEAA4ABAAEAA8ABAAEABAABAAEABEABAAEABIABAAEABMABAAEABQABAAEABUABAAEABYABAAEABcABAAEABgABAAEABkABAAEABoABAAEABsABAAEABwABAAEAB0ABAAEAB4ABAAEAB8ABAAEACAABAAEACEABAAEACIABAAEACMABAAEACQABAAEACUABAAEACYABAAEACcABAAEACgABAAEACkABAAEACoABAAEACsABAAEACwABAAEAC0ABAAEAC4ABAAEAC8ABAAEADAABAAEADEABAAEADIABAAEADMABAAEADQABAAEADUABAAEADYABAAEADcABAAEADgABAAEADkABAAEADoABAAEADsABAAEADwABAAEAD0ABAAEAD4ABAAEAD8ABAAEAEAABAAEAEEABAAEAEIABAAFAAsABAAFAAwABAAFAA0ABAAFAA4ABAAFAA8ABAAFABAABAAFABEABAAFABIABAAFABMABAAFABQABAAFABUABAAFABYABAAFABcABAAFABgABAAFABkABAAFABoABAAFABsABAAFABwABAAFAB0ABAAFAB4ABAAFAB8ABAAFACAABAAFACEABAAFACIABAAFACMABAAFACQABAAFACUABAAFACYABAAFACcABAAFACgABAAFACkABAAFACoABAAFACsABAAFACwABAAFAC0ABAAFAC4ABAAFAC8ABAAFADAABAAFADEABAAFADIABAAFADMABAAFADQABAAFADUABAAFADYABAAFADcABAAFADgABAAFADkABAAFADoABAAFADsABAAFADwABAAFAD0ABAAFAD4ABAAFAD8ABAAFAEAABQACAAYABQACAA4ABQACAA8ABQACABAABQACABMABQACABQABQACABYABQACABcABQACABgABQACABkABQACABoABQACAB4ABQACAB8ABQACACAABQACACEABQACACIABQACACYABQACACcABQACACsABQACACwABQACAC4ABQACAC8ABQACADEABQACADIABQACADMABQACADQABQACADgABQACADkABQACADoABQACADsABQACAD4ABQACAD8ABQACAEAABQADAAcABQADAAgABQADAAsABQADAAwABQADAA0ABQADAA4ABQADAA8ABQADABAABQADABEABQADABIABQADABMABQADABQABQADABUABQADABYABQADABcABQADABgABQADABkABQADABoABQADABsABQADABwABQADAB0ABQADAB4ABQADAB8ABQADACAABQADACEABQADACIABQADACMABQADACQABQADACUABQADACYABQADACcABQADACgABQADACkABQADACoABQADACsABQADACwABQADAC0ABQADAC4ABQADAC8ABQADADAABQADADEABQADADIABQADADMABQADADQABQADADUABQADADYABQADADcABQADADgABQADADkABQADADoABQADADsABQADADwABQADAD0ABQADAD4ABQADAD8ABQADAEAABQADAEEABQAEAAcABQAEAAgABQAEAAkABQAEAAoABQAEAAsABQAEAAwABQAEAA0ABQAEAA4ABQAEAA8ABQAEABAABQAEABEABQAEABIABQAEABMABQAEABQABQAEABUABQAEABYABQAEABcABQAEABgABQAEABkABQAEABoABQAEABsABQAEABwABQAEAB0ABQAEAB4ABQAEAB8ABQAEACAABQAEACEABQAEACIABQAEACMABQAEACQABQAEACUABQAEACYABQAEACcABQAEACgABQAEACkABQAEACoABQAEACsABQAEACwABQAEAC0ABQAEAC4ABQAEAC8ABQAEADAABQAEADEABQAEADIABQAEADMABQAEADQABQAEADUABQAEADYABQAEADcABQAEADgABQAEADkABQAEADoABQAEADsABQAEADwABQAEAD0ABQAEAD4ABQAEAD8ABQAEAEAABQAEAEEABQAFAAkABQAFAAoABQAFAAsABQAFAAwABQAFAA0ABQAFAA4ABQAFAA8ABQAFABAABQAFABEABQAFABIABQAFABMABQAFABQABQAFABUABQAFABYABQAFABcABQAFABgABQAFABkABQAFABoABQAFABsABQAFABwABQAFAB0ABQAFAB4ABQAFAB8ABQAFACAABQAFACEABQAFACIABQAFACMABQAFACQABQAFACUABQAFACYABQAFACcABQAFACgABQAFACkABQAFACoABQAFACsABQAFACwABQAFAC0ABQAFAC4ABQAFAC8ABQAFADAABQAFADEABQAFADIABQAFADMABQAFADQABQAFADUABQAFADYABQAFADcABQAFADgABQAFADkABQAFADoABQAFADsABQAFADwABQAFAD0ABQAFAD4ABQAFAD8ABQAFAEAABQAGAAkABQAGAAoABQAGAAsABQAGAAwABQAGAA0ABQAGAA4ABQAGAA8ABQAGABAABQAGABEABQAGABIABQAGABMABQAGABQABQAGABUABQAGABYABQAGABcABQAGABkABQAGABoABQAGABsABQAGABwABQAGAB0ABQAGAB4ABQAGAB8ABQAGACAABQAGACEABQAGACIABQAGACMABQAGACQABQAGACUABQAGACYABQAGACcABQAGACgABQAGACkABQAGACoABQAGACsABQAGACwABQAGAC0ABQAGAC4ABQAGAC8ABQAGADAABQAGADEABQAGADIABQAGADMABQAGADQABQAGADUABQAGADYABQAGADcABQAGADgABQAGADkABQAGADoABQAGADsABQAGADwABQAGAD0ABQAGAD4ABgADAAsABgADAAwABgADAA0ABgADAA4ABgADAA8ABgADABAABgADABEABgADABIABgADABMABgADABQABgADABUABgADABYABgADABcABgADABgABgADABsABgADABwABgADAB0ABgADAB4ABgADAB8ABgADACAABgADACMABgADACQABgADACUABgADACYABgADACgABgADACkABgADACoABgADACsABgADACwABgADAC0ABgADAC4ABgADAC8ABgADADAABgADADEABgADADIABgADADMABgADADUABgADADYABgADADcABgADADgABgADADkABgADADoABgADADsABgADADwABgADAD0ABgADAD4ABgADAD8ABgAEAAkABgAEAAoABgAEAAsABgAEAAwABgAEAA0ABgAEAA4ABgAEAA8ABgAEABAABgAEABEABgAEABIABgAEABMABgAEABQABgAEABUABgAEABYABgAEABcABgAEABgABgAEABkABgAEABoABgAEABsABgAEABwABgAEAB0ABgAEAB4ABgAEAB8ABgAEACAABgAEACEABgAEACIABgAEACMABgAEACQABgAEACUABgAEACYABgAEACcABgAEACgABgAEACkABgAEACoABgAEACsABgAEACwABgAEAC0ABgAEAC4ABgAEAC8ABgAEADAABgAEADEABgAEADIABgAEADMABgAEADQABgAEADUABgAEADYABgAEADcABgAEADgABgAEADkABgAEADoABgAEADsABgAEADwABgAEAD0ABgAEAD4ABgAEAD8ABgAFAAcABgAFAAgABgAFAAkABgAFAAoABgAFAAsABgAFAAwABgAFAA0ABgAFAA4ABgAFAA8ABgAFABAABgAFABEABgAFABIABgAFABMABgAFABQABgAFABUABgAFABYABgAFABcABgAFABgABgAFABkABgAFABoABgAFABsABgAFABwABgAFAB0ABgAFAB4ABgAFAB8ABgAFACAABgAFACEABgAFACIABgAFACMABgAFACQABgAFACUABgAFACYABgAFACcABgAFACgABgAFACkABgAFACoABgAFACsABgAFACwABgAFAC0ABgAFAC4ABgAFAC8ABgAFADAABgAFADEABgAFADIABgAFADMABgAFADQABgAFADUABgAFADYABgAFADcABgAFADgABgAFADkABgAFADoABgAFADsABgAFADwABgAFAD0ABgAFAD4ABgAFAD8ABgAGAAcABgAGAAgABgAGAAkABgAGAAoABgAGAAsABgAGAAwABgAGAA0ABgAGAA4ABgAGAA8ABgAGABAABgAGABEABgAGABIABgAGABMABgAGABQABgAGABUABgAGABYABgAGABcABgAGABgABgAGABkABgAGABoABgAGABsABgAGABwABgAGAB0ABgAGAB4ABgAGAB8ABgAGACAABgAGACEABgAGACIABgAGACMABgAGACUABgAGACYABgAGACcABgAGACgABgAGACkABgAGACoABgAGACsABgAGACwABgAGAC0ABgAGAC4ABgAGAC8ABgAGADAABgAGADEABgAGADIABgAGADMABgAGADQABgAGADUABgAGADYABgAGADcABgAGADgABgAGADkABgAGADoABgAGADsABgAGADwABgAGAD0ABgAGAD4ABgAHAAcABgAHAAgABgAHAAkABgAHAAoABgAHAAsABgAHAAwABgAHAA0ABgAHAA4ABgAHAA8ABgAHABEABgAHABIABgAHABMABgAHABQABgAHABcABgAHABgABgAHABkABgAHABoABgAHABsABgAHABwABgAHAB8ABgAHACAABgAHACEABgAHACIABgAHACYABgAHACcABgAHACgABgAHACkABgAHACoABgAHACsABgAHACwABgAHAC0ABgAHAC4ABgAHAC8ABgAHADEABgAHADIABgAHADMABgAHADQABgAHADUABgAHADYABgAHADgABgAHADkABgAHADoABgAHADsABwAEAAkABwAEAAoABwAEAAsABwAEAAwABwAEAA0ABwAEAA4ABwAEAA8ABwAEABAABwAEABEABwAEABIABwAEABMABwAEABQABwAEABUABwAEABYABwAEABcABwAEABgABwAEABkABwAEABoABwAEABsABwAEABwABwAEAB0ABwAEAB4ABwAEAB8ABwAEACAABwAEACEABwAEACIABwAEACMABwAEACQABwAEACUABwAEACYABwAEACcABwAEACgABwAEACkABwAEACoABwAEACsABwAEACwABwAEAC0ABwAEAC4ABwAEAC8ABwAEADAABwAEADEABwAEADIABwAEADMABwAEADQABwAEADUABwAEADYABwAEADcABwAEADgABwAEADkABwAEADoABwAEADsABwAEADwABwAEAD0ABwAFAAYABwAFAAcABwAFAAgABwAFAAkABwAFAAoABwAFAAsABwAFAAwABwAFAA0ABwAFAA4ABwAFAA8ABwAFABAABwAFABIABwAFABMABwAFABQABwAFABUABwAFABYABwAFABcABwAFABgABwAFABkABwAFABoABwAFABsABwAFABwABwAFAB0ABwAFAB4ABwAFAB8ABwAFACAABwAFACEABwAFACIABwAFACMABwAFACUABwAFACYABwAFACcABwAFACgABwAFACkABwAFACoABwAFACsABwAFACwABwAFAC0ABwAFAC4ABwAFAC8ABwAFADAABwAFADEABwAFADIABwAFADMABwAFADQABwAFADUABwAFADYABwAFADcABwAFADgABwAFADkABwAFADoABwAFADsABwAFADwABwAFAD0ABwAGAAUABwAGAAYABwAGAAcABwAGAAgABwAGAAkABwAGAAoABwAGAAsABwAGAAwABwAGAA0ABwAGAA4ABwAGAA8ABwAGABAABwAGABEABwAGABIABwAGABMABwAGABQABwAGABUABwAGABYABwAGABcABwAGABgABwAGABkABwAGABoABwAGABsABwAGABwABwAGAB0ABwAGAB4ABwAGAB8ABwAGACAABwAGACEABwAGACIABwAGACYABwAGACcABwAGACgABwAGACkABwAGACoABwAGACsABwAGACwABwAGAC8ABwAGADAABwAGADEABwAGADIABwAGADMABwAGADQABwAGADUABwAGADYABwAGADcABwAGADgABwAGADkABwAGADoABwAGADsABwAGADwABwAGAD0ABwAHAAUABwAHAAYABwAHAAcABwAHAAgABwAHAAkABwAHAAoABwAHAAsABwAHAAwABwAHAA0ABwAHAA4ABwAHAA8ABwAHABAABwAHABEABwAHABIABwAHABMABwAHABQABwAHABUABwAHABYABwAHABcABwAHABgABwAHABoABwAHABsABwAHABwABwAHAB0ABwAHAB4ABwAHAB8ABwAHACAABwAHACEABwAHACUABwAHACYABwAHACcABwAHACgABwAHACkABwAHACoABwAHACsABwAHACwABwAHAC4ABwAHAC8ABwAHADAABwAHADEABwAHADIABwAHADMABwAHADQABwAHADUABwAHADYABwAHADcABwAHADgABwAHADkABwAHADoABwAHADsABwAIAAYABwAIAAcABwAIAAoABwAIAAsABwAIAAwABwAIABAABwAIABEABwAIABYABwAIABcABwAIAB0ABwAIAB4ABwAIAB8ABwAIACMABwAIACQABwAIACUABwAIACYABwAIACcABwAIACkABwAIACoABwAIADAABwAIADEABwAIADIABwAIADYABwAIADcABwAIADgACAAFAAYACAAFAAcACAAFAAgACAAFAAkACAAFAAoACAAFAAsACAAFAAwACAAFAA0ACAAFAA4ACAAFAA8ACAAFABAACAAFABEACAAFABIACAAFABMACAAFABQACAAFABUACAAFABYACAAFABcACAAFABgACAAFABkACAAFABoACAAFABsACAAFABwACAAFAB0ACAAFAB4ACAAFAB8ACAAFACAACAAFACEACAAFACIACAAFACYACAAFACcACAAFACgACAAFACkACAAFACoACAAFACsACAAFACwACAAFAC8ACAAFADAACAAFADEACAAFADIACAAFADMACAAFADQACAAFADUACAAFADYACAAFADcACAAFADgACAAFADkACAAFADoACAAFADsACAAGAAQACAAGAAUACAAGAAYACAAGAAcACAAGAAgACAAGAAkACAAGAAoACAAGAAsACAAGAAwACAAGAA0ACAAGAA4ACAAGAA8ACAAGABAACAAGABEACAAGABIACAAGABMACAAGABQACAAGABUACAAGABYACAAGABcACAAGABgACAAGABsACAAGABwACAAGAB0ACAAGAB4ACAAGAB8ACAAGACAACAAGACEACAAGACUACAAGACYACAAGACcACAAGACgACAAGACkACAAGACoACAAGACsACAAGACwACAAGAC8ACAAGADAACAAGADEACAAGADIACAAGADMACAAGADQACAAGADUACAAGADYACAAGADcACAAGADgACAAGADkACAAGADoACAAGADsACAAHAAMACAAHAAQACAAHAAUACAAHAAYACAAHAAcACAAHAAgACAAHAAkACAAHAAoACAAHAAsACAAHAAwACAAHAA0ACAAHAA4ACAAHAA8ACAAHABAACAAHABEACAAHABIACAAHABMACAAHABQACAAHABUACAAHABYACAAHABcACAAHABsACAAHABwACAAHAB0ACAAHAB4ACAAHAB8ACAAHACAACAAHACEACAAHACQACAAHACUACAAHACYACAAHACcACAAHACgACAAHACkACAAHACoACAAHACsACAAHACwACAAHAC0ACAAHAC4ACAAHAC8ACAAHADAACAAHADEACAAHADIACAAHADMACAAHADQACAAHADUACAAHADYACAAHADcACAAHADgACAAHADkACAAHADoACAAIAAMACAAIAAQACAAIAAUACAAIAAYACAAIAAcACAAIAAgACAAIAAkACAAIAAoACAAIAAsACAAIAAwACAAIAA0ACAAIAA4ACAAIAA8ACAAIABAACAAIABEACAAIABIACAAIABMACAAIABQACAAIABUACAAIABYACAAIABcACAAIABgACAAIABkACAAIABoACAAIABsACAAIABwACAAIAB0ACAAIAB4ACAAIAB8ACAAIACAACAAIACIACAAIACMACAAIACQACAAIACUACAAIACYACAAIACcACAAIACgACAAIACkACAAIACoACAAIACsACAAIAC0ACAAIAC4ACAAIAC8ACAAIADAACAAIADEACAAIADIACAAIADMACAAIADQACAAIADUACAAIADYACAAIADcACAAIADgACAAIADkACQAFAAcACQAFABEACQAFADEACQAFADIACQAFADcACQAGAAMACQAGAAQACQAGAAUACQAGAAYACQAGAAcACQAGAAgACQAGAAkACQAGAAoACQAGAAsACQAGAAwACQAGAA0ACQAGAA4ACQAGAA8ACQAGABAACQAGABEACQAGABIACQAGABMACQAGABQACQAGABUACQAGABYACQAGABcACQAGABgACQAGABoACQAGABsACQAGABwACQAGAB0ACQAGAB4ACQAGAB8ACQAGACAACQAGACIACQAGACMACQAGACQACQAGACUACQAGACYACQAGACcACQAGACgACQAGACkACQAGACoACQAGACsACQAGACwACQAGAC0ACQAGAC4ACQAGAC8ACQAGADAACQAGADEACQAGADIACQAGADMACQAGADQACQAGADUACQAGADYACQAGADcACQAGADgACQAGADkACQAHAAIACQAHAAMACQAHAAQACQAHAAUACQAHAAYACQAHAAcACQAHAAgACQAHAAkACQAHAAoACQAHAAsACQAHAAwACQAHAA0ACQAHAA4ACQAHAA8ACQAHABAACQAHABEACQAHABIACQAHABMACQAHABQACQAHABUACQAHABYACQAHABcACQAHABkACQAHABoACQAHABsACQAHABwACQAHAB0ACQAHAB4ACQAHAB8ACQAHACAACQAHACEACQAHACIACQAHACMACQAHACQACQAHACUACQAHACYACQAHACcACQAHACgACQAHACkACQAHACoACQAHACsACQAHACwACQAHAC0ACQAHAC4ACQAHAC8ACQAHADAACQAHADEACQAHADIACQAHADMACQAHADQACQAHADUACQAHADYACQAHADcACQAHADgACQAHADkACQAIAAMACQAIAAQACQAIAAUACQAIAAYACQAIAAcACQAIAAgACQAIAAkACQAIAAoACQAIAAsACQAIAAwACQAIAA0ACQAIAA4ACQAIAA8ACQAIABAACQAIABEACQAIABIACQAIABMACQAIABQACQAIABUACQAIABYACQAIABcACQAIABgACQAIABkACQAIABoACQAIABsACQAIABwACQAIAB0ACQAIAB4ACQAIAB8ACQAIACAACQAIACEACQAIACIACQAIACMACQAIACQACQAIACUACQAIACYACQAIACcACQAIACgACQAIACkACQAIACoACQAIACsACQAIACwACQAIAC0ACQAIAC4ACQAIAC8ACQAIADAACQAIADEACQAIADIACQAIADQACQAIADUACQAIADYACQAIADcACQAIADgACQAJAAQACQAJAAUACQAJAAYACQAJAAcACQAJAAgACQAJAAkACQAJAAoACQAJAAsACQAJAAwACQAJAA0ACQAJAA4ACQAJAA8ACQAJABIACQAJABMACQAJABQACQAJABUACQAJABkACQAJABoACQAJABsACQAJABwACQAJAB0ACQAJACEACQAJACIACQAJACMACQAJACQACQAJACUACQAJACYACQAJACcACQAJACgACQAJACsACQAJACwACQAJAC0ACQAJAC4ACQAJAC8ACQAJADAACQAJADEACQAJADIACQAJADUACQAJADYACgAGAAQACgAGAAUACgAGAAYACgAGAAgACgAGAAkACgAGAAoACgAGAAsACgAGAA0ACgAGAA4ACgAGAA8ACgAGABAACgAGABMACgAGABQACgAGABUACgAGABYACgAGABsACgAGABwACgAGAB0ACgAGACMACgAGACQACgAGACUACgAGACcACgAGACgACgAGACkACgAGAC0ACgAGAC4ACgAGAC8ACgAGADAACgAGADEACgAGADQACgAGADUACgAGADYACgAHAAMACgAHAAQACgAHAAUACgAHAAYACgAHAAcACgAHAAgACgAHAAkACgAHAAoACgAHAAsACgAHAAwACgAHAA0ACgAHAA4ACgAHAA8ACgAHABAACgAHABEACgAHABIACgAHABMACgAHABQACgAHABUACgAHABYACgAHABcACgAHABgACgAHABkACgAHABoACgAHABsACgAHABwACgAHAB0ACgAHAB4ACgAHACAACgAHACEACgAHACIACgAHACMACgAHACQACgAHACUACgAHACYACgAHACcACgAHACgACgAHACkACgAHACoACgAHACsACgAHACwACgAHAC0ACgAHAC4ACgAHAC8ACgAHADAACgAHADEACgAHADIACgAHADQACgAHADUACgAHADYACgAHADcACgAIAAQACgAIAAUACgAIAAYACgAIAAcACgAIAAgACgAIAAkACgAIAAoACgAIAAsACgAIAAwACgAIAA0ACgAIAA4ACgAIAA8ACgAIABAACgAIABEACgAIABIACgAIABMACgAIABQACgAIABUACgAIABYACgAIABgACgAIABkACgAIABoACgAIABsACgAIABwACgAIAB0ACgAIAB4ACgAIACAACgAIACEACgAIACIACgAIACMACgAIACQACgAIACUACgAIACYACgAIACcACgAIACgACgAIACkACgAIACoACgAIACsACgAIACwACgAIAC0ACgAIAC4ACgAIAC8ACgAIADAACgAIADEACgAIADUACgAIADYACgAIADcACgAJAAQACgAJAAUACgAJAAYACgAJAAcACgAJAAgACgAJAAkACgAJAAsACgAJAAwACgAJAA0ACgAJAA4ACgAJAA8ACgAJABIACgAJABMACgAJABQACgAJABUACgAJABgACgAJABkACgAJABoACgAJABsACgAJABwACgAJAB0ACgAJACAACgAJACEACgAJACIACgAJACMACgAJACUACgAJACYACgAJACcACgAJACgACgAJACkACgAJACoACgAJACsACgAJACwACgAJAC0ACgAJAC4ACgAJAC8ACgAJADAACgAJADEACgAJADYACgAKAAQACgAKAAUACgAKAAYACgAKAAcACgAKAAgACgAKAAkACgAKAAsACgAKAAwACgAKAA0ACgAKABoACgAKACIACgAKACMACgAKACYACgAKACkACgAKACoACgAKACsACgAKACwACgAKAC0ACgAKAC4ACwAHAAQACwAHAAUACwAHAAYACwAHAAcACwAHAAgACwAHAAkACwAHAAsACwAHAAwACwAHAA0ACwAHAA4ACwAHABMACwAHABQACwAHABkACwAHABoACwAHABsACwAHABwACwAHACEACwAHACIACwAHACMACwAHACQACwAHACUACwAHACYACwAHACcACwAHACsACwAHACwACwAHAC0ACwAHAC4ACwAHAC8ACwAHADAACwAHADIACwAHADUACwAIAAQACwAIAAUACwAIAAYACwAIAAcACwAIAAgACwAIAAkACwAIAAsACwAIAAwACwAIAA0ACwAIAA4ACwAIAA8ACwAIABIACwAIABMACwAIABQACwAIABUACwAIABgACwAIABkACwAIABoACwAIABsACwAIABwACwAIACAACwAIACEACwAIACIACwAIACMACwAIACUACwAIACYACwAIACcACwAIACgACwAIACkACwAIACoACwAIACsACwAIACwACwAIAC0ACwAIAC4ACwAIAC8ACwAIADAACwAIADEACwAJAAQACwAJAAUACwAJAAYACwAJAAcACwAJAAgACwAJAAwACwAJAA0ACwAJAA4ACwAJABMACwAJABQACwAJABgACwAJABkACwAJABoACwAJABsACwAJABwACwAJACEACwAJACIACwAJACYACwAJACcACwAJACgACwAJACkACwAJACoACwAJACsACwAJACwACwAJAC0ACwAJAC4ACwAJAC8ACwAKAAQACwAKAAUACwAKAAYACwAKAAcACwAKAAwACwAKAA0ACwAKACIACwAKACYACwAKACcACwAKACgACwAKACkACwAKACoACwAKACsACwAKACwACwAKAC0ACwAKAC4ACwALACcACwALACgACwALACkACwALACoADAAIAAQADAAIAAUADAAIAAYADAAIAAcADAAIAAgADAAIAAwADAAIAA0ADAAIACYADAAIACgADAAIACkADAAIACoADAAIACsADAAIACwADAAIAC0ADAAIAC4ADAAJAAQADAAJAAUADAAJAAYADAAJAAcADAAJAA0ADAAJACIADAAJACYADAAJACcADAAJACgADAAJACkADAAJACoADAAJACsADAAJACwADAAJAC0ADAAJAC4ADAAKAAQADAAKAAUADAAKAAYADAAKAAcADAAKACYADAAKACcADAAKACgADAAKACkADAAKACoADAAKACsADAAKACwADAAKAC0ADAALACcADAALACgADAALACkADAALACoADQAJAAUADQAJACcADQAJACgADQAJACkADQAJACoADQAJACsADQAKACcADQAKACgADQAKACkADQAKACoADQAKACsADQALACgADQALACkADQALACoADgAKACgADgAKACkA","g":"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","n":1952,"n_total":2798,"shown_from":0.1,"tonnes_per_block":15000.0,"density":2.5,"params":{"block":[20.0,20.0,15.0],"radius_m":85.4,"max_gap_m":40.0,"spacing_m":53.3,"power":2.0,"min_holes":2,"min_samples":3,"method":"idw","coarsened":1.0,"max_per_hole":4,"domain_radius_m":15.0,"domain_reach_m":70.4,"anisotropy":[1.0,0.96,0.92],"passes":[{"range_m":85.4,"max_gap_m":30.0,"min_holes":3,"min_samples":3,"class":"well drilled"},{"range_m":85.4,"max_gap_m":40.0,"min_holes":2,"min_samples":2,"class":"moderately drilled"},{"range_m":85.4,"max_gap_m":40.0,"min_holes":1,"min_samples":2,"class":"thinly drilled"}],"domain":{"intercepts":16,"reach_m":117.4,"intercept_spacing_m":53.3,"mode":"solid","cells":13,"points":2701,"thickness_m":15.0,"grade_reach_m":70.4},"top_cut":7.0,"composite_m":2.0,"block_source":"typical for Ni deposits (6 reports)","gap_fill":true,"gap_fill_margin_m":60.0,"custom":[],"auto":{"density":"technical report (2023)","composite_m":"technical report (2023)","top_cut":"technical report (2023)","default_cutoff":"technical report (2023)","method":"technical report (2023)","power":"technical report (2023)","metallurgy":"technical report (2023)","deposit_style":"technical report (2023)","block":"typical for Ni deposits (6 reports)"},"density_source":"stated in the technical report"}},"gt":[[0.0,32355000,0.2109,150456033],[0.0426,31575000,0.2155,149996336],[0.0851,29910000,0.2239,147637333],[0.1,29280000,0.2267,146362368],[0.1277,28245000,0.2309,143773193],[0.1702,26895000,0.2351,139373039],[0.2,21660000,0.2461,117499656],[0.2128,18915000,0.2516,104899159],[0.2553,7530000,0.2797,46424868],[0.2979,2160000,0.31,14761434],[0.3,2160000,0.31,14761434],[0.3404,225000,0.3487,1729626],[0.383,0,0.0,0],[0.4255,0,0.0,0],[0.4681,0,0.0,0],[0.5,0,0.0,0],[0.5106,0,0.0,0],[0.5532,0,0.0,0],[0.5957,0,0.0,0],[0.6383,0,0.0,0],[0.6809,0,0.0,0],[0.7234,0,0.0,0],[0.766,0,0.0,0],[0.8085,0,0.0,0],[0.8511,0,0.0,0],[0.8936,0,0.0,0],[0.9362,0,0.0,0],[0.9787,0,0.0,0],[1,0,0.0,0],[1.0213,0,0.0,0],[1.0638,0,0.0,0],[1.1064,0,0.0,0],[1.1489,0,0.0,0],[1.1915,0,0.0,0],[1.234,0,0.0,0],[1.2766,0,0.0,0],[1.3191,0,0.0,0],[1.3617,0,0.0,0],[1.4043,0,0.0,0],[1.4468,0,0.0,0],[1.4894,0,0.0,0],[1.5319,0,0.0,0],[1.5745,0,0.0,0],[1.617,0,0.0,0],[1.6596,0,0.0,0],[1.7021,0,0.0,0],[1.7447,0,0.0,0],[1.7872,0,0.0,0],[1.8298,0,0.0,0],[1.8723,0,0.0,0],[1.9149,0,0.0,0],[1.9574,0,0.0,0],[2,0,0.0,0]],"default_cutoff":0.1,"contained_unit":"lb"}},"primary":"Ni","by_metal":{"basis":"Ni","basis_unit":"%","cuts":[0.0,0.1,0.2,0.3,0.5,1.0,2.0],"tonnes":[32355000,29280000,21660000,2160000,0,0,0],"density":2.5,"tonnes_per_block":15000.0,"order":["Ni"],"metals":{"Ni":{"unit":"%","contained_unit":"lb","grade":[0.2109,0.2267,0.2461,0.31,null,null,null],"contained":[150456039,146362364,117499664,14761435,null,null,null],"coverage":[1.0,1.0,1.0,1.0,0.0,0.0,0.0],"tonnes":[32355000,29280000,21660000,2160000,0,0,0],"own":{"cuts":[0.0,0.0145,0.06196,0.09253,0.12881,0.17199,0.18411,0.19328,0.19666,0.20029,0.20995,0.21344,0.21751,0.22,0.22283,0.22711,0.23408,0.24577,0.24996,0.25439,0.25959,0.26,0.27,0.28,0.3],"tonnes":[32355000,32190000,30855000,29520000,28185000,26460000,25515000,24180000,22425000,21390000,20175000,18840000,17505000,15945000,14640000,13515000,12180000,10845000,10365000,8625000,6840000,5325000,4455000,3075000,2160000],"grade":[0.2109,0.212,0.2193,0.2257,0.2311,0.2361,0.2381,0.2409,0.2444,0.2466,0.249,0.2517,0.2544,0.2578,0.2609,0.2639,0.2676,0.271,0.2721,0.2764,0.2819,0.2881,0.2927,0.3021,0.31]}}},"classes":{"well drilled":[135000,60000,30000,0,0,0,0],"moderately drilled":[17310000,14535000,9735000,255000,0,0,0],"thinly drilled":[14910000,14685000,11895000,1905000,0,0,0]},"method":{"limit_m":350.0,"note":"Blocks within 350 m of surface are reported as open pit and the rest as underground, with the underground cut-off set 2.5x higher because underground tonnes cost more to mine. The depth is what a pit plausibly reaches on a bulk \u2014 a geometric split, not a pit shell.","basis":"grade","open_pit":{"cutoff":0.1,"tonnes":29250000,"blocks":1950,"metals":{"Ni":{"grade":0.2268,"unit":"%","contained":146254863,"contained_unit":"lb","coverage":1.0}}},"underground":{"cutoff":0.25,"tonnes":0,"blocks":0,"metals":{}}}},"style":{"key":"bulk","label":"bulk-tonnage / disseminated","why":"the technical report describes a bulk-tonnage / disseminated","confidence":"report","note":"The fallback when neither the report nor the drilling says otherwise.","summary":"bulk-tonnage / disseminated \u2014 the technical report describes a bulk-tonnage / disseminated","halo_m":60.0,"median_intercept_m":150.05},"metallurgy":{"routes":["flotation","magnetic"],"traits":["oxide","transitional","sulphide"],"recoveries":{"Ni":50.0},"summary":"oxide ore present, transitional ore present, sulphide ore; processed by flotation to concentrate, then magnetic separation; stated recovery Ni 50%"},"coverage":{"stated":{"strike":{"n":3,"min":1600.0,"max":6300.0,"median":3500.0,"page":29,"text":"margin of the Uitloop II body and is the primary target of current exploration work. There is potential for a 3.5 km strike length of Ni-Cu-PGE and/or Contact-style mineralisation. There is"},"depth":{"n":19,"min":22.9,"max":445.0,"median":98.7,"page":64,"text":"ar vertical dip with a conducting mineralisation content of between 2% and 4% by volume. The hole was drilled to a depth of 76.25 m and only exposed non-mineralized slightly serpentinised dol"}},"stated_text":"1600\u20136300 m strike, 23\u2013445 m depth","stated_from":{"id":"mtp:704114622958b8fe","date":"2023-06-23"},"model":{"volume_m3":16788000,"strike_m":320.0,"diagonal_m":412.3,"depth_m":1065.0,"blocks":2798},"strike_ratio":0.091},"track_record":{"n":121,"median_ratio":1.017,"within_1_5x":24,"within_2x":36,"grade_matched_n":193,"grade_matched_median":0.756,"covered_n":47,"covered_median":0.981,"covered_within_1_5x":14,"bands":[{"band":"under 20 assayed holes","min_holes":0,"max_holes":20,"n":50,"median":0.322,"q1":0.052,"q3":0.879,"within_1_5x":6,"within_2x":12},{"band":"20 to 60 assayed holes","min_holes":20,"max_holes":60,"n":65,"median":0.805,"q1":0.325,"q3":2.195,"within_1_5x":16,"within_2x":23},{"band":"60 to 150 assayed holes","min_holes":60,"max_holes":150,"n":54,"median":0.98,"q1":0.455,"q3":1.64,"within_1_5x":17,"within_2x":25},{"band":"over 150 assayed holes","min_holes":150,"max_holes":null,"n":24,"median":0.983,"q1":0.623,"q3":1.824,"within_1_5x":9,"within_2x":13}],"tiers":{"n":98,"filed_mi_share":0.685,"mmp_top2_share":0.564},"mine":{"band":"under 20 assayed holes","min_holes":0,"max_holes":20,"n":50,"median":0.322,"q1":0.052,"q3":0.879,"within_1_5x":6,"within_2x":12},"mine_holes":16},"integrity":null,"settings":{"density":2.5,"composite_m":2.0,"top_cut":7.0,"default_cutoff":0.1,"method":"idw","power":2.0,"metallurgy":{"routes":["flotation","magnetic"],"traits":["oxide","transitional","sulphide"],"recoveries":{"Ni":50.0},"summary":"oxide ore present, transitional ore present, sulphide ore; processed by flotation to concentrate, then magnetic separation; stated recovery Ni 50%"},"deposit_style":"bulk","block":[20.0,20.0,15.0]},"param_sources":{"density":"technical report (2023)","composite_m":"technical report (2023)","top_cut":"technical report (2023)","default_cutoff":"technical report (2023)","method":"technical report (2023)","power":"technical report (2023)","metallurgy":"technical report (2023)","deposit_style":"technical report (2023)","block":"typical for Ni deposits (6 reports)"},"terrain":null,"sources":[{"kind":"NI 43-101 technical report","id":"mtp:592c14396ba77cb8","title":"NI 43-101 technical report \u2014 Zebediela (ZBNI), 2021-07","url":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=6102f41e1f348f745e40d00f&type=PDFC&symbol=ZBNI%3ACA&companyName=Zeb+Nickel+Corp.&formType=002-002-001114-001003&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2021-07-29","archive":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=6102f41e1f348f745e40d00f&type=PDFC&symbol=ZBNI%3ACA&companyName=Zeb+Nickel+Corp.&formType=002-002-001114-001003&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2021-07-29","listing":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=6102f41e1f348f745e40d00f&type=PDFC&symbol=ZBNI%3ACA&companyName=Zeb+Nickel+Corp.&formType=002-002-001114-001003&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2021-07-29","date":"2021-07-29","collars":3,"intervals":36,"has_resource":false},{"kind":"NI 43-101 technical report","id":"mtp:704114622958b8fe","title":"NI 43-101 technical report \u2014 Zeb (ZBNI), 2023-07","url":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=64b5905b7cad430b3a45a05a&type=PDFC&symbol=ZBNI%3ACA&companyName=Zeb+Nickel+Corp.&formType=002-002-001114-001003&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2023-07-17","archive":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=64b5905b7cad430b3a45a05a&type=PDFC&symbol=ZBNI%3ACA&companyName=Zeb+Nickel+Corp.&formType=002-002-001114-001003&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2023-07-17","listing":"https://app.quotemedia.com/data/downloadFiling?webmasterId=101020&ref=64b5905b7cad430b3a45a05a&type=PDFC&symbol=ZBNI%3ACA&companyName=Zeb+Nickel+Corp.&formType=002-002-001114-001003&formDescription=Technical+report+%28NI+43-101%29&dateFiled=2023-07-17","date":"2023-07-17","collars":27,"intervals":195,"has_resource":false}],"resources":[],"counts":{"holes":16,"assayed_holes":16,"intervals":43,"surveyed":0,"blocks":2798,"reports":2,"releases":0},"ok":true}</script>
+<script src="three.min.js"></script>
+<script src="viewer.js?v=1792127540"></script>
+</body>
+</html>

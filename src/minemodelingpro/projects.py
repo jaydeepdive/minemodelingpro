@@ -938,7 +938,7 @@ def _nearby_style(frame, own, styled):
             near.append((d, st, pj))
     if not near:
         return None
-    near.sort()
+    near.sort(key=lambda x: x[0])      # by distance; a missing name is not sortable
     votes = Counter(st for _, st, _ in near[:6])
     style = votes.most_common(1)[0][0]
     first = next(x for x in near if x[1] == style)

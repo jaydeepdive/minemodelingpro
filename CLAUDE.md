@@ -196,27 +196,34 @@ runs entirely on DigitalOcean — no third-party auth, no keys in the browser.
 model carries `param_sources`, and the block panel says "block source: technical
 report (2021)" or "typical for Au in Québec (7 reports)".
 
-## What limits accuracy now (measured 2026-10-16, n=287)
+## What limits accuracy now (measured 2026-10-16, n=321)
 
 The scoreboard is in `data/keep/mmp_validation.json` and stamped into every page.
-It is measured over 287 projects with a filed statement, not the 17 the earlier
+It is measured over 321 projects with a filed statement, not the 17 an earlier
 version of this section rested on — and the enlarged sample overturned part of
 what that said. **Correct the record: the +0.91 correlation between error and
 envelope coverage was an artefact of 17 projects. Over 63 with stated geometry it
-is −0.17.** What actually predicts the error is how much drilling the filings
-published:
+is −0.17.** What predicts the error is how much drilling the filings published:
 
 | | n | median | middle half | within 2× |
 |---|---|---|---|---|
-| under 20 assayed holes | 44 | 0.397× | 0.05–1.36× | 10 |
-| 20 to 60 | 61 | 1.045× | 0.34–2.61× | 22 |
-| 60 to 150 | 50 | 0.972× | 0.48–2.22× | 21 |
-| over 150 | 16 | 0.880× | 0.35–1.83× | 8 |
+| under 20 assayed holes | 50 | 0.322× | 0.05–0.88× | 12 |
+| 20 to 60 | 65 | 0.805× | 0.33–2.20× | 23 |
+| 60 to 150 | 54 | 0.980× | 0.46–1.64× | 25 |
+| over 150 | 24 | 0.983× | 0.62–1.82× | 13 |
 
-Past twenty assayed holes the median is essentially right and the spread narrows
-as drilling grows. `accuracy_bands()` in validate.py computes this and `stamp()`
-writes each project's own band into its page, so a page quotes the record for its
-band rather than one global figure.
+Past sixty assayed holes the median is within 2% of the filed tonnage and the
+middle half spans less than a factor of four. Below twenty it is 0.32× and the
+spread is a factor of seventeen. `accuracy_bands()` in validate.py computes this
+and `stamp()` writes each project's own band into its page, so a page quotes the
+record for its band rather than one global figure.
+
+Headline, same pipeline, 595 models:
+
+      at their cut-off   n=121  median 1.017x
+      like for like      n= 88  median 0.890x
+      at their grade     n=193  median 0.756x   within 1.5x 48, 2x 73
+      where we hold it   n= 47  median 0.981x   within 1.5x 14, 2x 18
 
 ### Tested and NOT worth redoing (all measured, all negative)
 

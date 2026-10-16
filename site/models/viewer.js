@@ -469,6 +469,8 @@ function trackRecord(){const R=M.track_record;if(!R||!R.n)return"";
     `<div class="kv"><span>Median MMP ÷ filed tonnage</span><b>${R.median_ratio}×</b></div>`+
     `<div class="kv"><span>Within 1.5× of filed</span><b>${R.within_1_5x} of ${R.n}</b></div>`+
     (R.covered_n?`<div class="kv"><span>Where we hold the whole deposit</span><b>${R.covered_median}× · ${R.covered_within_1_5x} of ${R.covered_n} within 1.5×</b></div>`:"")+
+    (R.mine?`<div class="kv"><span>Models with ${esc(R.mine.band)}</span><b>${R.mine.median}× · middle half ${R.mine.q1}–${R.mine.q3}×</b></div>`
+            +`<div class="kv"><span>…measured on</span><b>${R.mine.n} such project${R.mine.n===1?"":"s"}, ${R.mine.within_2x} within 2×</b></div>`:"")+
     (t?`<div class="kv"><span>Filed measured + indicated</span><b>${Math.round(t.filed_mi_share*100)}% of tonnes</b></div>`+
        `<div class="kv"><span>MMP's top two tiers</span><b>${Math.round(t.mmp_top2_share*100)}% of tonnes</b></div>`:"")+
     `<p class="note">${pub?"This project has a filed statement, compared above."
@@ -481,6 +483,10 @@ function trackRecord(){const R=M.track_record;if(!R||!R.n)return"";
       data rather than how well the method interpolates.`:""}
       ${t?`Our tiers stay deliberately short of the filed categories — we hold a fraction of the
       assay data a qualified person had — so read the top tier as "well supported by the public drilling", not as measured.`:""}
+      ${R.mine?`<b>This model is built on ${R.mine_holes} assayed hole${R.mine_holes===1?"":"s"}</b>, which puts it in the band shown above —
+      read that band, not the overall figure. Three things that look as though they should matter were tested and do not:
+      the block size against the vein width, the zero-fill margin, and removing the fill altogether all moved the median
+      and left the error where it was. What moves it is whether the filings published the drilling.`:""}
       A small sample, and an estimate of an estimate.</p>`;}
 /* models built before the one-tonnage pass: each metal on its own blocks */
 function drawBreakdownLegacy(box){
