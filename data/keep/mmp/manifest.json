@@ -1,5 +1,5 @@
 {
-  "generated": "2026-10-15T11:18:00Z",
+  "generated": "2026-10-16T11:15:07Z",
   "max_bytes": 94371840,
   "tables": {
     "collars": [
@@ -556,12 +556,6 @@
     ],
     "deposit_model": [
       {
-        "file": "mmp/deposit_model/ni43101__1730aff94f600df3.parquet",
-        "source": "ni43101:1730aff94f600df3",
-        "rows": 26,
-        "bytes": 10680
-      },
-      {
         "file": "mmp/deposit_model/sedar__ADY-2026-09-11-technical-report-ni-43-101-english-8e43.pdf.parquet",
         "source": "sedar:ADY-2026-09-11-technical-report-ni-43-101-english-8e43.pdf",
         "rows": 19,
@@ -1106,6 +1100,12 @@
         "source": "ni43101:9ca0934c0633add5",
         "rows": 25,
         "bytes": 10918
+      },
+      {
+        "file": "mmp/deposit_model/ni43101__1730aff94f600df3.parquet",
+        "source": "ni43101:1730aff94f600df3",
+        "rows": 26,
+        "bytes": 10680
       },
       {
         "file": "mmp/deposit_model/ni43101__1f4fea7f67d5d49f.parquet",
