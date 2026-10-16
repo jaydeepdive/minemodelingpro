@@ -688,5 +688,35 @@
   "size_kb": 36408,
   "collected": "2026-10-15T22:16:42Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_DLP-2026-10-15-technical-report-ni-43-101-english-b22a.pdf"
+ },
+ {
+  "file": "ceo_GXYP-2026-10-15-technical-report-ni-43-101-english-bf19.pdf",
+  "filing_ref": "GXYP-2026-10-15-technical-report-ni-43-101-english-bf19.pdf",
+  "company": "GXYP",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-10-15",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/GXYP-2026-10-15-technical-report-ni-43-101-english-bf19.pdf",
+  "source": "ceo.ca",
+  "size_kb": 8514,
+  "collected": "2026-10-16T01:20:57Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_GXYP-2026-10-15-technical-report-ni-43-101-english-bf19.pdf"
+ },
+ {
+  "file": "ceo_BVA-2026-10-15-technical-report-ni-43-101-english-0b2a.pdf",
+  "filing_ref": "BVA-2026-10-15-technical-report-ni-43-101-english-0b2a.pdf",
+  "company": "BVA",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-10-15",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/BVA-2026-10-15-technical-report-ni-43-101-english-0b2a.pdf",
+  "source": "ceo.ca",
+  "size_kb": 14934,
+  "collected": "2026-10-16T01:21:04Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_BVA-2026-10-15-technical-report-ni-43-101-english-0b2a.pdf"
  }
 ]
