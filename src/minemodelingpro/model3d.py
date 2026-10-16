@@ -1071,7 +1071,8 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
     _g = [float(x.get("grade") or 0) for x in _iv]
     _from_report = (ds.get("report_params") or {}).get("deposit_style")
     _stated = PS.get("deposit_style") or _from_report
-    skey, sdef, swhy, sconf = DSTY.classify(_w, _g, set(by_el), stated=_stated)
+    skey, sdef, swhy, sconf = DSTY.classify(_w, _g, set(by_el), stated=_stated,
+                                            nearby=ds.get("nearby_style"))
     # PORIGIN says where the value came from: "auto" means the report supplied it,
     # anything else means a person set it for this project
     if _stated and skey == _from_report and PORIGIN.get("deposit_style", "auto") == "auto":

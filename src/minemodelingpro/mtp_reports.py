@@ -188,7 +188,22 @@ def report_text(rid, cache=True):
     if cache and os.path.exists(fn):
         try:
             with gzip.open(fn, "rt", encoding="utf-8") as f:
-                return [_tidy(t) for t in json.load(f)]
+                raw = json.load(f)
+            pages = [_tidy(t) for t in raw]
+            # Tidying is a regular-expression pass over every page, and a report
+            # whose appendix pages are megabytes of column padding pays it on
+            # every load — by every extraction pass, for ever. Once is enough:
+            # if tidying shortened anything, the tidied text replaces what is on
+            # disk and the next pass reads it straight.
+            if sum(map(len, pages)) < sum(map(len, raw)) * 0.98:
+                try:
+                    tmp = fn + f".{os.getpid()}.tidy"
+                    with gzip.open(tmp, "wt", encoding="utf-8") as f:
+                        json.dump(pages, f)
+                    os.replace(tmp, fn)
+                except Exception:
+                    pass
+            return pages
         except Exception:
             pass
     d = api(f"/tech-reports/{urllib.parse.quote(str(rid))}/text")

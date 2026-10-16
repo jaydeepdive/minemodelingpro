@@ -612,10 +612,13 @@ def assemble(min_holes=3, min_intervals=8, verbose=False, include_imports=True):
                                        and str(r.get("id", "")).startswith("ni43101:")), None)})
 
     projs = _apply_merges(projs, ov)
+    # the styles any report states, so a project whose own filings name none can
+    # consult the ground around it
+    styled = _styled_reports(reports)
     # ---- 4. materialise each project's unified dataset
     out = []
     for p in projs:
-        ds = _materialise(p, news_holes, news_ivs, ov)
+        ds = _materialise(p, news_holes, news_ivs, ov, styled)
         if ds is None:
             continue
         nh = sum(1 for h in ds["holes"].values() if h.get("_ok"))
@@ -700,7 +703,7 @@ def _slugify(s):
     return re.sub(r"[^a-z0-9]+", "-", (s or "project").lower()).strip("-")[:60] or "project"
 
 
-def _materialise(p, news_holes, news_ivs, ov):
+def _materialise(p, news_holes, news_ivs, ov, styled_reports=()):
     holes = {}          # key -> hole dict (frame fields: lat/lon or local e/n)
     intervals = []
     sources = []
@@ -857,6 +860,7 @@ def _materialise(p, news_holes, news_ivs, ov):
         ds_params.update(r.get("params") or {})
     rp, rp_from = _report_params(reports)
     ext, ext_from = _report_extent(reports)
+    near_style = _nearby_style(frame, rp.get("deposit_style"), styled_reports)
     return {"slug": slug, "name": name, "company": company, "region": region,
             "params": ds_params or None,
             "private": any(r.get("private") for r in imported) or None,
@@ -865,6 +869,7 @@ def _materialise(p, news_holes, news_ivs, ov):
             "resources": res,
             "report_params": rp or None, "report_params_from": rp_from or None,
             "extent": ext or None, "extent_from": ext_from or None,
+            "nearby_style": near_style,
             "report_style": rp.get("deposit_style"),
             "metallurgy": rp.get("metallurgy"),
             "report_block": rp.get("block"),
@@ -894,6 +899,51 @@ def _recency(r):
 # wrong units. Carrying one onto a model page would publish it as the company's
 # own number, so a statement below the floor is left off rather than shown.
 MIN_FILED_T = 100_000
+
+
+STYLE_BORROW_KM = 15.0
+
+
+def _styled_reports(reports):
+    """Every report that states a deposit type, with where it is.
+
+    The index a project consults when its own filings name no style."""
+    out = []
+    for r in reports:
+        st = (r.get("model_params") or {}).get("deposit_style")
+        c = r.get("center") or r.get("text_center")
+        if st and c and c[0] is not None:
+            out.append((float(c[0]), float(c[1]), st,
+                        clean_project(r.get("project")) or None))
+    return out
+
+
+def _nearby_style(frame, own, styled):
+    """The deposit type stated by the nearest reports on the same ground.
+
+    Only consulted when the project's own reports state none. Votes among the
+    closest few rather than trusting one, and stops at STYLE_BORROW_KM — beyond a
+    district the geology is somebody else's."""
+    if own or not styled or not frame:
+        return None
+    la, lo = frame.get("lat0"), frame.get("lon0")
+    if la is None or lo is None:
+        return None
+    near = []
+    for a, b, st, pj in styled:
+        if abs(a - la) > 0.6 or abs(b - lo) > 0.9:
+            continue
+        d = _km(la, lo, a, b)
+        if d <= STYLE_BORROW_KM:
+            near.append((d, st, pj))
+    if not near:
+        return None
+    near.sort()
+    votes = Counter(st for _, st, _ in near[:6])
+    style = votes.most_common(1)[0][0]
+    first = next(x for x in near if x[1] == style)
+    return {"style": style, "km": round(first[0], 1), "project": first[2],
+            "n": len(near)}
 
 
 def _report_extent(reports):

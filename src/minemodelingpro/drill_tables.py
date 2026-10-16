@@ -38,7 +38,7 @@ from minemodelingpro import holeid
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 OUT_DIR = os.path.join(_ROOT, "data", "keep", "mmp_reports")
-EXTRACTOR = "dt18"
+EXTRACTOR = "dt19"
 
 # ------------------------------------------------------------------ elements
 _EL = {"au": "Au", "gold": "Au", "ag": "Ag", "silver": "Ag", "cu": "Cu", "copper": "Cu",
@@ -182,8 +182,14 @@ def _is_data_line(line, min_nums=3):
 
 # --------------------------------------------------------------- header parsing
 _H_HOLE = re.compile(r"\b(hole|drill ?hole|drillhole|ddh|bhid|borehole|hole ?id|hole ?no|hole ?#|hole ?number|drill ?id|well)\b", re.I)
-_H_EAST = re.compile(r"\b(easting|east|utm ?e|x|e \(m\)|x \(m\)|e_utm|utm_e|mine ?e|local ?e)\b", re.I)
-_H_NORTH = re.compile(r"\b(northing|north|utm ?n|y|n \(m\)|y \(m\)|n_utm|utm_n|mine ?n|local ?n)\b", re.I)
+# "UTM (mE)" is one of the commonest ways a collar table names its easting and
+# none of the old alternatives matched it, so the whole header was rejected and
+# the table with it — Crawford's 79 collars among them.
+# "UTM (mE)" is one of the commonest ways a collar table names its easting and
+# none of the old alternatives matched it, so the whole header was rejected and
+# the table with it — Crawford's 79 collars among them.
+_H_EAST = re.compile(r"\b(easting|east|utm ?e|x|e \(m\)|x \(m\)|e_utm|utm_e|mine ?e|local ?e)\b|utm ?\(?m ?e\)?|\bm ?e\b|east(ing)? ?\(?(m|utm)\)?", re.I)
+_H_NORTH = re.compile(r"\b(northing|north|utm ?n|y|n \(m\)|y \(m\)|n_utm|utm_n|mine ?n|local ?n)\b|utm ?\(?m ?n\)?|\bm ?n\b|north(ing)? ?\(?(m|utm)\)?", re.I)
 _H_LAT = re.compile(r"\blat(itude)?\b", re.I)
 _H_LON = re.compile(r"\blong?(itude)?\b", re.I)
 _H_ELEV = re.compile(r"\b(elev|elevation|rl|z|masl|m ?asl|collar ?elev|z \(m\))\b", re.I)
@@ -204,10 +210,20 @@ def _elem_of(label):
     if _H_FROM.search(low) or _H_TO.search(low) or _H_LEN.search(low) or _H_HOLE.search(low):
         return None
     m = re.match(r"^([a-z0-9]+(?:\s?eq)?)", low.replace("_", " "))
-    if not m:
-        return None
-    tok = m.group(1).replace(" ", "")
+    tok = m.group(1).replace(" ", "") if m else ""
     el = _EL.get(tok)
+    if not el:
+        # The column may be headed "Grade" with the metal inside the unit on the
+        # line below — "Grade" over "(% U3O8)" — which a stacked header merges into
+        # "Grade (% U3O8)". The leading token is then "grade" and the metal is two
+        # words away, so the whole label is searched before giving up. Wheeler
+        # River's 70 uranium intervals read this way and not the other.
+        for cand in re.findall(r"[a-z0-9]+(?:\s?eq)?", low.replace("_", " ")):
+            got = _EL.get(cand.replace(" ", ""))
+            # single letters are too ambiguous to pick out of running text
+            if got and len(cand) > 1:
+                el = got
+                break
     if not el:
         return None
     unit = None

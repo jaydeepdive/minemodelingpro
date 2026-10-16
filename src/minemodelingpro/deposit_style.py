@@ -154,27 +154,119 @@ _WORDS = [
 ]
 
 
+# Every NI 43-101 carries an Item 8 "Deposit Types" section: the qualified
+# person stating, in their own words, what model they believe the deposit fits.
+# It is the single best piece of evidence there is about style and it was being
+# averaged in with eight hundred pages of everything else.
+_SEC_HEAD = re.compile(r"^[ \t]*(?:item[ \t]*)?\d{1,2}(?:\.\d)?[ \t.)\-–]{0,4}[ \t]*"
+                       r"deposit[ \t]+type", re.I | re.M)
+_NEXT_HEAD = re.compile(r"^[ \t]*(?:item[ \t]*)?\d{1,2}(?:\.\d)?[ \t.)\-–]{0,4}[ \t]*"
+                        r"[A-Z][A-Za-z]", re.M)
+_TOCISH = re.compile(r"\.{3,}|[ \t]\d{1,3}[ \t]*$")
+
+# Where two styles tie, the more specific one wins. "Bulk" is a mining method
+# before it is a geology and "vein" is a geometry, while a volcanogenic massive
+# sulphide or an orogenic gold deposit is a model. The pairs that tie are not
+# noise — an orogenic deposit IS vein-hosted, a porphyry carries vein stockwork,
+# a skarn sits on a porphyry margin — so a tie is resolved by which statement
+# says more, not by rejecting both.
+_SPECIFICITY = ["vms", "sedex", "laterite", "iron", "pegmatite", "phosphate",
+                "skarn", "porphyry", "orogenic", "vein", "bulk"]
+SECTION_WEIGHT = 8
+
+
+def deposit_section(pages_text):
+    """The report's own "Deposit Types" section, if it has one.
+
+    Skips the table of contents: a heading there is followed by dot leaders or a
+    page number, a real one is followed by prose."""
+    if not pages_text or isinstance(pages_text, str):
+        return None
+    for i, t in enumerate(pages_text):
+        if not t or not _SEC_HEAD.search(t):
+            continue
+        for ln in t.splitlines():
+            if _SEC_HEAD.search(ln) and not _TOCISH.search(ln):
+                break
+        else:
+            continue
+        # from the heading to the next numbered heading, at most a few pages
+        chunk = []
+        for t2 in pages_text[i:i + 6]:
+            chunk.append(t2 or "")
+        body = "\n".join(chunk)
+        start = _SEC_HEAD.search(body)
+        body = body[start.end():] if start else body
+        nxt = None
+        for m in _NEXT_HEAD.finditer(body):
+            if m.start() > 400 and not re.match(r"^[ \t]*(?:item[ \t]*)?\d{1,2}"
+                                                r"(?:\.\d)?[ \t.)\-–]{0,4}[ \t]*deposit",
+                                                m.group(0), re.I):
+                nxt = m.start()
+                break
+        return body[:nxt] if nxt else body[:12000]
+    return None
+
+
+# One cheap gate before the eleven. Almost every page of a report mentions none
+# of these words, and eleven patterns over a thousand pages is most of the cost
+# of classifying one.
+_ANY_WORD = re.compile("|".join("(?:%s)" % pat for _, pat in _WORDS), re.I)
+
+
 def from_text(pages_text):
     """What the report calls the deposit. The strongest evidence there is, and free.
 
-    Counted across the whole document rather than taken from the first mention, so a
-    passing reference to a neighbouring porphyry does not rename the project."""
+    Weighted by where it is said. A mention in the report's own "Deposit Types"
+    section is the qualified person's statement of the deposit model and counts
+    for many times a mention three hundred pages away, which may be a
+    neighbouring property or a line of regional history. Counting every mention
+    equally left two styles within the old 1.4x margin on 17% of reports and
+    abstained on all of them — and the ties were real overlaps, not noise, so
+    they are resolved by specificity rather than thrown away."""
     if not pages_text:
         return None, None
-    blob = " ".join(pages_text if isinstance(pages_text, (list, tuple)) else [pages_text])
-    blob = re.sub(r"\s+", " ", blob).lower()
-    hits = Counter()
-    for style, pat in _WORDS:
-        n = len(re.findall(pat, blob, re.I))
-        if n:
-            hits[style] += n
+    pages = pages_text if isinstance(pages_text, (list, tuple)) else [pages_text]
+    sec = deposit_section(pages)
+    secb = re.sub(r"\s+", " ", sec).lower() if sec else ""
+    hits, sec_hits = Counter(), Counter()
+    # Counted a page at a time. Joining a thousand pages into one string and
+    # flattening its whitespace allocates several copies of the whole report at
+    # once, which is enough to exhaust a small machine on the larger filings —
+    # and the count is a sum over pages either way.
+    for t in pages:
+        if not t or not _ANY_WORD.search(t):
+            continue
+        low = re.sub(r"\s+", " ", t).lower()
+        for style, pat in _WORDS:
+            n = len(re.findall(pat, low, re.I))
+            if n:
+                hits[style] += n
+    if secb:
+        for style, pat in _WORDS:
+            k = len(re.findall(pat, secb, re.I))
+            if k:
+                sec_hits[style] += k
     if not hits:
         return None, None
-    style, n = hits.most_common(1)[0]
-    runner = hits.most_common(2)[1][1] if len(hits) > 1 else 0
-    if n < 2 or n < 1.4 * runner:
-        return None, None                 # the report is not clear enough to act on
-    return style, f"the technical report describes a {STYLES[style]['label']}"
+    score = Counter()
+    for style, n in hits.items():
+        score[style] = n + SECTION_WEIGHT * sec_hits.get(style, 0)
+    style, n = score.most_common(1)[0]
+    runner, rn = (score.most_common(2)[1] if len(score) > 1 else ("", 0))
+    if n < 2:
+        return None, None
+    if n < 1.4 * rn:
+        # a genuine overlap: take the more specific model rather than neither
+        pair = [x for x in (style, runner) if x in _SPECIFICITY]
+        if len(pair) == 2:
+            style = min(pair, key=_SPECIFICITY.index)
+        elif not pair:
+            return None, None
+    why = (f"the report's deposit-type section describes a {STYLES[style]['label']}"
+           if sec_hits.get(style) else
+           f"the technical report describes a {STYLES[style]['label']}")
+    return style, why
 
 
 def from_geometry(widths, grades, commodities=()):
@@ -213,16 +305,32 @@ def from_geometry(widths, grades, commodities=()):
     return DEFAULT, f"intercepts of median {med:.1f} m with no clearer signature"
 
 
-def classify(widths=None, grades=None, commodities=(), pages_text=None, stated=None):
+def classify(widths=None, grades=None, commodities=(), pages_text=None, stated=None,
+             nearby=None):
     """Settle the style. Returns ``(key, style, why, confidence)``.
 
     ``stated`` is a style set by hand for the project, which always wins — this is
-    where a human overrides the machine, and that is the point."""
+    where a human overrides the machine, and that is the point.
+
+    ``nearby`` is the deposit type stated by a report on the same ground, as
+    ``{"style", "km", "project"}``. A property's geology does not depend on which
+    document MMP happened to get its drilling from: where a project's own filings
+    name no style, a qualified person's stated model from a report a few kilometres
+    away is better evidence than inferring the style from intercept widths — and
+    it disagrees with that inference about two times in three."""
     if stated and stated in STYLES:
         return stated, STYLES[stated], "set for this project", "stated"
     key, why = from_text(pages_text)
     if key:
         return key, STYLES[key], why, "report"
+    if nearby and nearby.get("style") in STYLES:
+        d = nearby.get("km")
+        where = (f"a technical report {d:.0f} km away" if isinstance(d, (int, float))
+                 and d >= 1 else "a technical report on the same ground")
+        pj = nearby.get("project")
+        return (nearby["style"], STYLES[nearby["style"]],
+                f"{where}{f' ({pj})' if pj else ''} describes a "
+                f"{STYLES[nearby['style']]['label']}", "nearby report")
     key, why = from_geometry(widths, grades, commodities)
     return key, STYLES[key], why, "inferred from the drilling"
 
