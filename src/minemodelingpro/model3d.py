@@ -1626,6 +1626,7 @@ def _validation():
                 "covered_n": h.get("covered_n"),
                 "covered_median": h.get("covered_median"),
                 "covered_within_1_5x": h.get("covered_within_1_5x"),
+                "bands": h.get("bands"),
                 "tiers": (d.get("tiers") or {}).get("n") and {
                     "n": d["tiers"]["n"],
                     "filed_mi_share": d["tiers"].get("filed_mi_share_median"),
@@ -1718,7 +1719,7 @@ def build_all(site_dir="site", only=None, verbose=True, resume_after=None):
                 os.remove(os.path.join(out_dir, f))      # stale model pages (keep _shell.html)
     _write_gallery(cards, os.path.join(site_dir, "models.html"))
     # the landing page shows one real model; keep it in step with the build
-    hero = os.environ.get("MMP_HERO_SLUG", "murray-brook")
+    hero = _hero_slug(os.environ.get("MMP_HERO_SLUG", "murray-brook"), out_dir, index)
     if not only and hero and os.path.exists(os.path.join(out_dir, hero + ".html")):
         try:
             sys.path.insert(0, os.path.join(_ROOT, "scripts"))
@@ -1738,6 +1739,27 @@ def build_all(site_dir="site", only=None, verbose=True, resume_after=None):
     if verbose:
         print(f"[model3d] built {len(cards)} project model(s); {len(by_release)} release links")
     return cards
+
+
+def _hero_slug(want, out_dir, index):
+    """The model the landing page shows.
+
+    A hard-coded slug goes stale the moment the corpus is refreshed: enlarging the
+    report catalogue renamed `murray-brook` to `murray-brook-mqm`, the file the
+    landing page wanted stopped existing, and the hero quietly stayed as it was
+    from a build weeks earlier. So the name is a preference, not a requirement —
+    the same project under a new suffix is taken first, and failing that the
+    best-drilled model there is."""
+    if want and os.path.exists(os.path.join(out_dir, want + ".html")):
+        return want
+    if want:
+        pre = [e["slug"] for e in index if e["slug"].startswith(want + "-")]
+        if pre:
+            return sorted(pre, key=lambda s: -next(
+                (e["samples"] or 0) for e in index if e["slug"] == s))[0]
+    if index:
+        return max(index, key=lambda e: (e.get("samples") or 0))["slug"]
+    return None
 
 
 def _write_gallery(cards, out_html):

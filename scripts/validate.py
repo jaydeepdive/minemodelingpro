@@ -360,6 +360,56 @@ def score(site="site"):
     return rows
 
 
+# How much drilling a model is built on, as bands. The measured error tracks this
+# and almost nothing else: three parameter experiments today — block size against
+# vein width, the zero-fill margin, and removing the fill altogether — moved the
+# median and left the error where it was. What moves it is whether the filings
+# published the drilling.
+DRILL_BANDS = [("under 20 assayed holes", 0, 20),
+               ("20 to 60 assayed holes", 20, 60),
+               ("60 to 150 assayed holes", 60, 150),
+               ("over 150 assayed holes", 150, 10 ** 9)]
+
+
+def accuracy_bands(rows):
+    """What a model with THIS much drilling has been worth, measured.
+
+    A single global figure tells a reader of a thinly drilled project nothing
+    useful: the same pipeline lands at 0.9x with sixty assayed holes behind it and
+    0.18x with twenty. So the record is reported per band, with the middle half of
+    the observed spread rather than only the median — a reader deserves the width
+    of the distribution they are in, not just its centre.
+    """
+    ok = [r for r in rows
+          if r.get("grade_matched_ratio") and not r.get("suspect")
+          and not r.get("grade_matched_clamped")]
+    out = []
+    for name, lo, hi in DRILL_BANDS:
+        g = [r for r in ok if lo <= (r.get("assayed_holes") or 0) < hi]
+        if len(g) < 6:
+            continue
+        xs = sorted(r["grade_matched_ratio"] for r in g)
+        q1 = xs[max(0, int(0.25 * (len(xs) - 1)))]
+        q3 = xs[min(len(xs) - 1, int(0.75 * (len(xs) - 1)))]
+        out.append({"band": name, "min_holes": lo,
+                    "max_holes": None if hi > 10 ** 8 else hi,
+                    "n": len(g),
+                    "median": round(statistics.median(xs), 3),
+                    "q1": round(q1, 3), "q3": round(q3, 3),
+                    "within_1_5x": sum(1 for x in xs if 1 / 1.5 <= x <= 1.5),
+                    "within_2x": sum(1 for x in xs if 0.5 <= x <= 2.0)})
+    return out
+
+
+def band_for(rec, holes):
+    """The band a given project falls in, for its own page to quote."""
+    for b in rec or []:
+        if (b["min_holes"] <= (holes or 0)
+                and (b["max_holes"] is None or (holes or 0) < b["max_holes"])):
+            return b
+    return None
+
+
 def headline(rows):
     """What the model pages may honestly claim."""
     ok = [x for x in rows if not x["suspect"]]
@@ -403,6 +453,7 @@ def headline(rows):
                     "covered_within_2x": within(g2, 2.0),
                     "covered_min_coverage": COVERED_MIN})
     out["coverage_n"] = sum(1 for x in rows if x.get("coverage_ratio") is not None)
+    out["bands"] = accuracy_bands(rows)
     return out
 
 
@@ -449,6 +500,7 @@ def stamp(site, head, cal):
            "covered_n": head.get("covered_n"),
            "covered_median": head.get("covered_median"),
            "covered_within_1_5x": head.get("covered_within_1_5x"),
+           "bands": head.get("bands"),
            "tiers": ({"n": cal["n"], "filed_mi_share": cal.get("filed_mi_share_median"),
                       "mmp_top2_share": cal.get("mmp_top2_share_median")}
                      if cal.get("n") else None)}
@@ -469,7 +521,12 @@ def stamp(site, head, cal):
         except Exception:
             bad += 1
             continue
-        model["track_record"] = rec
+        rec2 = dict(rec)
+        holes = ((model.get("counts") or {}).get("assayed_holes")
+                 or (model.get("counts") or {}).get("holes"))
+        rec2["mine"] = band_for(rec.get("bands"), holes)
+        rec2["mine_holes"] = holes
+        model["track_record"] = rec2
         blob = json.dumps(model, separators=(",", ":")).replace("</", "<\\/")
         open(path, "w", encoding="utf-8").write(s[:m.start(2)] + blob + s[m.end(2):])
         n += 1

@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-16T04:26:14Z",
+ "generated": "2026-10-16T05:12:37Z",
  "headline": {
   "n": 110,
   "suspect_n": 8,
@@ -19,7 +19,53 @@
   "covered_within_1_5x": 9,
   "covered_within_2x": 16,
   "covered_min_coverage": 0.5,
-  "coverage_n": 64
+  "coverage_n": 64,
+  "bands": [
+   {
+    "band": "under 20 assayed holes",
+    "min_holes": 0,
+    "max_holes": 20,
+    "n": 44,
+    "median": 0.397,
+    "q1": 0.052,
+    "q3": 1.36,
+    "within_1_5x": 6,
+    "within_2x": 10
+   },
+   {
+    "band": "20 to 60 assayed holes",
+    "min_holes": 20,
+    "max_holes": 60,
+    "n": 61,
+    "median": 1.045,
+    "q1": 0.34,
+    "q3": 2.611,
+    "within_1_5x": 11,
+    "within_2x": 22
+   },
+   {
+    "band": "60 to 150 assayed holes",
+    "min_holes": 60,
+    "max_holes": 150,
+    "n": 50,
+    "median": 0.972,
+    "q1": 0.483,
+    "q3": 2.219,
+    "within_1_5x": 13,
+    "within_2x": 21
+   },
+   {
+    "band": "over 150 assayed holes",
+    "min_holes": 150,
+    "max_holes": null,
+    "n": 16,
+    "median": 0.88,
+    "q1": 0.349,
+    "q3": 1.829,
+    "within_1_5x": 4,
+    "within_2x": 8
+   }
+  ]
  },
  "tiers": {
   "n": 84,
