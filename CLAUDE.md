@@ -196,31 +196,77 @@ runs entirely on DigitalOcean — no third-party auth, no keys in the browser.
 model carries `param_sources`, and the block panel says "block source: technical
 report (2021)" or "typical for Au in Québec (7 reports)".
 
-## What limits accuracy now (measured 2026-10-15)
+## What limits accuracy now (measured 2026-10-16, n=287)
 
 The scoreboard is in `data/keep/mmp_validation.json` and stamped into every page.
-The error is driven by **reach, not grade**: across the projects with a filed
-statement it correlates +0.91 with the share of the deposit's volume the model
-covers. Two separate causes, and only one of them is a modelling problem.
+It is measured over 287 projects with a filed statement, not the 17 the earlier
+version of this section rested on — and the enlarged sample overturned part of
+what that said. **Correct the record: the +0.91 correlation between error and
+envelope coverage was an artefact of 17 projects. Over 63 with stated geometry it
+is −0.17.** What actually predicts the error is how much drilling the filings
+published:
 
-1. **Scope mismatch — the larger cause, and not fixable in the estimator.** A
-   filed statement rests on the company's whole drill database; a technical report
-   publishes a summary of it, and many publish no drill table at all (Diablillos
-   references 977 holes and tabulates none). Goldboro's holes span 162 m and 50 m
-   deep against a filed 21 Mt deposit a kilometre long; Mont-Sorcier publishes 5
-   mineralised intercepts of 678 Mt. The wireframe correctly adds nothing there.
-   What those projects need is more drilling in the model — more reports, more
-   releases — not a longer search. `coverage` on each model says how much of the
-   described body it reaches, and `headline()` reports `covered_median` separately
-   from the all-projects median for exactly this reason.
-2. **Sparse-but-spanning** — a wide footprint tested by few holes, where the ground
-   between holes is most of the deposit. This is the wireframe's case and it works
-   here.
+| | n | median | middle half | within 2× |
+|---|---|---|---|---|
+| under 20 assayed holes | 44 | 0.397× | 0.05–1.36× | 10 |
+| 20 to 60 | 61 | 1.045× | 0.34–2.61× | 22 |
+| 60 to 150 | 50 | 0.972× | 0.48–2.22× | 21 |
+| over 150 | 16 | 0.880× | 0.35–1.83× | 8 |
 
-Of the committed reports, roughly a fifth carry collars but no assays (a report's
-intercept table is usually *significant intercepts*, not the assay file), and a
-further fifth carry neither. A model needs ≥4 assayed holes, so those projects
-show drill traces and no blocks.
+Past twenty assayed holes the median is essentially right and the spread narrows
+as drilling grows. `accuracy_bands()` in validate.py computes this and `stamp()`
+writes each project's own band into its page, so a page quotes the record for its
+band rather than one global figure.
+
+### Tested and NOT worth redoing (all measured, all negative)
+
+- **Block size against vein width.** The error grows monotonically with the ratio
+  (|log err| 0.94 / 1.29 / 1.69 for block ≤ width, 1–3×, >3×) which looks causal
+  and is not. Capping the block at the vein thickness on the 22 worst cases:
+  median |log err| 1.416 → 1.427, within 1.5× 2 → 1. Confounded — the worst
+  ratios are the thinnest veins, hard for other reasons.
+- **The zero-fill margin, and removing the zero-fill.** Costs a median 57% of the
+  grade, and the wireframe now does the bounding it used to do, so it was worth
+  re-testing. Over 21 projects with ≥60 intervals: median 0.590× → 0.821× with no
+  fill, error 0.991 → 0.993. It shifts the distribution rather than tightening it
+  (Lockerby 0.76× → 1.16×, Zacatecas 11.2× → 22.9×). A bias knob, not an accuracy
+  knob — leave `gap_fill` on.
+- **Government collars to place orphaned assays.** 813,586 gov holes with
+  coordinates; 95 of 199 orphaned-assay projects have gov holes within 25 km and
+  there is **1 ID match in 199 reports**. Quebec logs its own internal numbers
+  (`23121`) not company hole names (`GR-10-108`), and carries no assays. No join
+  exists to build.
+
+### Real and fixed today
+
+- **Scoring a filed statement on the primary metal's cut-off curve.** Raising a
+  lead cut-off does not concentrate copper, so a filed copper grade could sit
+  above the whole series and clamp the score to the end of the curve. Each metal
+  now carries an `own` series over the same deposit blocks ordered by its own
+  grade (`_own_series`). Comparisons running off the curve 56 → 35, overall
+  |log err| 1.312 → 1.234, within 2× 55 → 61.
+
+### Still open, ranked
+
+1. **Extractor recall.** 16% of the reports MMP read nothing from have a page
+   that parses as a drill table; about half of those are genuine (São Jorge page
+   62 is a standard intercept table with a two-line header that we walk past).
+   **448 resource-estimate reports** are in that bucket and come with a filed
+   statement, so recovering them adds drilling *and* a figure to score against.
+   Build a labelled recall set from the candidate pages first — my crude probe's
+   false positives were statistics tables.
+2. **News-release joins.** 526 projects have located holes and no grades;
+   Closeology's bank carries both. The join exists; its failure rate is unmeasured.
+3. **Prose intercepts.** 44% of collars-only reports state intercepts in prose but
+   only 9% name a hole we can locate. Worth 30–50 thin models. Last.
+
+### The floor
+
+1,904 reports tabulate no drill data at all (Diablillos cites 977 holes totalling
+193 km and tabulates none); 54% of those still state a resource. Those projects
+contribute a statement, the body's geometry and metallurgy, and will never produce
+a model. 563 models from 4,927 reports is mostly this, plus the fact that reports
+cluster: 4,927 reports describe ~2,736 distinct properties.
 
 ## Reasonable backlog / ideas
 
