@@ -638,6 +638,34 @@ def _class_split(cls_sorted, ks, bt):
     return out
 
 
+def _own_series(vals, bt, el, unit, n_cuts=26):
+    """A grade-tonnage curve over the deposit's blocks, cut on one metal's grade.
+
+    Fine enough to interpolate: the reporting-bin series is half a dozen points,
+    and a filed grade falling between two of them clamped to the end of the curve
+    instead of landing between them."""
+    v = np.asarray(vals, float)
+    ok = np.isfinite(v) & (v > 0)
+    if ok.sum() < 8:
+        return None
+    vs = np.sort(v[ok])[::-1]
+    csum = np.cumsum(vs)
+    # cut-offs spread through the metal's own distribution, plus zero
+    qs = np.unique(np.round(np.percentile(vs, np.linspace(0.5, 99.5, n_cuts - 1)), 5))
+    cuts = np.unique(np.concatenate([[0.0], qs]))
+    out_c, out_t, out_g = [], [], []
+    for c in cuts:
+        k = int(len(vs)) if c <= 0 else int(np.searchsorted(-vs, -c, "right"))
+        if k <= 0:
+            continue
+        out_c.append(round(float(c), 5))
+        out_t.append(round(k * bt))
+        out_g.append(round(float(csum[k - 1] / k), 4))
+    if len(out_c) < 3:
+        return None
+    return {"cuts": out_c, "tonnes": out_t, "grade": out_g}
+
+
 def _by_metal(primary, grids, by_el, units, key2i, H, PS, margin=None, style=None,
               med_w=None, verbose=False):
     """Every metal reported on ONE deposit tonnage.
@@ -751,6 +779,23 @@ def _by_metal(primary, grids, by_el, units, key2i, H, PS, margin=None, style=Non
             row["tonnes"].append(round(tn))
         if not any(v for v in row["contained"]):
             continue
+        # The same deposit, selected on THIS metal.
+        #
+        # Every series above is cut on the primary metal's grade, which is right
+        # for "what else is in the rock a copper cut-off selects" and wrong for
+        # reproducing a filed statement about a second metal. Raising a lead
+        # cut-off does not concentrate copper: Murray Brook's copper spans
+        # 0.22-0.48% along its lead curve and can never reach the 0.51% its own
+        # filing reports, so the comparison ran off the end of the curve and
+        # scored a sound model at 0.004x. Copper cut on copper spans 0.37-3.01%
+        # on the same blocks.
+        #
+        # So each metal also gets a curve over the deposit's blocks ordered by
+        # its OWN grade. The tonnage is still the deposit's — one body of rock —
+        # and only the selection changes.
+        own = _own_series(vals_unsorted, bt, el, unit)
+        if own:
+            row["own"] = own
         metals[el] = row
         order_out.append(el)
     if len(metals) < 1:

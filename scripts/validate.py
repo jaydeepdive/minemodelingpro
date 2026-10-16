@@ -197,10 +197,37 @@ def at_their_grade(m, filed_grade, el):
 
     This is the test for the statements that print no cut-off, and the more
     searching test generally: it grants the filing its own grade and asks only
-    whether MMP finds the same amount of rock carrying it."""
+    whether MMP finds the same amount of rock carrying it.
+
+    Cut on the metal the statement is about. The one-tonnage table reports every
+    metal along the PRIMARY metal's cut-off series, and raising a lead cut-off
+    does not concentrate copper — so a filed copper grade could sit above the
+    whole series and clamp the score to the end of the curve. Each metal now
+    carries a curve over the same deposit blocks ordered by its own grade
+    (`own`), which is what reproducing "N tonnes at G of copper" requires."""
     B = m.get("by_metal") or {}
     row = (B.get("metals") or {}).get(el)
-    if not row or not B.get("cuts") or not filed_grade:
+    if not row or not filed_grade:
+        return None
+    own = row.get("own")
+    if own and own.get("grade") and own.get("tonnes"):
+        g, t, cuts = own["grade"], own["tonnes"], own["cuts"]
+        pairs = [(i, v) for i, v in enumerate(g) if v]
+        prev = None
+        for i, v in pairs:
+            if v >= filed_grade:
+                if prev is None:
+                    return {"tonnes": t[i], "cut": cuts[i], "mmp_grade": v,
+                            "clamped": "low"}
+                pi, pv = prev
+                f = (filed_grade - pv) / (v - pv) if v != pv else 0.0
+                return {"tonnes": t[pi] + f * (t[i] - t[pi]),
+                        "cut": cuts[pi] + f * (cuts[i] - cuts[pi]),
+                        "mmp_grade": filed_grade, "clamped": None}
+            prev = (i, v)
+        i, v = pairs[-1]
+        return {"tonnes": t[i], "cut": cuts[i], "mmp_grade": v, "clamped": "high"}
+    if not B.get("cuts"):
         return None
     g, t = row.get("grade") or [], B["tonnes"]
     pairs = [(i, v) for i, v in enumerate(g) if v]
