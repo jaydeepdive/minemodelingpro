@@ -1281,18 +1281,17 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
             # the copper model and the zinc model must use the same tonnes per cubic
             # metre or the deposit weighs different amounts depending which metal
             # you are looking at
-            # A density counts as STATED only when the project's own report gave
-            # it or a person set it. `auto_params` also fills it from the regional
-            # median when no report speaks, and that average is weaker evidence
-            # than the deposit style — a Cu-Zn massive sulphide is 3.2 t/m³ and
-            # the regional mean is 2.7, which is a fifth of the tonnage. The style
-            # is now read from the qualified person's own deposit-type section, so
-            # it deserves to outrank a corpus average.
-            _dsrc = base_src.get("density") if PORIGIN.get("density") == "auto" else None
-            _dstated = PS.get("density")
-            if _dsrc and not str(_dsrc).startswith("technical report"):
-                _dstated = None              # regional guess: let the style decide
-            dens, dens_why = DSTY.density_for(skey, mean_by_el, stated=_dstated)
+            # The regional median beats the style's own density, measured. Letting
+            # the deposit style supply it instead — on the grounds that a copper-zinc
+            # massive sulphide is 3.2 t/m³ and the corpus average is 2.7, and that
+            # the style is now read from the qualified person's own deposit-type
+            # section — is better reasoned and came out slightly worse: over the
+            # projects where the comparison is valid, |log error| 0.978 -> 1.005 and
+            # the count within 1.5x of filed 48 -> 44. The regional medians are
+            # measured on the same corpus that filed the statements, which is
+            # apparently worth more than the physics. So a density from the regional
+            # table still counts as stated. 239 of 595 models rest on it.
+            dens, dens_why = DSTY.density_for(skey, mean_by_el, stated=PS.get("density"))
             params["density_source"] = dens_why
             bt = bsz[0] * bsz[1] * bsz[2] * dens
             # grade-tonnage curve over all estimated blocks

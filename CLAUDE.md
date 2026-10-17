@@ -238,6 +238,15 @@ Headline, same pipeline, 595 models:
   fill, error 0.991 → 0.993. It shifts the distribution rather than tightening it
   (Lockerby 0.76× → 1.16×, Zacatecas 11.2× → 22.9×). A bias knob, not an accuracy
   knob — leave `gap_fill` on.
+- **The deposit style's density over the regional median.** `auto_params` fills
+  density from the regional table when no report states one, and that average was
+  reaching `density_for` as though the project's own report had stated it. Letting
+  the style supply it instead is better reasoned — a Cu-Zn massive sulphide is
+  3.2 t/m³ against a 2.7 corpus average, a fifth of the tonnage — and measured
+  slightly worse: on the projects where the comparison is valid, |log err| 0.978
+  → 1.005 and within 1.5× of filed 48 → 44. The regional medians are measured on
+  the same corpus that filed the statements, which is worth more than the physics.
+  239 of 595 models rest on that table. Left as it was.
 - **Government collars to place orphaned assays.** 813,586 gov holes with
   coordinates; 95 of 199 orphaned-assay projects have gov holes within 25 km and
   there is **1 ID match in 199 reports**. Quebec logs its own internal numbers
@@ -274,6 +283,50 @@ Headline, same pipeline, 595 models:
 contribute a statement, the body's geometry and metallurgy, and will never produce
 a model. 563 models from 4,927 reports is mostly this, plus the fact that reports
 cluster: 4,927 reports describe ~2,736 distinct properties.
+
+## Configuring the geology (2026-10-17)
+
+For a project built from technical reports the style comes from the report's own
+Item 8 deposit-type section (`deposit_style.from_text`, 94% hit rate). For an
+**imported** dataset there is no report, so the chain is: `deposit_style` set for
+the project → a styled report within `STYLE_BORROW_KM` (15 km) → `from_geometry`,
+which infers it from intercept widths, grade variability and the commodity suite.
+That last step is a guess, and it used to be the only option because the style was
+not on the Studio form.
+
+The form now leads with geology, and these are the settings that matter most:
+
+- `deposit_style` — sets density, halo reach, block size and search anisotropy.
+- `dip`, `dip_direction`, `plunge` — the structural trend, replacing the
+  orientation MMP measures by principal components of the mineralised cloud
+  (`model3d.frame_from_trend`). Worth setting when few holes have been drilled: a
+  handful on one section have no shape to measure, and the trend they imply is the
+  drill pattern's.
+- `anisotropy` — search ratios along (major, intermediate, across).
+- `true_width_m` — the body's thickness, used to inflate the wireframe.
+- `domain_units` — **which logged geology codes ARE the mineralised body.**
+- `domain` — whether to triangulate a body between the holes at all.
+
+`imports.py` now reads **lithology and alteration intervals** (`parse_lithology`,
+kind `"lithology"`), keeps the codes verbatim, and carries them to the dataset as
+`lithology` with the distinct codes listed in `rock_units`. When `domain_units`
+names some of them, `model3d.logged_body` samples those intervals down the hole
+and the wireframe is triangulated through the LOGGED unit instead of through
+whatever passes a grade threshold — the rock defines the domain and the assays
+only say what grade is in it. The estimator still refuses to put a grade where no
+assay reaches, so the gain is bounded by assay coverage, which is correct.
+
+This is the direction Leapfrog takes further and is worth borrowing from:
+implicit surfaces fitted to logged contacts as a signed-distance function rather
+than a point cloud; a trend that warps the interpolation rather than only
+stretching the search; explicit hangingwall/footwall vein modelling; and hard vs
+soft contact treatment between domains, which MMP already *reads* out of reports
+(the contact-plot tables) without honouring.
+
+**Validator trap:** every list parameter but `elements` used to be coerced to
+floats, so `domain_units` was silently dropped and `anisotropy` had no limits
+entry. `NAME_LISTS` in params.py is the fix — add any new string-list parameter
+to it.
 
 ## Reasonable backlog / ideas
 
