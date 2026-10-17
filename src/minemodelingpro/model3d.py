@@ -256,7 +256,42 @@ def _passes(radius, max_gap, min_holes, min_samples, given=None):
     return [(radius, max_gap * 0.75, max(3, min_holes + 1), 3),
             (radius, max_gap, max(2, min_holes), 2),
             (radius, max_gap, 1, 2)]
-def anisotropy(pts, g, ratios):
+def frame_from_trend(dip, dip_direction, plunge=0.0):
+    """The body's own axes from a stated orientation, as rows (major, intermediate,
+    across).
+
+    This is the structural trend a geologist states rather than one inferred from
+    the samples: dip, the azimuth it dips towards, and the rotation of the long
+    axis within that plane. Principal components of the mineralised cloud are a
+    good stand-in when a body is well sampled and a poor one when it is not — a
+    handful of holes on one section have no shape to measure, and the trend they
+    imply is the drill pattern's, not the deposit's.
+
+    East-north-up, with the across-thickness axis last because that is the one the
+    wireframe inflates along."""
+    import math
+    th = math.radians(float(dip_direction) % 360.0)
+    dl = math.radians(min(max(float(dip), 0.0), 90.0))
+    pl = math.radians(min(max(float(plunge or 0.0), -90.0), 90.0))
+    # down-dip, strike, and the normal to the plane
+    down = np.array([math.sin(th) * math.cos(dl), math.cos(th) * math.cos(dl),
+                     -math.sin(dl)])
+    strike = np.array([-math.cos(th), math.sin(th), 0.0])
+    nrm = np.cross(strike, down)
+    for v in (down, strike, nrm):
+        n = np.linalg.norm(v)
+        if n > 0:
+            v /= n
+    major = math.cos(pl) * strike + math.sin(pl) * down
+    inter = -math.sin(pl) * strike + math.cos(pl) * down
+    major /= np.linalg.norm(major)
+    inter /= np.linalg.norm(inter)
+    nrm = np.cross(major, inter)
+    nrm /= np.linalg.norm(nrm)
+    return np.vstack([major, inter, nrm])
+
+
+def anisotropy(pts, g, ratios, trend=None):
     """The deposit's own frame, and the search ellipsoid in it.
 
     A vein is continuous along strike and down dip and stops abruptly across it. An
@@ -270,6 +305,13 @@ def anisotropy(pts, g, ratios):
     Returns a matrix that maps world coordinates into a space where the search
     ellipsoid is the unit sphere, or None when the cloud has no usable shape."""
     try:
+        a0 = np.asarray(ratios, float) if ratios is not None else None
+        if trend and trend.get("dip") is not None and trend.get("dip_direction") is not None:
+            # stated by a person who has seen the rock; it wins over the samples
+            if a0 is None or a0.min() <= 0:
+                return None, None
+            return frame_from_trend(trend["dip"], trend["dip_direction"],
+                                    trend.get("plunge") or 0.0), a0
         P = np.asarray(pts, float)[np.asarray(g, float) > 0]
         if len(P) < 12:
             return None, None
@@ -311,7 +353,7 @@ def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None,
     # the deposit's own frame: searching a vein in world axes bridges between veins
     rot, aniso = (None, None)
     if o.get("anisotropy"):
-        rot, aniso = anisotropy(pts, g, o["anisotropy"])
+        rot, aniso = anisotropy(pts, g, o["anisotropy"], trend=o.get("trend"))
     # The deposit is where the skeleton says it is; the composites say what grade it
     # carries. Keeping the two apart is what lets a block between two holes be
     # estimated at all — before this every block had to sit within a search distance
@@ -1096,6 +1138,10 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
     gap_margin = (float(PS["gap_fill_margin_m"]) if PS.get("gap_fill_margin_m")
                   else DSTY.halo_for(skey, med_w, collar_sp))
     style_info["halo_m"] = gap_margin
+    if PS.get("dip") is not None and PS.get("dip_direction") is not None:
+        style_info["trend"] = {"dip": PS.get("dip"), "dip_direction": PS.get("dip_direction"),
+                               "plunge": PS.get("plunge") or 0.0,
+                               "source": "set for this project"}
     style_info["median_intercept_m"] = round(med_w, 2) if med_w else None
 
     # --- per element: segments, composites, blocks, GT curve
@@ -1141,6 +1187,9 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
             spacing = float(PS.get("spacing_m") or _spacing(cent))
             eopts = dict(PS)
             eopts.setdefault("anisotropy", sdef.get("anisotropy"))
+            # a stated structural trend, if the project carries one
+            eopts["trend"] = {k: PS.get(k) for k in ("dip", "dip_direction", "plunge")} \
+                if PS.get("dip") is not None and PS.get("dip_direction") is not None else None
             # The deposit's own wireframe: a surface (or, for a body with no
             # plane to it, a solid) through the mineralised intercepts, inflated
             # to the thickness those intercepts show, so the ground a geologist
@@ -1170,12 +1219,28 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
             from minemodelingpro import domain as DOM
             dom_pts, dom_info = (None, None)
             if PS.get("domain") is not False:
-                rot_d, an_d = anisotropy(pts, g, sdef.get("anisotropy"))
+                rot_d, an_d = anisotropy(pts, g, eopts.get("anisotropy"),
+                                         trend=eopts.get("trend"))
                 reach = DOM.reach_for(PS.get("link_reach_m") or spacing,
                                       style_reach=sdef.get("halo_max_m", 0) * 3 or None)
-                dom_pts, dom_info = DOM.wireframe(
-                    pts, g, hid, max(bins[0], 1e-9), rot=rot_d, aniso=an_d,
-                    reach=reach, step=max(float(blk[0]), 3.0), thickness=med_w)
+                # the logged geology where the project states which units are ore,
+                # the grade threshold otherwise
+                lp, lh, lu = logged_body(ds, H, key2i, PS.get("domain_units"))
+                if lp is not None and len(lp) >= 6:
+                    dom_pts, dom_info = DOM.wireframe(
+                        lp, np.ones(len(lp)), lh, 0.5, rot=rot_d, aniso=an_d,
+                        reach=reach, step=max(float(blk[0]), 3.0),
+                        thickness=PS.get("true_width_m"))
+                    if dom_info:
+                        dom_info["from"] = "logged geology"
+                        dom_info["units"] = lu
+                else:
+                    dom_pts, dom_info = DOM.wireframe(
+                        pts, g, hid, max(bins[0], 1e-9), rot=rot_d, aniso=an_d,
+                        reach=reach, step=max(float(blk[0]), 3.0),
+                        thickness=PS.get("true_width_m") or med_w)
+                    if dom_info:
+                        dom_info["from"] = "mineralised intercepts"
                 # How THICK the body is, and how far to look for grade inside it.
                 # Both were wrong, which is why the skeleton measured neutral: a
                 # domain the thickness of the composite halo is a sleeve a few
@@ -1216,7 +1281,18 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
             # the copper model and the zinc model must use the same tonnes per cubic
             # metre or the deposit weighs different amounts depending which metal
             # you are looking at
-            dens, dens_why = DSTY.density_for(skey, mean_by_el, stated=PS.get("density"))
+            # A density counts as STATED only when the project's own report gave
+            # it or a person set it. `auto_params` also fills it from the regional
+            # median when no report speaks, and that average is weaker evidence
+            # than the deposit style — a Cu-Zn massive sulphide is 3.2 t/m³ and
+            # the regional mean is 2.7, which is a fifth of the tonnage. The style
+            # is now read from the qualified person's own deposit-type section, so
+            # it deserves to outrank a corpus average.
+            _dsrc = base_src.get("density") if PORIGIN.get("density") == "auto" else None
+            _dstated = PS.get("density")
+            if _dsrc and not str(_dsrc).startswith("technical report"):
+                _dstated = None              # regional guess: let the style decide
+            dens, dens_why = DSTY.density_for(skey, mean_by_el, stated=_dstated)
             params["density_source"] = dens_why
             bt = bsz[0] * bsz[1] * bsz[2] * dens
             # grade-tonnage curve over all estimated blocks
@@ -1308,6 +1384,7 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                   "grid": fr.get("grid")},
         "holes": hole_rows, "elements": elements, "primary": primary, "by_metal": by_metal,
         "style": style_info, "metallurgy": PS.get("metallurgy") or ds.get("metallurgy"),
+        "rock_units": ds.get("rock_units"),
         "coverage": _cover,
         "track_record": _validation(),
         "integrity": integrity or None,
@@ -1322,6 +1399,48 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                    "reports": sum(1 for s in ds["sources"] if s["kind"].startswith("NI")),
                    "releases": sum(1 for s in ds["sources"] if s["kind"] == "news release")},
     })
+
+
+def logged_body(ds, H, key2i, units, step=2.0):
+    """Points along the logged geology units a project calls its mineralised body.
+
+    This is the right way round, and the way a geologist works: the ROCK defines
+    the domain and the assays only say what grade is in it. MMP's own wireframe
+    has to pick its body by grade threshold, because a technical report publishes
+    assays and not a logged geology file — but an imported dataset usually logs
+    both, and then guessing is unnecessary.
+
+    Returns (points, hole_index, matched_units) sampled down each logged interval
+    so the body's thickness comes out of the logging rather than an assumption."""
+    rows = ds.get("lithology") or []
+    want = {str(u).strip().lower() for u in (units or []) if str(u).strip()}
+    if not rows or not want:
+        return None, None, None
+    pts, hid, got = [], [], set()
+    for x in rows:
+        rock = str(x.get("rock") or "").strip().lower()
+        alt = str(x.get("alt") or "").strip().lower()
+        if rock not in want and alt not in want:
+            continue
+        hi = key2i.get(x.get("key"))
+        if hi is None:
+            continue
+        h = H[hi]
+        a, b = float(x["from"]), float(x["to"])
+        if not (b > a):
+            continue
+        n = max(2, int(math.ceil((b - a) / max(step, 0.5))) + 1)
+        md = np.linspace(a, b, n)
+        md = md[md <= max(h["depth"], b)]
+        if not len(md):
+            continue
+        xyz = hole_xyz(h, md)
+        pts.append(xyz)
+        hid.append(np.full(len(md), hi))
+        got.add(rock if rock in want else alt)
+    if not pts:
+        return None, None, None
+    return np.concatenate(pts), np.concatenate(hid), sorted(got)
 
 
 def _coverage(ds, grids, primary, dens):

@@ -73,6 +73,15 @@ _PATTERNS = [
     ("survey_depth", r"^(depth|md|measureddepth|surveydepth|at|distance|station|depthm)$"),
     ("zone", r"^(zone|utmzone|gridzone)$"),
     ("sample", r"^(sample|sampleid|sampleno|sampnum|labno|certificate)$"),
+    # Logged geology. Every real drill database has a column like this and MMP was
+    # throwing it away, which is why an imported dataset had its deposit style
+    # guessed from intercept widths — for the one person who does not need to guess.
+    # "zone" alone is taken: it means the UTM zone on a collar table.
+    ("lith", r"^(lith|lith1|litho|lithology|lithcode|rock|rocktype|rock_?type|"
+             r"geology|geol|geolunit|unit|unitcode|formation|domain|domaincode|"
+             r"minzone|minzonecode|mineralization|mineralisation|minerali[sz]ationtype|"
+             r"zonecode|zone_?name|lithunit|majorlith|primarylith)$"),
+    ("alteration", r"^(alt|alteration|altcode|alttype|alteration_?type)$"),
 ]
 
 # element spellings -> (element, default unit)
@@ -280,6 +289,9 @@ def profile(df):
     kind = None
     if has("hole") and (has("east", "north") or has("lat", "lon")):
         kind = "collar"
+    elif has("hole", "from") and ("lith" in roles or "alteration" in roles) \
+            and not elements and "value" not in roles and "element" not in roles:
+        kind = "lithology"
     elif has("hole", "from") and (elements or "value" in roles or "element" in roles or "to" in roles):
         kind = "assay"
     elif has("hole", "az", "dip") and ("survey_depth" in roles or "depth" in roles) and not has("east", "north"):
@@ -413,6 +425,53 @@ def parse_assays(df, prof, notes):
 
 
 # ---------------------------------------------------------------- georeferencing
+
+def parse_lithology(df, roles, notes=None):
+    """Logged geology intervals: hole, from, to, and what the rock is.
+
+    The same shape as an assay table without the assays. What the unit means is
+    the client's business — MMP keeps the codes verbatim and lets a project say
+    which of them are the mineralised body (`domain_units`), because a logging
+    code only means something to the person who wrote it."""
+    out = []
+    notes = notes if notes is not None else []
+    skipped = Counter()
+    hc = roles.get("hole")
+    fc, tc, lc = roles.get("from"), roles.get("to"), roles.get("length")
+    rc = roles.get("lith") or roles.get("alteration")
+    ac = roles.get("alteration") if roles.get("lith") else None
+    if not (hc and fc and rc):
+        return out
+    f = 0.3048 if re.search(r"ft|feet", str(fc), re.I) else 1.0
+    for _, row in df.iterrows():
+        hid = str(row.get(hc, "") or "").strip()
+        if not hid:
+            skipped["no hole id"] += 1
+            continue
+        fr = _num(row.get(fc))
+        to = _num(row.get(tc)) if tc else None
+        if to is None and lc is not None and fr is not None:
+            ln = _num(row.get(lc))
+            to = fr + ln if ln is not None else None
+        rock = str(row.get(rc) or "").strip()
+        if fr is None or to is None or not rock or rock.lower() in ("nan", "none", "-"):
+            skipped["no interval or no rock code"] += 1
+            continue
+        fr, to = fr * f, to * f
+        if to <= fr or to > 5000:
+            skipped["interval not plausible"] += 1
+            continue
+        rec = {"hole": hid, "from": round(fr, 2), "to": round(to, 2), "rock": rock[:40]}
+        if ac:
+            alt = str(row.get(ac) or "").strip()
+            if alt and alt.lower() not in ("nan", "none", "-"):
+                rec["alt"] = alt[:40]
+        out.append(rec)
+    for k, v in skipped.items():
+        notes.append(f"logged geology: {v} row(s) skipped — {k}")
+    return out
+
+
 def georeference(collars, epsg=None, utm_zone=None, hemisphere="N", datum="WGS84", notes=None):
     """Add lat/lon to collars that carry projected coordinates."""
     notes = notes if notes is not None else []
@@ -457,7 +516,7 @@ def build_dataset(paths, project=None, company=None, epsg=None, utm_zone=None, h
     was understood. Nothing is written to disk — see `save`."""
     import pandas as pd
     notes, tables = [], []
-    collars, surveys, intervals = [], [], []
+    collars, surveys, intervals, lithology = [], [], [], []
     for path in paths:
         try:
             got = read_tables(path)
@@ -481,8 +540,11 @@ def build_dataset(paths, project=None, company=None, epsg=None, utm_zone=None, h
                 surveys += parse_surveys(df, prof["roles"], notes)
             elif prof["kind"] == "assay":
                 intervals += parse_assays(df, prof, notes)
+            elif prof["kind"] == "lithology":
+                lithology += parse_lithology(df, prof["roles"], notes)
             else:
-                notes.append(f"{name}: not recognised as collars, surveys or assays "
+                notes.append(f"{name}: not recognised as collars, surveys, assays "
+                             f"or logged geology "
                              f"(columns: {', '.join(map(str, df.columns[:8]))})")
     # de-duplicate
     seen, c2 = set(), []
@@ -500,6 +562,11 @@ def build_dataset(paths, project=None, company=None, epsg=None, utm_zone=None, h
         seen.add(k); i2.append(x)
     intervals = i2
     crs, center = georeference(collars, epsg, utm_zone, hemisphere, datum, notes)
+    if lithology:
+        notes.append(f"logged geology: {len(lithology)} interval(s) over "
+                     f"{len({x['hole'] for x in lithology})} hole(s), "
+                     f"{len({x['rock'] for x in lithology})} distinct units — set "
+                     f"'domain_units' to the ones that are the mineralised body")
 
     ckeys = {holeid.key(c["hole"]) for c in collars}
     ikeys = {holeid.key(x["hole"]) for x in intervals}
@@ -521,7 +588,9 @@ def build_dataset(paths, project=None, company=None, epsg=None, utm_zone=None, h
         "source_name": source_name or ", ".join(os.path.basename(p) for p in paths)[:160],
         "files": [os.path.basename(p) for p in paths],
         "collars": collars, "surveys": surveys, "intervals": intervals,
+        "lithology": lithology,
         "counts": {"collars": len(collars), "intervals": len(intervals),
+                   "lithology": len(lithology),
                    "surveyed_holes": len({s["hole"] for s in surveys}),
                    "holes_with_intervals": len(ikeys), "linked": len(ckeys & ikeys),
                    "elements": dict(Counter(x["el"] for x in intervals))},

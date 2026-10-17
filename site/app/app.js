@@ -165,6 +165,26 @@ export async function listUsers() { return (await api("/users")).users || []; }
 /* --------------------------------------------------------------- parameters
    Mirrors minemodelingpro/params.py — the same names the worker understands. */
 export const PARAM_FIELDS = [
+  /* Geology first, because it sets the rest. MMP reads the deposit type out of a
+     technical report's own deposit-type section where there is one; an imported
+     dataset has no report, so without these it falls back to inferring the style
+     from intercept widths and grade variability — which is a guess, made for the
+     one person who does not need to guess. */
+  { k: "deposit_style", label: "Deposit style", type: "select", options: [
+      ["", "Infer from the drilling"], ["vein", "Vein / epithermal"],
+      ["orogenic", "Orogenic / shear-hosted gold"], ["vms", "VMS / massive sulphide"],
+      ["sedex", "SEDEX / MVT"], ["porphyry", "Porphyry"],
+      ["skarn", "Skarn / carbonate replacement"], ["iron", "Iron formation"],
+      ["pegmatite", "Pegmatite (LCT)"], ["laterite", "Laterite"],
+      ["phosphate", "Phosphate"], ["bulk", "Bulk tonnage / disseminated"]],
+    help: "Sets the bulk density, how far mineralisation is carried from an intercept, the block size and the shape of the search. The strongest single setting here." },
+  { k: "dip", label: "Dip (°)", type: "number", step: "1", help: "The body's dip: 0 flat, 90 vertical. With dip direction, this replaces the orientation MMP measures from the samples — worth setting when few holes have been drilled, because a handful on one section have no shape to measure." },
+  { k: "dip_direction", label: "Dip direction (°)", type: "number", step: "1", help: "The azimuth the body dips towards, degrees from north." },
+  { k: "plunge", label: "Plunge of the long axis (°)", type: "number", step: "1", help: "Rotation of the long axis within the plane of the body. 0 means it runs along strike, which is the usual case." },
+  { k: "anisotropy", label: "Search ratios (major,inter,across)", ph: "e.g. 1,0.9,0.22", help: "How far the search reaches along the body versus across it. Defaults to the deposit style's." },
+  { k: "true_width_m", label: "True width (m)", type: "number", step: "0.1", help: "The body's thickness, where you know it better than the intercepts do. Used to inflate the modelled body." },
+  { k: "domain", label: "Body between the holes", type: "select", options: [["", "Triangulate a body through the intercepts (default)"], ["false", "Estimate only around the samples"]],
+    help: "On by default: a surface through the mineralised intercepts, inflated to their thickness, so ground between holes is modelled rather than left out. It stops at the end of the drilling either way." },
   { k: "block", label: "Block size (x,y,z m)", ph: "e.g. 5,5,5", help: "Starts from the most recent technical report for this project; with no report, from what is typical for the region and commodity." },
   { k: "composite_m", label: "Composite length (m)", type: "number", step: "0.5", help: "Down-hole sample length used for estimation. Defaults to the report's, else the block height (max 5 m)." },
   { k: "radius_m", label: "Search radius (m)", type: "number", step: "1", help: "How far a block may look for composites. Defaults to the report's search range, else about 1.6 × drill spacing." },
@@ -203,7 +223,8 @@ export function readParams(el) {
     const v = (i.value || "").trim();
     if (v === "") return;
     if (i.name === "block" || i.name === "elements") out[i.name] = v.split(/[,;\s]+/).filter(Boolean);
-    else if (i.name === "gap_fill") out[i.name] = v !== "false";
+    else if (i.name === "anisotropy") out[i.name] = v.split(/[,;\s]+/).filter(Boolean).map(Number);
+    else if (i.name === "gap_fill" || i.name === "domain") out[i.name] = v !== "false";
     else if (i.type === "number") out[i.name] = Number(v);
     else out[i.name] = v;
   });

@@ -769,6 +769,15 @@ def _materialise(p, news_holes, news_ivs, ov, styled_reports=()):
                                    "url": nh["url"], "date": nh["date"]}
     sources.extend(sorted(rel_seen.values(), key=lambda s: s.get("date") or "", reverse=True))
 
+    # logged geology, from any source that has it (imported datasets today)
+    lithology = []
+    for r in p["reports"]:
+        for x in r.get("lithology") or []:
+            lithology.append({"key": holeid.key(x["hole"]), "hole": x["hole"],
+                              "from": x["from"], "to": x["to"], "rock": x["rock"],
+                              **({"alt": x["alt"]} if x.get("alt") else {}),
+                              "src": r["id"]})
+
     # --- dedupe intervals across sources (same hole/from/to/element)
     seen, iv2 = set(), []
     for x in intervals:
@@ -866,6 +875,8 @@ def _materialise(p, news_holes, news_ivs, ov, styled_reports=()):
             "private": any(r.get("private") for r in imported) or None,
             "owners": sorted({r["owner"] for r in imported if r.get("owner")}) or None,
             "frame": frame, "holes": holes, "intervals": intervals, "sources": sources,
+            "lithology": lithology or None,
+            "rock_units": sorted({x["rock"] for x in lithology}) or None,
             "resources": res,
             "report_params": rp or None, "report_params_from": rp_from or None,
             "extent": ext or None, "extent_from": ext_from or None,

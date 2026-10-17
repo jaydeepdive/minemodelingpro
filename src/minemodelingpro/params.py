@@ -29,6 +29,26 @@ Keys (all optional; anything absent falls back to the data-driven default):
   gap_fill         True (default): unreported hole length is composited as zero grade
   gap_fill_margin_m  how far those zeros run past a reported interval (default: one
                    drill spacing) — they bound the deposit, they should not dilute it
+  deposit_style    the deposit model: "vein" | "vms" | "porphyry" | "orogenic" |
+                   "skarn" | "sedex" | "iron" | "pegmatite" | "laterite" |
+                   "phosphate" | "bulk". Sets the density, how far mineralisation is
+                   carried from an intercept, the block size and the search shape.
+                   Read from the report's own deposit-type section where there is
+                   one; set it here when you know the geology and MMP is guessing
+  dip              the body's dip in degrees (0 flat, 90 vertical)
+  dip_direction    the azimuth the body dips towards, degrees from north
+  plunge           rotation of the long axis within the plane of the body, degrees
+                   (0 = the long axis runs along strike, the usual case)
+  anisotropy       search ellipsoid ratios along (major, intermediate, across) —
+                   defaults to the deposit style's
+  true_width_m     the body's true width, where you know it better than the
+                   intercepts do
+  domain_units     which logged geology codes ARE the mineralised body, when the
+                   imported data logs geology ("MASSIVE SULPHIDE", "VEIN", "QZV").
+                   The body is then triangulated through the logged unit instead of
+                   through whatever passes a grade threshold — the rock defines the
+                   domain and the assays only say what grade it carries, which is
+                   the right way round and how a geologist would do it
   domain           triangulate a body through the mineralised intercepts and
                    estimate inside it, as well as within a search distance of a
                    sample — the wireframe a qualified person would draw. Default
@@ -59,23 +79,31 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 PATH = os.path.join(_ROOT, "data", "keep", "mmp_model_params.json")
 
 NUMERIC = {"composite_m", "radius_m", "max_gap_m", "spacing_m", "power", "top_cut", "top_cut_pct",
-           "density", "default_cutoff", "value_cutoff", "gap_fill_margin_m", "link_reach_m"}
+           "density", "default_cutoff", "value_cutoff", "gap_fill_margin_m", "link_reach_m",
+           "dip", "dip_direction", "plunge", "true_width_m"}
 INTEGER = {"min_holes", "min_samples", "max_elements", "max_per_hole"}
 BOOLEAN = {"gap_fill", "domain"}
-LISTS = {"block", "elements", "bins"}
+LISTS = {"block", "elements", "bins", "anisotropy", "domain_units"}
 STRINGS = {"method", "name", "company", "note", "deposit_style"}
 # the net-smelter-return formula: {"factors": {el: $/t per unit grade}, "units": ...}.
 # Not a number and not a list, so it travels as an object of its own.
 OBJECTS = {"nsr", "metallurgy"}
 ALL = NUMERIC | INTEGER | BOOLEAN | LISTS | STRINGS | OBJECTS
 
-LIMITS = {"block": (0.5, 200.0), "composite_m": (0.25, 50.0), "radius_m": (5.0, 2000.0),
+LIMITS = {"dip": (0.0, 90.0), "dip_direction": (0.0, 360.0), "plunge": (0.0, 90.0),
+          "true_width_m": (0.1, 500.0),
+          "block": (0.5, 200.0), "composite_m": (0.25, 50.0), "radius_m": (5.0, 2000.0),
           "max_gap_m": (1.0, 1000.0), "spacing_m": (1.0, 2000.0), "power": (0.0, 8.0),
           "top_cut": (0.0, 1e6), "top_cut_pct": (50.0, 100.0), "density": (1.0, 8.0),
           "min_holes": (1, 20), "min_samples": (1, 100), "max_elements": (1, 8),
           "max_per_hole": (1, 24),
           "default_cutoff": (0.0, 1e6), "value_cutoff": (0.0, 1e5), "bins": (0.0, 1e6),
-          "gap_fill_margin_m": (1.0, 1000.0), "link_reach_m": (5.0, 500.0)}
+          "gap_fill_margin_m": (1.0, 1000.0), "link_reach_m": (5.0, 500.0),
+          "anisotropy": (0.02, 1.0)}
+# Lists of names rather than numbers. Without this every list but `elements` was
+# coerced to floats, so a logged-geology unit name was silently dropped on its way
+# in and `domain_units` could never take effect.
+NAME_LISTS = {"elements", "domain_units"}
 
 
 def load(path=PATH):
@@ -179,8 +207,8 @@ def validate(values):
                 if isinstance(v, str):
                     v = [p for p in v.replace(";", ",").split(",") if p.strip()]
                 v = list(v)
-                if k == "elements":
-                    v = [str(x).strip() for x in v if str(x).strip()]
+                if k in NAME_LISTS:
+                    v = [str(x).strip()[:40] for x in v if str(x).strip()]
                 else:
                     v = [float(x) for x in v]
                     lo, hi = LIMITS[k]
