@@ -733,5 +733,20 @@
   "size_kb": 5453,
   "collected": "2026-10-16T23:36:26Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_PGE-2026-10-16-technical-report-ni-43-101-english-e342.pdf"
+ },
+ {
+  "file": "ceo_ARA-2026-10-19-technical-report-ni-43-101-english-b782.pdf",
+  "filing_ref": "ARA-2026-10-19-technical-report-ni-43-101-english-b782.pdf",
+  "company": "ARA",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-10-19",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/ARA-2026-10-19-technical-report-ni-43-101-english-b782.pdf",
+  "source": "ceo.ca",
+  "size_kb": 46077,
+  "collected": "2026-10-19T14:41:27Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_ARA-2026-10-19-technical-report-ni-43-101-english-b782.pdf"
  }
 ]
