@@ -124,7 +124,7 @@ table.lib tbody tr:hover{background:#fafbfd}
 </style>
 </head>
 <body>
-<div class="topbar"><div class="topwrap"><a class="brand" href="index.html"><span class="name">Mine<b>Modeling</b>Pro</span><span class="sub">Drillhole &amp; 43-101 Modelling</span></a><nav class="menu"><a href="models.html" class="active">Model library</a><a href="app/dashboard.html" class="">Studio</a><span id="navauth"><a class="signin" href="app/index.html">Sign in</a></span></nav></div></div><script>fetch("/api/me",{credentials:"same-origin"}).then(r=>r.json()).then(d=>{var s=document.getElementById("navauth");if(!s||!d||!d.user)return;var e=String(d.user.email||"").replace(/[&<>"]/g,"");s.innerHTML='<a href="app/account.html">'+e+'</a>';}).catch(function(){});</script>
+<div class="topbar" id="topbar"></div><script src="nav.js"></script><script>MMPNav.render({base:"",active:"models"});</script>
 <div class="wrap">
   <div class="libhead">
     <div>

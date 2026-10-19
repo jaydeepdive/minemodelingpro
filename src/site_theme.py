@@ -36,27 +36,16 @@ FONTS = ('<link rel="preconnect" href="https://fonts.googleapis.com">'
          '<link href="https://fonts.googleapis.com/css2?family=Bitter:wght@500;700;800&'
          'family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">')
 
-def header(active=""):
-    """Site chrome. The nav's right-hand slot is filled in by the browser from
-    /api/me, so a signed-in reader is not told to sign in again on a static page."""
-    home_active = " active" if active in ("models.html", "") else ""
-    return (
-        '<div class="topbar"><div class="topwrap">'
-        '<a class="brand" href="index.html">'
-        '<span class="name">Mine<b>Modeling</b>Pro</span>'
-        '<span class="sub">Drillhole &amp; 43-101 Modelling</span>'
-        '</a>'
-        '<nav class="menu">'
-        f'<a href="models.html" class="{("active" if home_active else "").strip()}">Model library</a>'
-        f'<a href="app/dashboard.html" class="{("active" if active == "app" else "")}">Studio</a>'
-        '<span id="navauth"><a class="signin" href="app/index.html">Sign in</a></span>'
-        '</nav>'
-        '</div></div>'
-        '<script>fetch("/api/me",{credentials:"same-origin"}).then(r=>r.json()).then(d=>{'
-        'var s=document.getElementById("navauth");if(!s||!d||!d.user)return;'
-        'var e=String(d.user.email||"").replace(/[&<>"]/g,"");'
-        's.innerHTML=\'<a href="app/account.html">\'+e+\'</a>\';'
-        '}).catch(function(){});</script>')
+def header(active="models"):
+    """Site chrome. The menu bar itself lives in site/nav.js so that the static
+    pages, the gallery and the Studio all render one definition; this only says
+    which link is lit and where the site root is from here."""
+    a = str(active or "").replace(".html", "")
+    if a == "app":
+        a = "dashboard"
+    return ('<div class="topbar" id="topbar"></div>'
+            '<script src="nav.js"></script>'
+            f'<script>MMPNav.render({{base:"",active:"{a}"}});</script>')
 
 
 def footer():

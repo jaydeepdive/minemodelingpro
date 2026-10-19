@@ -28,8 +28,8 @@ a{color:var(--red);text-decoration:none}a:hover{text-decoration:underline}
 nav.menu{display:flex;align-items:center;gap:20px;flex-wrap:wrap}
 nav.menu a{display:inline-flex;align-items:center;height:34px;color:var(--ink);font-size:14.5px;font-weight:500;border-bottom:2px solid transparent}
 nav.menu a:hover{color:var(--red);text-decoration:none}
-nav.menu a.cta{background:var(--red);color:#fff;border-radius:7px;padding:0 16px;font-weight:700}
-nav.menu a.cta:hover{background:#b3141a;color:#fff}
+nav.menu a.signin,nav.menu a.cta{background:var(--red);color:#fff;border-radius:7px;padding:0 16px;font-weight:700}
+nav.menu a.signin:hover,nav.menu a.cta:hover{background:#b3141a;color:#fff}
 
 /* hero */
 .hero{background:linear-gradient(180deg,#fbfcfd 0%,#fff 100%);border-bottom:1px solid var(--line)}
@@ -100,18 +100,9 @@ footer.site{border-top:1px solid var(--line);color:var(--mut);font-size:13px;pad
 </head>
 <body>
 
-<div class="topbar"><div class="topwrap">
-  <a class="brand" href="index.html">
-    <span class="name">Mine<b>Modeling</b>Pro</span>
-    <span class="sub">Drillhole &amp; 43-101 Modelling</span>
-  </a>
-  <nav class="menu">
-    <a href="#what">What it does</a>
-    <a href="#how">How it works</a>
-    <a href="#access">Request access</a>
-    <a class="cta" href="app/index.html">Sign in</a>
-  </nav>
-</div></div>
+<div class="topbar" id="topbar"></div>
+<script src="nav.js"></script>
+<script>MMPNav.render({base:"",active:"home"});</script>
 
 <div class="hero"><div class="wrap">
   <div>
@@ -230,10 +221,6 @@ footer.site{border-top:1px solid var(--line);color:var(--mut);font-size:13px;pad
 /* the front page knows whether you are signed in */
 fetch("/api/me", { credentials: "same-origin" }).then(r => r.json()).then(d => {
   if (!d || !d.user) return;
-  const nav = document.querySelector("nav.menu");
-  if (nav) nav.innerHTML = `<a href="#what">What it does</a>
-    <a href="models.html">Model library</a>
-    <a class="cta" href="app/dashboard.html">My projects</a>`;
   const btns = document.querySelector(".hero .btns");
   if (btns) btns.innerHTML = `<a class="btn" href="models.html">Open the model library</a>
     <a class="btn ghost" href="app/dashboard.html">My projects</a>`;

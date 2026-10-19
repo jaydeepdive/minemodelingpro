@@ -63,17 +63,8 @@ export async function signOut() { try { await api("/auth/logout", { method: "POS
 export async function changePassword(current, password) { return api("/auth/password", { method: "POST", body: { current, password } }); }
 
 export async function chrome(active) {
-  const user = (await session())?.user;
-  const bar = $("#topbar");
-  if (bar) bar.innerHTML = `<div class="topwrap">
-    <a class="brand" href="../index.html"><span class="name">Mine<b>Modeling</b>Pro</span><span class="sub">Studio</span></a>
-    <nav class="menu">
-      <a href="dashboard.html" class="${active === "dashboard" ? "active" : ""}">My projects</a>
-      <a href="../models.html">Model library</a>
-      ${user ? `${user.role === "admin" ? `<a href="admin.html" class="${active === "admin" ? "active" : ""}">Accounts</a>` : ""}<a href="account.html" class="${active === "account" ? "active" : ""}">${esc(user.email)}</a><a href="#" id="signout">Sign out</a>`
-             : `<a href="index.html">Sign in</a>`}
-    </nav></div>`;
-  const so = $("#signout"); if (so) so.onclick = e => { e.preventDefault(); signOut(); };
+  const user = (await session())?.user || null;
+  if (window.MMPNav) window.MMPNav.render({ base: "../", active, user });
   return user;
 }
 

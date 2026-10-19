@@ -12,7 +12,11 @@ a{color:var(--red);text-decoration:none}a:hover{text-decoration:underline}
 .brand .name b{color:var(--red)}
 .brand .sub{font-family:var(--serif);font-weight:700;font-size:10.5px;letter-spacing:2.5px;color:var(--mut);text-transform:uppercase}
 nav.menu{display:flex;align-items:center;gap:18px;flex-wrap:wrap;font-size:14px}
-nav.menu a{color:var(--ink);font-weight:500}nav.menu a.active{color:var(--red)}
+nav.menu a{display:inline-flex;align-items:center;height:32px;color:var(--ink);font-weight:500;line-height:1;border-bottom:2px solid transparent;text-decoration:none}
+nav.menu a:hover{color:var(--red);text-decoration:none}
+nav.menu a.active{color:var(--red);border-bottom-color:var(--red)}
+nav.menu a.signin{background:var(--red);color:#fff;border-radius:7px;padding:0 14px;font-weight:700;border-bottom:0}
+nav.menu a.signin:hover{background:#b3141a;color:#fff}
 .who{font-size:13px;color:var(--mut)}
 .wrap{max-width:1180px;margin:0 auto;padding:26px 22px 70px}
 .rule{height:3px;width:52px;background:var(--red);margin:10px 0 0;border-radius:2px}
