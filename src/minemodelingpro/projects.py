@@ -703,7 +703,7 @@ def _slugify(s):
     return re.sub(r"[^a-z0-9]+", "-", (s or "project").lower()).strip("-")[:60] or "project"
 
 
-def _materialise(p, news_holes, news_ivs, ov, styled_reports=()):
+def _materialise(p, news_holes, news_ivs, ov, styled_reports=(), consume=False):
     holes = {}          # key -> hole dict (frame fields: lat/lon or local e/n)
     intervals = []
     sources = []
@@ -729,10 +729,25 @@ def _materialise(p, news_holes, news_ivs, ov, styled_reports=()):
                     h[a] = c[b]
             h["src"].add(sid)
             holes[k] = h
-        for x in r.get("intervals") or []:
-            intervals.append({"key": holeid.key(x["hole"]), "hole": x["hole"], "from": x["from"], "to": x["to"],
-                              "el": x["el"], "grade": x["grade"], "unit": x.get("unit"), "sub": x.get("sub", 0),
-                              "src": sid})
+        src_iv = r.get("intervals") or []
+        if consume:
+            # The caller owns this dataset and will not read it again, so each row
+            # is released as it is read: a multi-element database runs to hundreds
+            # of megabytes and the modeller does not have room to hold it twice.
+            # The row is rebuilt rather than added to — a dict that came from JSON
+            # has its own key table, and two more keys make it bigger again, while
+            # dicts built here from one literal share a single key table between
+            # them.
+            while src_iv:
+                x = src_iv.pop()
+                intervals.append({"key": holeid.key(x["hole"]), "hole": x["hole"], "from": x["from"],
+                                  "to": x["to"], "el": x["el"], "grade": x["grade"],
+                                  "unit": x.get("unit"), "sub": x.get("sub", 0), "src": sid})
+        else:
+            for x in src_iv:
+                intervals.append({"key": holeid.key(x["hole"]), "hole": x["hole"], "from": x["from"],
+                                  "to": x["to"], "el": x["el"], "grade": x["grade"],
+                                  "unit": x.get("unit"), "sub": x.get("sub", 0), "src": sid})
         res = r.get("resource")
         sources.append({"kind": ("imported data" if r.get("source") == "import"
                                  else "NI 43-101 technical report"), "id": sid,

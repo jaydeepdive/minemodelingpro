@@ -667,7 +667,7 @@ def _snap(v):
     return min(std, key=lambda s: abs(s - v))
 
 
-MAX_BY_METAL = 12
+MAX_BY_METAL = 24
 
 
 def _class_split(cls_sorted, ks, bt):
@@ -712,6 +712,28 @@ def _own_series(vals, bt, el, unit, n_cuts=26):
     if len(out_c) < 3:
         return None
     return {"cuts": out_c, "tonnes": out_t, "grade": out_g}
+
+
+def mem_budget_mb():
+    """How much memory this process may use, as the container reports it.
+
+    The modeller runs in a container with a hard limit and no warning before the
+    kernel enforces it, so the few decisions that trade memory for completeness
+    ask this rather than assuming a desktop."""
+    for p in ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
+        try:
+            v = open(p).read().strip()
+            if v and v != "max" and 0 < int(v) < (1 << 50):
+                return int(v) / 1e6
+        except Exception:
+            pass
+    try:
+        for line in open("/proc/meminfo"):
+            if line.startswith("MemTotal:"):
+                return int(line.split()[1]) / 1000.0
+    except Exception:
+        pass
+    return 2048.0
 
 
 def _by_metal(primary, grids, by_el, units, key2i, H, PS, margin=None, style=None,
@@ -763,7 +785,15 @@ def _by_metal(primary, grids, by_el, units, key2i, H, PS, margin=None, style=Non
                               key=lambda e: -len({x["key"] for x in by_el[e]}))
     metals, order_out, by_metal_grades = {}, [], {}
     tcp = float(PS.get("top_cut_pct") or 99.5)
-    cap = MAX_BY_METAL if nblk <= 300_000 else 6
+    # Every metal the drilling assayed is reported over the one deposit tonnage.
+    # A multi-element package is most of why a client uploads their database at
+    # all: the grade-tonnage table for the metal they are chasing is the point,
+    # and the by-products beside it are what make the deposit worth mining. How
+    # many fit is a question about this machine, not about the deposit, so it is
+    # asked of the machine — a worker with a gigabyte reports fewer rather than
+    # being killed halfway through reporting all of them.
+    cap = PS.get("max_by_metal") or os.environ.get("MMP_MAX_BY_METAL")
+    cap = int(cap) if cap else (MAX_BY_METAL if mem_budget_mb() >= 1800 else 8)
     for el in want[:cap]:
         unit = units.get(el) or ("g/t" if el in PRECIOUS else "%")
         if el == primary:

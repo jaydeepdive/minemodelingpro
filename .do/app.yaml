@@ -39,7 +39,14 @@ workers:
       repo_clone_url: https://github.com/jaydeepdive/minemodelingpro.git
       branch: main
     run_command: python studio/worker.py
-    instance_size_slug: apps-s-1vcpu-1gb
+    # 2 GB, not 1: a client's multi-element drill database is ~900,000 assay rows
+    # and the build peaked at 1.07 GB with every element carried and every metal
+    # reported (measured 2026-10-20, 602 holes, 19 elements). At 1 GB the kernel
+    # kills the worker mid-build, which the app can only show as a job that never
+    # finishes. Changing this file does not change the running app — the live
+    # spec lives in the DO console (Apps > minemodelingpro > modeler > Settings >
+    # Resource Size) or goes up via PUT /v2/apps/{id}/spec with DO_DEPLOY_TOKEN.
+    instance_size_slug: apps-s-1vcpu-2gb
     instance_count: 1
     envs:
       - key: DATABASE_URL

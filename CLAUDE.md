@@ -390,14 +390,26 @@ never ended. After the fixes below the same build peaks at **720 MB** in 42 s.
   allocates.** Every block carries its 24 nearest samples, so a 400,000-block
   chunk was half a gigabyte in flight. `MMP_BLOCK_CHUNK` (60,000 fine blocks)
   bounds it; identical results, and faster for cache reasons.
-- **A modern ICP package reports 19 elements on every sample.** Carrying all of
-  them to model three cost 915,000 intervals through every stage.
-  `imports.carry_elements` keeps an element that reaches a grade worth modelling
-  (`_WORTH_MODELLING`, coarse floors per metal), plus the highest-priority metal
-  present whatever its grade — a low-grade bulk deposit must not lose its pay
-  metal — plus anything the project's `elements` setting names, which overrides
-  the lot. Everything read is reported in `elements_seen`, and the full suite is
-  kept on the dataset as `suite` so `deposit_style` still sees the pathfinders.
+- **A modern ICP package reports 19 elements on every sample, and all of them
+  are carried.** A client's multi-element package is data they paid a laboratory
+  for, and the modeller is not the place to decide which of it was worth having
+  — Jordan's call, and the right one. `elements` chooses what gets ESTIMATED; it
+  does not decide what survives the import. What that costs is memory, and the
+  memory is answered three ways: the import and the build are now separate jobs
+  (the parse's several hundred megabytes are gone before the block model starts),
+  `projects._materialise(consume=True)` releases each stored row as it reads it
+  so two copies never coexist, and `imports.intern_rows` shares the hole ids,
+  elements and units that JSON gives every row its own copy of. Measured at
+  602 holes / 915,040 intervals / 19 elements: parse 409 MB in its own process,
+  build 986 MB — against 1.67 GB before, in one process, reporting a third as
+  many metals.
+- **How many metals get reported is a question about the machine.**
+  `model3d.mem_budget_mb()` reads the container's own limit, and `_by_metal`
+  reports up to 24 metals with 1.8 GB or more and 8 below that, rather than
+  being killed halfway through reporting all of them. **The modeler component
+  needs 2 GB** (`.do/app.yaml` says so now): at 1 GB this deposit peaks at
+  ~0.99 GB with 8 metals and 1.07 GB with all 19 — too close either way. The
+  live spec is in the DO console, not in the repo.
 - **A lab export names au_cert_num, au_analysis_code and au_flag beside
   au_ppm.** All four start with the element, and all four were being read as
   gold; a certificate number makes a six-figure grade that passes every
@@ -411,6 +423,14 @@ never ended. After the fixes below the same build peaks at **720 MB** in 42 s.
 
 `POST /api/datasets/{id}/reimport` ("Read the files again") re-parses stored
 files in place, so an importer fix costs the client no second upload.
+
+**The next real fix** is columnar intervals: 915,000 rows as Python dicts are
+~500 MB whatever arrangement they are in, and that single fact is what makes a
+gigabyte tight. Stored and carried as parallel arrays (hole index, from, to,
+element index, grade) the same data is ~20 MB, and the per-element work the
+modeller already does would read a slice at a time. It touches `projects.py`,
+`model3d.py`, `sanity.py` and `domain.py`, so it needs the validation suite run
+against the 595 models before and after.
 
 ## Reasonable backlog / ideas
 

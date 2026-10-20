@@ -27,6 +27,7 @@ CLI:
 import os
 import re
 import io
+import sys
 import csv
 import json
 import math
@@ -518,8 +519,12 @@ def parse_assays(df, prof, notes):
     E, V, U = A.get(ecol, nil), A.get(vcol, nil), A.get(ucol, nil)
     cols = [(A.get(c, nil), el, unit) for c, el, unit in elements]
     seen_el = {}                        # the element label is repeated thousands of times
+    hole_str = {}                  # 900,000 rows name a few hundred holes between them
     for i in range(n):
-        hid = str(H[i] or "").strip()
+        raw_h = H[i]
+        hid = hole_str.get(raw_h)
+        if hid is None:
+            hid = hole_str[raw_h] = sys.intern(str(raw_h or "").strip())
         if not hid or hid.lower() in ("nan", "none"):
             bad["no hole id"] += 1
             continue
@@ -929,48 +934,60 @@ def _p95(vals):
     return v[min(len(v) - 1, int(0.95 * len(v)))] if v else 0.0
 
 
-def carry_elements(intervals, wanted, notes):
-    """Keep the elements a model can use, and say which were left out.
+def intern_rows(ds):
+    """Share the repeated strings in a dataset read back from JSON.
 
-    An element earns its place by reaching, somewhere in the drilling, a grade at
-    which that metal is worth modelling — or by being named in the project's
-    `elements` setting, which overrides this entirely. Everything read is reported
-    either way, so a decision the geologist disagrees with is visible and one
-    setting away from being reversed."""
-    by = defaultdict(list)
+    JSON gives every row its own copy of the hole id, the element and the unit —
+    900,000 rows naming 600 holes and 19 elements between them is a hundred and
+    fifty megabytes of duplicate strings, and the modeller has a gigabyte for the
+    whole build. Interning is a single pass and changes nothing but the memory."""
+    pool = {}
+
+    def share(v):
+        if not isinstance(v, str):
+            return v
+        got = pool.get(v)
+        if got is None:
+            got = pool[v] = sys.intern(v)
+        return got
+
+    for rows, keys in ((ds.get("intervals") or [], ("hole", "el", "unit", "src")),
+                       (ds.get("lithology") or [], ("hole", "rock", "alt")),
+                       (ds.get("surveys") or [], ("hole",)),
+                       (ds.get("collars") or [], ("hole",))):
+        for x in rows:
+            for k in keys:
+                v = x.get(k)
+                if type(v) is str:
+                    x[k] = share(v)
+    return ds
+
+
+def carry_elements(intervals, wanted, notes):
+    """Report the assay suite. Every element that was assayed is carried.
+
+    A client's multi-element package is data they paid a laboratory for, and the
+    modeller is not the place to decide which of it was worth having: a
+    pathfinder suite is how a geologist reads a system, and an element that looks
+    like background in one property is the deposit in the next. The cost of
+    carrying it is a memory cost, and that is answered by holding it properly —
+    see `projects._materialise(consume=...)` and the import/build split — not by
+    throwing it away. `elements` still decides what gets MODELLED; it no longer
+    decides what survives the import."""
+    by = defaultdict(int)
+    hi = {}
     for x in intervals:
-        by[x["el"]].append(x["grade"])
-    if len(by) <= 3:
-        return intervals, {e: len(v) for e, v in by.items()}
-    seen = {e: {"n": len(v), "p95": round(_p95(v), 4)} for e, v in by.items()}
-    named = [e for e in (wanted or []) if e in by]
-    if named:
-        keep = set(named)
-    else:
-        keep = {e for e, d in seen.items()
-                if d["p95"] >= _WORTH_MODELLING.get(e, float("inf"))}
-        rank = sorted(by, key=lambda e: (_PRIORITY.index(e) if e in _PRIORITY else 99,
-                                         -seen[e]["n"]))
-        if rank:
-            # the metal the modeller would most likely take as the deposit's own is
-            # kept whatever its grade: a low-grade bulk deposit is still a deposit,
-            # and dropping its pay metal is the one mistake this must not make
-            keep.add(rank[0])
-        if len(keep) > MAX_CARRY:
-            keep = set(sorted(keep, key=lambda e: (_PRIORITY.index(e) if e in _PRIORITY else 99,
-                                                   -seen[e]["n"]))[:MAX_CARRY])
-    left = sorted(set(by) - keep, key=lambda e: -seen[e]["n"])
-    if left:
-        notes.append("assays: %d elements were read; the model carries %s. %s %s at trace level "
-                     "here (%s) and %s left out of the model to keep it within memory — the rest "
-                     "of the file is untouched, and naming them in the project's 'elements' "
-                     "setting brings them back."
-                     % (len(by), ", ".join(sorted(keep, key=lambda e: -seen[e]["n"])),
-                        ", ".join(left[:8]) + ("…" if len(left) > 8 else ""),
-                        "is" if len(left) == 1 else "are",
-                        ", ".join("%s p95 %g" % (e, seen[e]["p95"]) for e in left[:3]),
-                        "was" if len(left) == 1 else "were"))
-    return [x for x in intervals if x["el"] in keep], seen
+        by[x["el"]] += 1
+        g = x["grade"]
+        if g is not None and g > hi.get(x["el"], 0):
+            hi[x["el"]] = g
+    seen = {e: {"n": n, "max": round(hi.get(e, 0.0), 4)} for e, n in by.items()}
+    if len(by) > 3:
+        notes.append("assays: %d elements, %s — all carried. The model estimates the few the "
+                     "project is about (set 'elements' to choose); the rest are kept on the "
+                     "dataset and reported per metal over the same deposit."
+                     % (len(by), ", ".join(sorted(by, key=lambda e: -by[e]))))
+    return intervals, seen
 
 
 def georeference(collars, epsg=None, utm_zone=None, hemisphere="N", datum="WGS84", notes=None,

@@ -111,6 +111,13 @@ def sweep(verbose=True):
     return len(requeued) + len(dead)
 
 
+def queue_build(job, project_id):
+    """Put a build on the queue for this project."""
+    return store.db().one(
+        "insert into jobs (kind, owner, project_id) values ('build',%s,%s) returning *",
+        job.get("owner"), project_id)
+
+
 def _slug(s, fallback="project"):
     return re.sub(r"[^a-z0-9]+", "-", (s or "").lower()).strip("-")[:48] or fallback
 
@@ -171,9 +178,16 @@ def do_import(job):
     shutil.rmtree(tmp, ignore_errors=True)
     if errors:
         raise RuntimeError("; ".join(errors))
-    log(job["id"], f"parsed: {data['counts']['collars']} collars, "
-                   f"{data['counts']['intervals']} intervals — building the model")
-    return do_build({**job, "project_id": ds_row["project_id"]})
+    n_coll, n_iv = data["counts"]["collars"], data["counts"]["intervals"]
+    # Hand the build to its own job rather than calling it here. Parsing a large
+    # multi-element database leaves several hundred megabytes of parsed rows alive
+    # in this frame, and the build then has to fit the block model around them —
+    # on a worker with a gigabyte that is the difference between a model and a
+    # process the kernel kills.
+    del data, summary
+    d.run("update projects set status = 'parsing', error = null where id = %s", ds_row["project_id"])
+    queue_build(job, ds_row["project_id"])
+    return f"parsed: {n_coll} collars, {n_iv} intervals — queued the model build"
 
 
 # ------------------------------------------------------------------- job: build
@@ -184,7 +198,7 @@ def do_build(job):
     if not rows and not proj.get("attach_to"):
         raise RuntimeError("no parsed data in this project yet")
     d.run("update projects set status = 'building', error = null where id = %s", proj["id"])
-    datasets = [F.get_json(r["data_key"]) for r in rows if r.get("data_key")]
+    datasets = [IMP.intern_rows(F.get_json(r["data_key"])) for r in rows if r.get("data_key")]
     ds = assemble_user_project(datasets, proj)
     settings = PARAMS.validate(proj.get("params") or {})[0]
     model = M3.build_project(ds, settings=settings)
@@ -252,7 +266,7 @@ def assemble_user_project(datasets, proj):
          "company": proj.get("company") or (base or {}).get("company"),
          "companies": {proj.get("company")} - {None}, "project": proj["name"],
          "lat": None, "lon": None, "keys": set(), "country": (base or {}).get("region")}
-    merged = PROJ._materialise(p, [], {}, {})
+    merged = PROJ._materialise(p, [], {}, {}, consume=True)
     if base is not None and merged:
         # fold the public project's holes/intervals/sources in alongside the import, so
         # the client's own drilling is modelled WITH the public data, not instead of it
