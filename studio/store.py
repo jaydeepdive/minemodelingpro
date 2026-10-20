@@ -74,10 +74,76 @@ class DB:
                   select id from jobs where status = 'queued'
                   order by created_at limit 1 for update skip locked)
                 update jobs set status = 'running', started_at = now(),
-                       attempts = attempts + 1
+                       heartbeat_at = now(), attempts = attempts + 1
                  where id in (select id from j)
              returning *""")
             return cur.fetchone()
+
+    def beat_job(self, job_id):
+        """Say the job is still alive. A job that stops beating is taken to have
+        died with its worker — on App Platform that is a deploy or the kernel's
+        out-of-memory killer, neither of which gets to tell us."""
+        try:
+            return self.run("update jobs set heartbeat_at = now() where id = %s", job_id)
+        except Exception:
+            return 0
+
+    def requeue_stale(self, timeout_min=20, max_attempts=3):
+        """Put jobs whose worker stopped beating back on the queue, and give up
+        out loud on the ones that have failed too often.
+
+        Without this a worker that dies mid-job leaves the job `running` and the
+        project `parsing` for ever: nothing retries it and the page spins. Returns
+        (requeued, abandoned) as lists of (id, kind, project_id, attempts)."""
+        # a float number of minutes: make_interval(mins => ...) takes an integer only
+        cut = "(now() - (%s::double precision * interval '1 minute'))"
+        with self.pool.connection() as c, self._cur(c) as cur:
+            cur.execute(f"""
+                select id, kind, project_id, dataset_id, attempts from jobs
+                 where status = 'running'
+                   and coalesce(heartbeat_at, started_at, created_at) < {cut}
+                 order by created_at
+                 for update skip locked""", (timeout_min,))
+            rows = cur.fetchall() or []
+            requeued, dead = [], []
+            for r in rows:
+                if (r["attempts"] or 0) >= max_attempts:
+                    dead.append(r)
+                    cur.execute("update jobs set status = 'error', finished_at = now(), "
+                                "log = %s where id = %s",
+                                ("the modeler stopped partway through, %d times — the files are "
+                                 "probably too large for it to hold in memory at once"
+                                 % (r["attempts"] or 0), r["id"]))
+                    if r["dataset_id"]:
+                        cur.execute("update datasets set status = 'error', error = %s where id = %s",
+                                    ("the modeler stopped partway through this file three times",
+                                     r["dataset_id"]))
+                    if r["project_id"]:
+                        cur.execute("update projects set status = 'error', error = %s where id = %s",
+                                    ("the modeler stopped partway through, three times",
+                                     r["project_id"]))
+                else:
+                    requeued.append(r)
+                    cur.execute("update jobs set status = 'queued', heartbeat_at = null, "
+                                "started_at = null where id = %s", (r["id"],))
+            return requeued, dead
+
+    def worker_beat(self, wid="modeler", note=None):
+        try:
+            return self.run("insert into workers (id, at, note) values (%s, now(), %s) "
+                            "on conflict (id) do update set at = now(), note = excluded.note",
+                            wid, (note or "")[:200])
+        except Exception:
+            return 0
+
+    def worker_seen(self, wid="modeler"):
+        """Seconds since the worker last said anything, or None if it never has."""
+        try:
+            r = self.one("select extract(epoch from (now() - at)) as age, note "
+                         "from workers where id = %s", wid)
+            return (float(r["age"]), r.get("note")) if r else (None, None)
+        except Exception:
+            return (None, None)
 
 
 # ---------------------------------------------------------------- object storage

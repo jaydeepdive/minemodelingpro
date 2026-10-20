@@ -95,7 +95,9 @@ const user = await requireUser(); if (!user) throw new Error("redirecting");
 const id = new URLSearchParams(location.search).get("id");
 let project = await getProject(id);
 
-function paint(p, job) {
+let lastWorker = null;
+function paint(p, job, worker) {
+  if (worker) lastWorker = worker;
   project = p;
   $("#pname").textContent = p.name;
   $("#psub").innerHTML = [p.company && esc(p.company), p.region && esc(p.region),
@@ -116,7 +118,25 @@ function paint(p, job) {
   else open.style.display = "none";
   if (job) {
     const spin = ["queued", "running"].includes(job.status) ? `<span class="spin"></span> ` : "";
-    $("#joblog").innerHTML = `<div class="note">${spin}${esc(job.kind)} · ${esc(job.status)}</div>` +
+    const since = t => { if (!t) return ""; const s = (Date.now() - new Date(t)) / 1000;
+      return s < 90 ? Math.round(s) + "s" : s < 5400 ? Math.round(s / 60) + " min" : (s / 3600).toFixed(1) + " h"; };
+    const age = since(job.started_at || job.created_at);
+    // a job waiting on nothing is the failure the old page could not show: it span
+    // for as long as you left it open
+    const w = lastWorker, to = (w && w.timeout_min) || 20;
+    const waiting = ["queued", "running"].includes(job.status);
+    let warn = "";
+    if (waiting && w && w.seen_s == null)
+      warn = "The modeler has not reported in since this app last started.";
+    else if (waiting && w && w.seen_s > 180)
+      warn = `The modeler last reported ${Math.round(w.seen_s / 60)} min ago — it may be restarting.`;
+    else if (waiting && job.status === "running" && job.heartbeat_at && since(job.heartbeat_at).endsWith("min")
+             && (Date.now() - new Date(job.heartbeat_at)) / 60000 > to)
+      warn = `This job stopped reporting ${since(job.heartbeat_at)} ago — it is retried automatically.`;
+    $("#joblog").innerHTML =
+      `<div class="note">${spin}${esc(job.kind)} · ${esc(job.status)}${age ? " · " + esc(age) : ""}` +
+      `${job.attempts > 1 ? " · attempt " + job.attempts : ""}</div>` +
+      (warn ? `<div class="note" style="color:var(--red)">${esc(warn)}</div>` : "") +
       (job.log ? `<div class="log" style="margin-top:6px">${esc(job.log)}</div>` : "");
   }
 }

@@ -27,6 +27,7 @@ import time
 import shutil
 import tempfile
 import datetime
+import threading
 import traceback
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -41,6 +42,10 @@ from minemodelingpro import model3d as M3              # noqa: E402
 from minemodelingpro import params as PARAMS           # noqa: E402
 
 POLL = float(os.environ.get("MMP_POLL_SECONDS", "5"))
+# a job that stops beating for this long is taken to have died with its worker
+JOB_TIMEOUT_MIN = float(os.environ.get("MMP_JOB_TIMEOUT_MIN", "20"))
+JOB_ATTEMPTS = int(os.environ.get("MMP_JOB_ATTEMPTS", "3"))
+BEAT = float(os.environ.get("MMP_BEAT_SECONDS", "30"))
 MAX_FILE_MB = float(os.environ.get("MMP_MAX_FILE_MB", "200"))
 WORKDIR = os.environ.get("MMP_WORKDIR", os.path.join(tempfile.gettempdir(), "mmp-studio"))
 
@@ -59,6 +64,51 @@ def log(job_id, line, status=None):
             store.db().run("update jobs set log = %s where id = %s", (line or "")[:4000], job_id)
     except Exception:
         pass
+
+
+class Heartbeat:
+    """Says a job is still alive while a handler works.
+
+    The handler is one long synchronous call, so the beat has to come from
+    beside it. Without it a job that takes longer than the timeout would be
+    requeued while it was still running, and a job whose worker was killed —
+    a deploy, or the out-of-memory killer — would stay `running` for ever and
+    leave the project parsing with nothing on its way."""
+
+    def __init__(self, job_id, every=BEAT):
+        self.job_id, self.every, self.stop = job_id, every, threading.Event()
+        self.t = threading.Thread(target=self._run, daemon=True)
+
+    def _run(self):
+        while not self.stop.wait(self.every):
+            try:
+                store.db().beat_job(self.job_id)
+            except Exception:
+                pass
+
+    def __enter__(self):
+        self.t.start()
+        return self
+
+    def __exit__(self, *e):
+        self.stop.set()
+
+
+def sweep(verbose=True):
+    """Put jobs whose worker died back on the queue."""
+    try:
+        requeued, dead = store.db().requeue_stale(JOB_TIMEOUT_MIN, JOB_ATTEMPTS)
+    except Exception as e:
+        print(f"[worker] sweep failed: {str(e)[:160]}", flush=True)
+        return 0
+    if verbose:
+        for r in requeued:
+            print(f"[worker] requeued {r['kind']} job {str(r['id'])[:8]} "
+                  f"(attempt {r['attempts']} stopped beating)", flush=True)
+        for r in dead:
+            print(f"[worker] gave up on {r['kind']} job {str(r['id'])[:8]} "
+                  f"after {r['attempts']} attempts", flush=True)
+    return len(requeued) + len(dead)
 
 
 def _slug(s, fallback="project"):
@@ -278,13 +328,33 @@ def run_once():
         return False
     print(f"[worker] job {str(job['id'])[:8]} {job['kind']}", flush=True)
     try:
-        out = HANDLERS[job["kind"]](job)
+        with Heartbeat(job["id"]):
+            out = HANDLERS[job["kind"]](job)
         log(job["id"], out or "done", status="done")
+    except MemoryError:
+        msg = ("the files are too large for the modeler to hold in memory at once — "
+               "split them, or send them as one zip and ask for more memory")
+        print("[worker] MemoryError", flush=True)
+        log(job["id"], msg, status="error")
+        for tbl, col in (("datasets", "dataset_id"), ("projects", "project_id")):
+            if job.get(col):
+                try:
+                    store.db().run(f"update {tbl} set status = 'error', error = %s where id = %s",
+                                   msg[:500], job[col])
+                except Exception:
+                    pass
+        return True
     except Exception as e:
         tb = traceback.format_exc(limit=4)
         print(tb, flush=True)
         msg = f"{type(e).__name__}: {e}"
         log(job["id"], msg[:1000], status="error")
+        if job.get("dataset_id"):
+            try:
+                store.db().run("update datasets set status = 'error', error = %s where id = %s",
+                               msg[:500], job["dataset_id"])
+            except Exception:
+                pass
         if job.get("project_id"):
             try:
                 store.db().run("update projects set status = 'error', error = %s where id = %s",
@@ -311,9 +381,14 @@ def main():
     except Exception as e:
         print(f"[worker] schema: {str(e)[:200]}", flush=True)
     once = "--once" in sys.argv
-    print(f"[worker] polling every {POLL:g}s", flush=True)
+    print(f"[worker] polling every {POLL:g}s, job timeout {JOB_TIMEOUT_MIN:g} min", flush=True)
+    # anything left running by the previous process died with it — a deploy
+    # restarts this worker mid-job, and nothing else will ever pick those up
+    sweep()
+    last_sweep = time.time()
     while True:
         try:
+            store.db().worker_beat("modeler")
             busy = run_once()
         except KeyboardInterrupt:
             return
@@ -322,6 +397,9 @@ def main():
             busy = False
         if once:
             return
+        if time.time() - last_sweep > 60:
+            sweep()
+            last_sweep = time.time()
         if not busy:
             time.sleep(POLL)
 

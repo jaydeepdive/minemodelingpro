@@ -98,7 +98,7 @@ export function watchProject(id, onTick, ms = 3000) {
       try {
         const r = await api(`/projects/${id}`);
         const p = r.project, j = (r.jobs || [])[0] || null;
-        onTick(p, j);
+        onTick(p, j, r.worker || null);
         if (!["queued", "parsing", "building", "deleting"].includes(p.status) &&
             (!j || ["done", "error"].includes(j.status))) return;
       } catch (e) { /* keep polling */ }

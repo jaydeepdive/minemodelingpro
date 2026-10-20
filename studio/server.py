@@ -236,12 +236,29 @@ def startup():
 
 @app.get("/api/health")
 def health():
+    """Is the app up — and is the worker that does the modelling still breathing?
+
+    The worker line is here because an app whose background worker has died looks
+    perfectly healthy from the outside, and that is exactly the failure that leaves
+    an upload saying "parsing" for three hours."""
+    d = store.db()
     try:
-        store.db().one("select 1")
+        d.one("select 1")
         ok = True
     except Exception:
         ok = False
-    return {"ok": ok, "version": VERSION}
+    out = {"ok": ok, "version": VERSION}
+    if ok:
+        age, note = d.worker_seen("modeler")
+        out["worker_seen_s"] = round(age) if age is not None else None
+        out["worker_note"] = note or None
+        try:
+            q = d.one("select count(*) filter (where status = 'queued') as queued, "
+                      "count(*) filter (where status = 'running') as running from jobs")
+            out["queued"], out["running"] = int(q["queued"]), int(q["running"])
+        except Exception:
+            pass
+    return out
 
 
 # ---------------------------------------------------------------------- auth
@@ -386,8 +403,12 @@ def get_project(pid: str, request: Request, u=Depends(require)):
     d = store.db()
     ds = d.all("select * from datasets where project_id = %s order by created_at", pid)
     jobs = d.all("select * from jobs where project_id = %s order by created_at desc limit 12", pid)
+    age, _note = d.worker_seen("modeler")
     return {"project": jsonable(p), "datasets": [jsonable(r) for r in ds],
-            "jobs": [jsonable(r) for r in jobs]}
+            "jobs": [jsonable(r) for r in jobs],
+            # so a page waiting on a job can say whether anything is listening
+            "worker": {"seen_s": round(age) if age is not None else None,
+                       "timeout_min": float(os.environ.get("MMP_JOB_TIMEOUT_MIN", "20"))}}
 
 
 @app.patch("/api/projects/{pid}")

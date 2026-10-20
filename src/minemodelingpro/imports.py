@@ -214,8 +214,13 @@ def _num(v):
 
 
 # ------------------------------------------------------------------ file reading
-def read_tables(path, max_rows=2_000_000):
-    """{table name: DataFrame} from any supported file (zip/Access may hold many)."""
+def read_tables(path, max_rows=2_000_000, usecols=None):
+    """{table name: DataFrame} from any supported file (zip/Access may hold many).
+
+    `usecols` narrows a delimited file to the columns that mean something, which is
+    what keeps a wide export inside the worker's memory: every cell is read as an
+    object, so the sample numbers and lab codes nobody models cost as much as the
+    grades."""
     import pandas as pd
     ext = os.path.splitext(path)[1].lower()
     base = os.path.basename(path)
@@ -261,11 +266,18 @@ def read_tables(path, max_rows=2_000_000):
         sep = csv.Sniffer().sniff(head, delimiters=",;\t|").delimiter
     except Exception:
         sep = "\t" if head.count("\t") > head.count(",") else ","
-    df = pd.read_csv(path, sep=sep, dtype=object, engine="python", on_bad_lines="skip",
-                     nrows=max_rows, encoding="utf-8-sig", encoding_errors="replace")
-    if df.shape[1] == 1:                       # header row may sit below junk lines
-        df2 = pd.read_csv(path, sep=sep, dtype=object, engine="python", on_bad_lines="skip",
-                          skiprows=1, nrows=max_rows, encoding="utf-8-sig", encoding_errors="replace")
+    def _read(**kw):
+        a = dict(sep=sep, dtype=object, on_bad_lines="skip", nrows=max_rows,
+                 encoding="utf-8-sig", encoding_errors="replace")
+        a.update(kw)
+        try:                      # the C parser is several times faster; fall back if it refuses
+            return pd.read_csv(path, low_memory=False, **a)
+        except Exception:
+            return pd.read_csv(path, engine="python", **a)
+
+    df = _read(usecols=usecols) if usecols else _read()
+    if df.shape[1] == 1 and not usecols:       # header row may sit below junk lines
+        df2 = _read(skiprows=1)
         if df2.shape[1] > 1:
             df = df2
     out[base] = df
@@ -446,24 +458,46 @@ def parse_surveys(df, roles, notes, azimuth_ref="auto"):
     return out
 
 
+def _cols(df, names):
+    """Column name -> plain Python list, for the columns asked for.
+
+    A row at a time through `iterrows` builds a pandas Series per row, which on a
+    long assay table is most of the parse. Reading each column once and walking
+    them in step is the same work without that."""
+    out = {}
+    for c in {c for c in names if c is not None}:
+        if c in df.columns:
+            out[c] = df[c].tolist()
+    return out
+
+
 def parse_assays(df, prof, notes):
     """Wide (column per element) or long (element + value columns) assay tables."""
     roles, elements = prof["roles"], prof["elements"]
     out = []
     fcol, tcol, lcol = roles.get("from"), roles.get("to"), roles.get("length")
+    hcol, ecol, vcol, ucol = (roles.get("hole"), roles.get("element"),
+                              roles.get("value"), roles.get("unit"))
     f = 0.3048 if (_feet(df, fcol or "") or _feet(df, tcol or "")) else 1.0
     long_mode = ("element" in roles and ("value" in roles or len(elements) <= 1))
-    vunit = _unit_in(roles.get("value") or "")
+    vunit = _unit_in(vcol or "")
     bad = Counter()
-    for _, r in df.iterrows():
-        hid = str(r.get(roles.get("hole"), "") or "").strip()
+    A = _cols(df, [hcol, fcol, tcol, lcol, ecol, vcol, ucol] + [c for c, _, _ in elements])
+    n = len(df)
+    nil = [None] * n
+    H, F, T, L = (A.get(hcol, nil), A.get(fcol, nil), A.get(tcol, nil), A.get(lcol, nil))
+    E, V, U = A.get(ecol, nil), A.get(vcol, nil), A.get(ucol, nil)
+    cols = [(A.get(c, nil), el, unit) for c, el, unit in elements]
+    seen_el = {}                        # the element label is repeated thousands of times
+    for i in range(n):
+        hid = str(H[i] or "").strip()
         if not hid or hid.lower() in ("nan", "none"):
             bad["no hole id"] += 1
             continue
-        fr = _num(r.get(fcol))
-        to = _num(r.get(tcol)) if tcol else None
+        fr = _num(F[i])
+        to = _num(T[i]) if tcol else None
         if to is None and lcol is not None and fr is not None:
-            ln = _num(r.get(lcol))
+            ln = _num(L[i])
             to = fr + ln if ln else None
         if fr is None or to is None:
             bad["no from/to"] += 1
@@ -472,35 +506,44 @@ def parse_assays(df, prof, notes):
         if to <= fr or to - fr > 1000 or fr < 0:
             bad["bad interval"] += 1
             continue
+        fr, to = round(fr, 2), round(to, 2)
         if long_mode:
-            name = str(r.get(roles["element"], "") or "")
-            hit = _element_of(name) or _ELEMENTS.get(_norm(name))
+            name = str(E[i] or "")
+            hit = seen_el.get(name, 0)
+            if hit == 0:
+                h = _element_of(name) or _ELEMENTS.get(_norm(name))
+                if h:
+                    el_, unit_ = (h if isinstance(h, tuple) and len(h) == 2 else (h[0], h[1]))
+                    # where the element name carries no unit ("Cu", not "Cu_ppm"), the
+                    # value column's header is the next best witness — copper in ppm
+                    # read as per cent is out by ten thousand, so the default is last
+                    if not _unit_in(name) and vunit:
+                        unit_ = vunit
+                    hit = (el_, unit_)
+                else:
+                    hit = None
+                seen_el[name] = hit
             if not hit:
                 bad[f"unknown element '{name[:12]}'"] += 1
                 continue
-            el, unit = (hit if isinstance(hit, tuple) and len(hit) == 2 else (hit[0], hit[1]))
-            # where the element name carries no unit ("Cu", not "Cu_ppm"), the value
-            # column's header is the next best witness — copper in ppm read as per
-            # cent is out by ten thousand, so the default comes last, not first
-            if not _unit_in(name) and vunit:
-                unit = vunit
-            if "unit" in roles and r.get(roles["unit"]):
-                unit = str(r.get(roles["unit"])).strip() or unit
-            v = _num(r.get(roles.get("value")))
+            el, unit = hit
+            if ucol and U[i]:
+                unit = str(U[i]).strip() or unit
+            v = _num(V[i])
             if v is None or v < 0:
                 bad["no value"] += 1
                 continue
             g, u = to_std(el, unit, v)
-            out.append({"hole": hid, "from": round(fr, 2), "to": round(to, 2), "el": el,
+            out.append({"hole": hid, "from": fr, "to": to, "el": el,
                         "grade": round(g, 5), "unit": u, "sub": 0})
         else:
             got = False
-            for col, el, unit in elements:
-                v = _num(r.get(col))
+            for arr, el, unit in cols:
+                v = _num(arr[i])
                 if v is None or v < 0:
                     continue
                 g, u = to_std(el, unit, v)
-                out.append({"hole": hid, "from": round(fr, 2), "to": round(to, 2), "el": el,
+                out.append({"hole": hid, "from": fr, "to": to, "el": el,
                             "grade": round(g, 5), "unit": u, "sub": 0})
                 got = True
             if not got:
@@ -849,6 +892,46 @@ def georeference(collars, epsg=None, utm_zone=None, hemisphere="N", datum="WGS84
 
 
 # --------------------------------------------------------------------- the import
+_WIDE_BYTES = 6 * 1024 * 1024      # below this, reading the whole file costs nothing
+
+
+def read_for_modelling(path, notes=None):
+    """Read a file, keeping only the columns a model can use.
+
+    A drill export carries lab codes, methods, detection limits and QA flags that
+    no model reads, and pandas holds every one of them as a Python object. On a
+    large assay table that is the difference between a parse that finishes and a
+    worker the kernel kills for using too much memory — which looks, from the
+    page, exactly like a parse that never ends."""
+    notes = notes if notes is not None else []
+    ext = os.path.splitext(path)[1].lower()
+    try:
+        big = os.path.getsize(path) > _WIDE_BYTES
+    except OSError:
+        big = False
+    if ext not in (".csv", ".tsv", ".txt") or not big:
+        return read_tables(path)
+    try:
+        sample = next(iter(read_tables(path, max_rows=3000).values()))
+    except Exception:
+        return read_tables(path)
+    sample.columns = [str(c).strip() for c in sample.columns]
+    prof = profile(sample)
+    keep = [c for c in sample.columns
+            if c in set(prof["roles"].values()) | {e[0] for e in prof["elements"]}]
+    if not keep or len(keep) >= len(sample.columns):
+        return read_tables(path)
+    dropped = [c for c in sample.columns if c not in keep]
+    notes.append("%s: read %d of %d columns — %s %s not something a model reads"
+                 % (os.path.basename(path), len(keep), len(sample.columns),
+                    ", ".join(map(str, dropped[:6])) + ("…" if len(dropped) > 6 else ""),
+                    "is" if len(dropped) == 1 else "are"))
+    try:
+        return read_tables(path, usecols=keep)
+    except Exception:
+        return read_tables(path)
+
+
 def build_dataset(paths, project=None, company=None, epsg=None, utm_zone=None, hemisphere="N",
                   datum="WGS84", attach_to=None, settings=None, dataset_id=None, owner=None,
                   private=True, source_name=None, crs_mode=None, azimuth_ref="auto"):
@@ -859,7 +942,7 @@ def build_dataset(paths, project=None, company=None, epsg=None, utm_zone=None, h
     collars, surveys, intervals, lithology = [], [], [], []
     for path in paths:
         try:
-            got = read_tables(path)
+            got = read_for_modelling(path, notes)
         except Exception as e:
             notes.append(f"{os.path.basename(path)}: could not be read — {str(e)[:120]}")
             continue
@@ -870,6 +953,9 @@ def build_dataset(paths, project=None, company=None, epsg=None, utm_zone=None, h
             if df.empty:
                 continue
             df.columns = [str(c).strip() for c in df.columns]
+            if len(df) >= 2_000_000:
+                notes.append(f"{name}: only the first 2,000,000 rows were read — split the file "
+                             f"if there are more")
             prof = profile(df)
             tables.append({"table": name, **{k: v for k, v in prof.items() if k != "roles"},
                            "roles": {k: str(v) for k, v in prof["roles"].items()},
