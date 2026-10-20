@@ -63,12 +63,17 @@ _PATTERNS = [
     ("lon", r"^(lon|long|longitude|ddlon|londd|lng|xcoordlong)$"),
     ("az", r"^(az|azi|azimuth|bearing|brg|dipdir|dipdirection|collarazimuth|azideg|azimuthdeg|grid_?azimuth)$"),
     ("dip", r"^(dip|inclination|incl|plunge|collardip|dipdeg|angle)$"),
+    # magnetic declination/variation, as survey files carry it. Read, reported,
+    # and applied only when something says the azimuths are magnetic — a
+    # declination column is as often a record of a correction already made.
+    ("dec", r"^(dec|decl|declination|magdec|magdecl|magneticdeclination|magvar|magneticvariation|variation|magcorr|magneticcorrection)$"),
     ("depth", r"^(depth|totaldepth|eoh|holelength|holedepth|finaldepth|td|length|maxdepth|endofhole|depthm)$"),
     ("from", r"^(from|fromm|fromdepth|depthfrom|start|startdepth|top|intervalfrom|from_?ft|dfrom)$"),
     ("to", r"^(to|tom|todepth|depthto|end|enddepth|bottom|intervalto|to_?ft|dto)$"),
     ("length", r"^(length|interval|width|thickness|corelength|lengthm|intervallength|sampledlength|intlen)$"),
     ("element", r"^(element|analyte|metal|assaytype|param|parameter|variable)$"),
-    ("value", r"^(value|grade|result|assay|conc|concentration|val|ppm|gpt)$"),
+    ("value", r"^(value|grade|result|assay|conc|concentration|val|ppm|gpt|amount|"
+              r"analysis|analyte?value|assayvalue|gradevalue|resultvalue|finalvalue|bestvalue)$"),
     ("unit", r"^(unit|units|uom|gradeunit)$"),
     ("survey_depth", r"^(depth|md|measureddepth|surveydepth|at|distance|station|depthm)$"),
     ("zone", r"^(zone|utmzone|gridzone)$"),
@@ -119,7 +124,10 @@ _UNIT_SUFFIX = re.compile(r"(ft|feet|foot|m|metres|meters|metre|meter|masl|msl|m
 def _role(col):
     """Column role, tolerating unit suffixes ('FROM_FT', 'Depth_m', 'Elev (masl)')."""
     n = _norm(col)
-    for cand in (n, _UNIT_SUFFIX.sub("", n)):
+    # a grade column often carries its unit in the name; strip it before matching so
+    # "Grade_ppm" and "Result (g/t)" are still the value column
+    nu = re.sub(r"(ppm|ppb|gpt|gt|pct|percent|ozt|opt|kgt|lbt)$", "", n)
+    for cand in (n, _UNIT_SUFFIX.sub("", n), nu):
         if len(cand) < 1:
             continue
         for role, rx in _PATTERNS:
@@ -128,20 +136,38 @@ def _role(col):
     return None
 
 
+def _unit_in(label):
+    """The grade unit named in a column header or an element label, if any.
+
+    Underscores and brackets are separators here, not letters: an underscore is a
+    word character to a regular expression, so "Cu_ppm" hid its unit behind a
+    missing word boundary and was read as per cent — out by ten thousand."""
+    low = re.sub(r"[_\[\]()|]+", " ", str(label or "").lower())
+    for rx, u in _UNIT_IN_HEADER:
+        if re.search(rx, low):
+            return u
+    return None
+
+
 def _element_of(col):
     """(element, unit) for an assay column like 'Au_ppm', 'Cu (%)', 'AuEq g/t'."""
     raw = str(col).strip()
-    low = raw.lower()
-    unit = None
-    for rx, u in _UNIT_IN_HEADER:
-        if re.search(rx, low):
-            unit = u
-            break
+    unit = _unit_in(raw)
     tok = _norm(re.split(r"[\s_\-(\[/]", raw.replace("%", " "))[0] or raw)
     tok = re.sub(r"(gpt|ppm|ppb|pct|percent|grade|assay)$", "", tok)
     hit = _ELEMENTS.get(tok)
     if not hit:
         hit = _ELEMENTS.get(_norm(raw))
+    if not hit:
+        # the element is not always the first word: "Grade (% U3O8)" names it last.
+        # Only a header that looks like a grade is scanned this way, or "sample as
+        # received" becomes an arsenic assay.
+        for t in (re.split(r"[^A-Za-z0-9]+", raw)
+                  if (unit or re.search(r"grade|assay|result|value|conc", raw, re.I)) else []):
+            h2 = _ELEMENTS.get(_norm(t))
+            if h2:
+                hit = h2
+                break
     if not hit:
         return None
     el, defunit = hit
@@ -286,20 +312,24 @@ def profile(df):
             and re.search(r"length|interval|width|thickness|core", str(roles["depth"]), re.I):
         roles["length"] = roles.pop("depth")
     has = lambda *k: all(x in roles for x in k)
+    nograde = not elements and "value" not in roles and "element" not in roles
+    logged = "lith" in roles or "alteration" in roles
     kind = None
     if has("hole") and (has("east", "north") or has("lat", "lon")):
         kind = "collar"
-    elif has("hole", "from") and ("lith" in roles or "alteration" in roles) \
-            and not elements and "value" not in roles and "element" not in roles:
+    elif has("hole", "az", "dip") and nograde and not logged \
+            and ("survey_depth" in roles or "depth" in roles or "from" in roles):
+        # azimuth and dip with no assays is a downhole survey, whether the stations
+        # are given as depths or as the sections of the hole they apply to
+        kind = "survey"
+    elif has("hole", "from") and logged and nograde:
         kind = "lithology"
     elif has("hole", "from") and (elements or "value" in roles or "element" in roles or "to" in roles):
         kind = "assay"
-    elif has("hole", "az", "dip") and ("survey_depth" in roles or "depth" in roles) and not has("east", "north"):
-        kind = "survey"
     elif has("hole") and (elements or "element" in roles) and ("from" in roles or "length" in roles):
         kind = "assay"
     elif has("hole", "az", "dip"):
-        kind = "collar" if has("depth") else "survey"
+        kind = "survey"
     return {"kind": kind, "roles": roles, "elements": elements, "rows": int(len(df)),
             "columns": [str(c) for c in df.columns]}
 
@@ -345,24 +375,74 @@ def parse_collars(df, roles, notes, feet=None):
     return out
 
 
-def parse_surveys(df, roles, notes):
+def parse_surveys(df, roles, notes, azimuth_ref="auto"):
+    """Downhole survey stations: hole, depth, azimuth, dip — and the declination
+    if the file carries one.
+
+    A survey file arrives with azimuths in one of two references and no way to
+    tell them apart by value. `azimuth_ref` settles it: "magnetic" adds the
+    declination to get true north, "true"/"grid" leaves the azimuths alone, and
+    "auto" applies the declination only when the column names say the azimuth is
+    magnetic — otherwise it reports the column and leaves the azimuths as filed,
+    because a declination column is as often the record of a correction already
+    applied as an instruction to apply one."""
     out = []
-    dcol = roles.get("survey_depth") or roles.get("depth")
+    dcol = roles.get("survey_depth") or roles.get("depth") or roles.get("from")
+    tcol = roles.get("to") if dcol == roles.get("from") else None
+    mcol = roles.get("dec")
     f = 0.3048 if _feet(df, dcol or "") else 1.0
+    ref = str(azimuth_ref or "auto").lower()
+    azname = str(roles.get("az") or "")
+    mag_named = bool(re.search(r"mag", azname, re.I))
+    apply_dec = (ref in ("mag", "magnetic")) or (ref == "auto" and mag_named and mcol is not None)
+    if ref in ("true", "grid", "none"):
+        apply_dec = False
     last = None
+    decs = []
+    ends = {}
     for _, r in df.iterrows():
         hid = str(r.get(roles.get("hole"), "") or "").strip()
         if hid and hid.lower() not in ("nan", "none"):
             last = hid
         hid = hid or last
         d, az, dip = _num(r.get(dcol)), _num(r.get(roles.get("az"))), _num(r.get(roles.get("dip")))
+        dec = _num(r.get(mcol)) if mcol else None
+        if dec is not None and abs(dec) > 90:
+            dec = None
         if not hid or d is None or az is None or dip is None:
             continue
         if dip > 0:
             dip = -dip
+        if dec is not None:
+            decs.append(dec)
+            if apply_dec:
+                az = (az + dec) % 360.0
         if not (0 <= az <= 360 and -90 <= dip <= 0 and 0 <= d * f <= 5000):
             continue
-        out.append({"hole": hid, "depth": round(d * f, 2), "az": az, "dip": dip})
+        rec = {"hole": hid, "depth": round(d * f, 2), "az": round(az, 2), "dip": dip}
+        if dec is not None:
+            rec["dec"] = dec
+        out.append(rec)
+        if tcol:
+            t = _num(r.get(tcol))
+            if t is not None and 0 < t * f <= 5000 and t > d:
+                end = dict(rec); end["depth"] = round(t * f, 2)
+                ends[hid] = end
+    if tcol and ends:
+        depths = {(x["hole"], x["depth"]) for x in out}
+        out += [e for h, e in ends.items() if (h, e["depth"]) not in depths]
+        notes.append("surveys: the stations are given as sections of the hole — each section's "
+                     "start carries its azimuth and dip, and the last section's end is the "
+                     "deepest point the survey reaches")
+    if decs:
+        avg = sum(decs) / len(decs)
+        if apply_dec:
+            notes.append("surveys: a declination column averaging %+.1f degrees was added to the "
+                         "azimuths (read as magnetic bearings corrected to true north)" % avg)
+        else:
+            notes.append("surveys: the file carries a declination column averaging %+.1f degrees, "
+                         "and the azimuths were used as filed. If they are magnetic bearings, set "
+                         "Survey azimuths to magnetic on the upload form and it is added." % avg)
     return out
 
 
@@ -373,6 +453,7 @@ def parse_assays(df, prof, notes):
     fcol, tcol, lcol = roles.get("from"), roles.get("to"), roles.get("length")
     f = 0.3048 if (_feet(df, fcol or "") or _feet(df, tcol or "")) else 1.0
     long_mode = ("element" in roles and ("value" in roles or len(elements) <= 1))
+    vunit = _unit_in(roles.get("value") or "")
     bad = Counter()
     for _, r in df.iterrows():
         hid = str(r.get(roles.get("hole"), "") or "").strip()
@@ -398,6 +479,11 @@ def parse_assays(df, prof, notes):
                 bad[f"unknown element '{name[:12]}'"] += 1
                 continue
             el, unit = (hit if isinstance(hit, tuple) and len(hit) == 2 else (hit[0], hit[1]))
+            # where the element name carries no unit ("Cu", not "Cu_ppm"), the value
+            # column's header is the next best witness — copper in ppm read as per
+            # cent is out by ten thousand, so the default comes last, not first
+            if not _unit_in(name) and vunit:
+                unit = vunit
             if "unit" in roles and r.get(roles["unit"]):
                 unit = str(r.get(roles["unit"])).strip() or unit
             v = _num(r.get(roles.get("value")))
@@ -472,14 +558,232 @@ def parse_lithology(df, roles, notes=None):
     return out
 
 
-def georeference(collars, epsg=None, utm_zone=None, hemisphere="N", datum="WGS84", notes=None):
-    """Add lat/lon to collars that carry projected coordinates."""
+_LAND = None
+
+
+def _spread(vals):
+    v = sorted(x for x in vals if x is not None)
+    return (v[-1] - v[0]) if len(v) > 1 else 0.0
+
+
+def looks_degrees(en):
+    """True when columns called x/y actually hold decimal degrees.
+
+    Range alone does not settle it — a mine grid can run 0 to 2,000 — so range
+    and spread are read together: no drill programme spans less than two units of
+    a metric grid, so x,y inside (-180,180)/(-90,90) with a spread under two is a
+    GPS reading written into columns named x and y, which is how most collar
+    files arrive."""
+    xs = [c["e"] for c in en if c.get("e") is not None]
+    ys = [c["n"] for c in en if c.get("n") is not None]
+    if len(xs) < 2 or len(ys) < 2:
+        return False
+    if _spread(xs) > 2.0 or _spread(ys) > 2.0:
+        return False
+    if not (any(x != int(x) for x in xs) or any(y != int(y) for y in ys)):
+        return False                      # whole numbers that small are a grid
+    return ((all(abs(x) <= 180 for x in xs) and all(abs(y) <= 90 for y in ys)) or
+            (all(abs(x) <= 90 for x in xs) and all(abs(y) <= 180 for y in ys)))
+
+
+def _dem_fit(lat, lon, z, zoom=11, scale=1.0):
+    """How well the terrain under these points tracks the stated elevations.
+
+    Three numbers, because one is not enough to tell a place from its lookalike:
+    the deviation about the mean difference (a constant offset is forgiven — a GPS
+    z is an ellipsoid height and can sit 60 m off the ground everywhere at once,
+    but it cannot climb a hill the ground does not climb), that offset, and the
+    slope of ground against stated elevation, which is 1 where the reference is
+    right and anything at all where a different hillside happens to fit."""
+    import numpy as np
+    from minemodelingpro import terrain
+    z = np.asarray(z, float) * scale
+    try:
+        dem = np.asarray(terrain.elevations(np.asarray(lat, float), np.asarray(lon, float), zoom), float)
+    except Exception:
+        return None
+    ok = np.isfinite(dem) & np.isfinite(z)
+    if ok.sum() < 3:
+        return None
+    dem, z = dem[ok], z[ok]
+    d = dem - z
+    off = float(np.median(d))
+    mad = float(np.median(np.abs(d - off)))
+    var = float(np.var(z))
+    slope = float(np.cov(z, dem)[0, 1] / var) if var > 25 else None
+    return {"mad": mad, "off": off, "slope": slope}
+
+
+def _region(lat, lon):
+    from minemodelingpro import terrain
+    try:
+        return terrain.region_of(lat, lon)
+    except Exception:
+        return None
+
+
+def _as_latlon(en, notes):
+    """Read x/y as degrees, working out which of the two is the latitude."""
+    xs = [c["e"] for c in en]
+    ys = [c["n"] for c in en]
+    xlat = all(abs(v) <= 90 for v in xs)
+    ylat = all(abs(v) <= 90 for v in ys)
+    swap = None
+    if ylat and not xlat:
+        swap = False                                   # x = longitude (the usual)
+    elif xlat and not ylat:
+        swap = True
+    else:
+        zc = [c for c in en if c.get("z") is not None][:30]
+        if len(zc) >= 3 and _spread([c["z"] for c in zc]) > 15:
+            fa = _dem_fit([c["n"] for c in zc], [c["e"] for c in zc], [c["z"] for c in zc])
+            fb = _dem_fit([c["e"] for c in zc], [c["n"] for c in zc], [c["z"] for c in zc])
+            a = fa["mad"] if fa else None
+            b = fb["mad"] if fb else None
+            if a is not None and (b is None or a <= b):
+                swap = False
+            elif b is not None:
+                swap = True
+        if swap is None:
+            la = [c for c in en if _region(c["n"], c["e"])]
+            lo = [c for c in en if _region(c["e"], c["n"])]
+            swap = len(lo) > len(la)
+    for c in en:
+        la, lo = (c["e"], c["n"]) if swap else (c["n"], c["e"])
+        if abs(la) <= 90 and abs(lo) <= 180:
+            c["lat"], c["lon"] = round(la, 6), round(lo, 6)
+    where = _region(en[0].get("lat"), en[0].get("lon")) if en[0].get("lat") is not None else None
+    notes.append("coordinates: the x/y columns hold decimal degrees, read as "
+                 + ("y = longitude, x = latitude" if swap else "x = longitude, y = latitude")
+                 + (f" ({where})" if where else ""))
+    return {"kind": "latlon", "source": "x/y read as degrees",
+            "located": sum(1 for c in en if c.get("lat") is not None)}
+
+
+def _utm_candidates(e, n, datum="WGS84"):
+    """Every UTM zone that puts this easting/northing on land, with its EPSG.
+
+    The easting and northing are the same numbers in all sixty zones, so the
+    candidates are one latitude at sixty longitudes; most of them are ocean."""
+    from pyproj import Transformer
+    out = []
+    d = str(datum or "WGS84").upper()
+    for hemi, base in (("N", 32600), ("S", 32700)):
+        for zone in range(1, 61):
+            code = base + zone
+            if d.startswith("NAD83") and hemi == "N" and 1 <= zone <= 23:
+                code = 26900 + zone
+            elif d.startswith("NAD27") and hemi == "N" and 1 <= zone <= 22:
+                code = 26700 + zone
+            try:
+                tr = Transformer.from_crs(f"EPSG:{code}", "EPSG:4326", always_xy=True)
+                lo, la = tr.transform(e, n)
+            except Exception:
+                continue
+            if not (math.isfinite(la) and math.isfinite(lo)) or abs(la) > 85:
+                continue
+            if _region(la, lo):
+                out.append({"epsg": code, "zone": zone, "hemi": hemi, "tr": tr,
+                            "lat": la, "lon": lo, "where": _region(la, lo)})
+    return out
+
+
+def infer_utm(en, notes, datum="WGS84"):
+    """Which UTM zone places these collars on the ground their elevations describe.
+
+    A collar file of x/y/z with no stated reference is the common case and the one
+    a geologist cannot answer from memory. Narrow to the zones that land on land,
+    then let the terrain decide: the right zone is the one whose hillsides rise and
+    fall the way the collar elevations do. A coarse pass shortlists, a finer one
+    picks, and a winner has to beat its rival by a distance — a smooth slope
+    resembles other smooth slopes, so an ambiguous answer is reported as
+    ambiguous rather than guessed."""
+    import numpy as np
+    zc = [c for c in en if c.get("z") is not None and -500 < c["z"] < 9000][:40]
+    cands = _utm_candidates(float(np.median([c["e"] for c in en])),
+                            float(np.median([c["n"] for c in en])), datum)
+    if not cands:
+        return None
+    if not zc or _spread([c["z"] for c in zc]) < 15:
+        if len(cands) == 1:
+            c0 = cands[0]
+            notes.append(f"coordinates: only UTM zone {c0['zone']}{c0['hemi']} puts this drilling "
+                         f"on land ({c0['where']}) — used, unconfirmed by elevations")
+            return c0
+        notes.append("coordinates: no UTM zone given and the collar elevations are too flat to "
+                     "identify one from the terrain — candidates: "
+                     + ", ".join(f"{c['zone']}{c['hemi']} ({c['where']})" for c in cands[:6])
+                     + ". Set the zone on the upload form.")
+        return None
+    Z = [c["z"] for c in zc]
+
+    def score(cand, zoom, scale, pts):
+        lo, la = cand["tr"].transform([x["e"] for x in pts], [x["n"] for x in pts])
+        return _dem_fit(la, lo, [x["z"] for x in pts], zoom, scale)
+
+    for scale, uz in ((1.0, "m"), (0.3048, "ft")):
+        coarse = []
+        sub = zc[::max(1, len(zc) // 10)][:10]
+        for c in cands:
+            f = score(c, 11, scale, sub)
+            if f and abs(f["off"]) <= 400:
+                coarse.append((f["mad"], c))
+        coarse.sort(key=lambda t: t[0])
+        fine = []
+        for _, c in coarse[:6]:
+            f = score(c, 13, scale, zc)
+            if not f or abs(f["off"]) > 400:
+                continue
+            if f["slope"] is not None and not (0.65 <= f["slope"] <= 1.4):
+                continue                      # the ground does not rise with the elevations
+            fine.append((f, c))
+        fine.sort(key=lambda t: (t[0]["mad"], abs(t[0]["off"])))
+        if not fine:
+            continue
+        f, c = fine[0]
+        rival = next((t for t in fine[1:] if t[1]["epsg"] != c["epsg"]), None)
+        if f["mad"] > 35:
+            continue
+        if rival and rival[0]["mad"] < max(2.5 * f["mad"], f["mad"] + 8):
+            notes.append("coordinates: no UTM zone given, and the collar elevations fit two places "
+                         "equally well (zone %d%s in %s to %d m, zone %d%s in %s to %d m) — modelled "
+                         "in its own grid. Set the zone on the upload form."
+                         % (c["zone"], c["hemi"], c["where"], round(f["mad"]),
+                            rival[1]["zone"], rival[1]["hemi"], rival[1]["where"], round(rival[0]["mad"])))
+            return None
+        notes.append("coordinates: no UTM zone given — zone %d%s (EPSG:%d, %s) is the only one whose "
+                     "terrain matches the collar elevations (to %d m, mean offset %d m%s)"
+                     % (c["zone"], c["hemi"], c["epsg"], c["where"], round(f["mad"]), round(f["off"]),
+                        "; elevations read as feet" if uz == "ft" else ""))
+        hit = dict(c)
+        hit.update({"z_scale": scale, "z_units": uz, "dem_misfit_m": round(f["mad"], 1)})
+        return hit
+    best = None
+    for c in cands[:6]:
+        f = score(c, 11, 1.0, zc)
+        if f and (best is None or f["mad"] < best[0]["mad"]):
+            best = (f, c)
+    notes.append("coordinates: no UTM zone given, and no zone puts these collars on terrain that "
+                 "matches their elevations%s — modelled in its own grid, which is what a mine grid "
+                 "is. Set the zone or an EPSG code if the coordinates are real."
+                 % ((" (closest: zone %d%s, off by %d m)"
+                     % (best[1]["zone"], best[1]["hemi"], round(best[0]["mad"]))) if best else ""))
+    return None
+
+
+def georeference(collars, epsg=None, utm_zone=None, hemisphere="N", datum="WGS84", notes=None,
+                 crs_mode=None):
+    """Add lat/lon to collars that carry projected coordinates.
+
+    `crs_mode` is what the uploader said the coordinates are — "utm", "epsg",
+    "latlon", "local", or "auto"/None to work it out from the data."""
     notes = notes if notes is not None else []
+    mode = (crs_mode or "auto").lower()
     have_ll = [c for c in collars if c.get("lat") is not None]
     en = [c for c in collars if c.get("e") is not None]
     crs = {"kind": "local"}
     if have_ll and len(have_ll) >= len(en):
-        crs = {"kind": "latlon"}
+        crs = {"kind": "latlon", "located": len(have_ll)}
     elif en and (epsg or utm_zone):
         code = epsg
         if not code and utm_zone:
@@ -498,8 +802,44 @@ def georeference(collars, epsg=None, utm_zone=None, hemisphere="N", datum="WGS84
                 if math.isfinite(la) and math.isfinite(lo) and abs(la) <= 90:
                     c["lat"], c["lon"] = round(la, 6), round(lo, 6); ok += 1
             crs = {"kind": "projected", "epsg": int(code), "located": ok}
+            zc = [c for c in en if c.get("z") is not None][:40]
+            if ok and len(zc) >= 3 and _spread([c["z"] for c in zc]) > 15:
+                f = _dem_fit([c["lat"] for c in zc], [c["lon"] for c in zc],
+                             [c["z"] for c in zc], 13)
+                mad = f["mad"] if f else None
+                if mad is not None:
+                    crs["dem_misfit_m"] = round(mad, 1)
+                    if mad > 60:
+                        notes.append("coordinates: EPSG:%d places the drilling where the terrain "
+                                     "does not match the collar elevations (off by %d m) — check "
+                                     "the zone, the hemisphere and the datum"
+                                     % (int(code), round(mad)))
         except Exception as e:
             notes.append(f"coordinates: EPSG:{code} could not be used ({str(e)[:60]}) — kept as a local grid")
+    elif en and mode in ("latlon", "auto") and (mode == "latlon" or looks_degrees(en)):
+        if looks_degrees(en) or mode == "latlon":
+            crs = _as_latlon(en, notes)
+        if crs.get("kind") != "latlon":
+            notes.append("coordinates: told to read latitude/longitude columns but none were found")
+    elif en and mode == "auto":
+        hit = infer_utm(en, notes, datum)
+        if hit:
+            scale = hit.get("z_scale", 1.0)
+            ok = 0
+            for c in en:
+                lo, la = hit["tr"].transform(c["e"], c["n"])
+                if math.isfinite(la) and math.isfinite(lo) and abs(la) <= 90:
+                    c["lat"], c["lon"] = round(la, 6), round(lo, 6); ok += 1
+                if scale != 1.0 and c.get("z") is not None:
+                    c["z"] = round(c["z"] * scale, 2)
+            crs = {"kind": "projected", "epsg": int(hit["epsg"]), "located": ok,
+                   "source": "zone identified by collar elevations vs terrain",
+                   "dem_misfit_m": hit.get("dem_misfit_m"), "where": hit.get("where")}
+            if hit.get("z_units") == "ft":
+                crs["z_units"] = "ft"
+        else:
+            notes.append("coordinates: modelled in its own local grid — no terrain, and it cannot "
+                         "merge with other sources for the same project")
     elif en:
         notes.append("coordinates: no EPSG code or UTM zone given — modelled in its own local grid "
                      "(no terrain, cannot merge with other sources)")
@@ -511,7 +851,7 @@ def georeference(collars, epsg=None, utm_zone=None, hemisphere="N", datum="WGS84
 # --------------------------------------------------------------------- the import
 def build_dataset(paths, project=None, company=None, epsg=None, utm_zone=None, hemisphere="N",
                   datum="WGS84", attach_to=None, settings=None, dataset_id=None, owner=None,
-                  private=True, source_name=None):
+                  private=True, source_name=None, crs_mode=None, azimuth_ref="auto"):
     """Read every file, assemble one dataset, and return it with a report of what
     was understood. Nothing is written to disk — see `save`."""
     import pandas as pd
@@ -537,7 +877,7 @@ def build_dataset(paths, project=None, company=None, epsg=None, utm_zone=None, h
             if prof["kind"] == "collar":
                 collars += parse_collars(df, prof["roles"], notes)
             elif prof["kind"] == "survey":
-                surveys += parse_surveys(df, prof["roles"], notes)
+                surveys += parse_surveys(df, prof["roles"], notes, azimuth_ref)
             elif prof["kind"] == "assay":
                 intervals += parse_assays(df, prof, notes)
             elif prof["kind"] == "lithology":
@@ -561,20 +901,50 @@ def build_dataset(paths, project=None, company=None, epsg=None, utm_zone=None, h
             continue
         seen.add(k); i2.append(x)
     intervals = i2
-    crs, center = georeference(collars, epsg, utm_zone, hemisphere, datum, notes)
+    crs, center = georeference(collars, epsg, utm_zone, hemisphere, datum, notes,
+                               crs_mode=crs_mode)
     if lithology:
         notes.append(f"logged geology: {len(lithology)} interval(s) over "
                      f"{len({x['hole'] for x in lithology})} hole(s), "
                      f"{len({x['rock'] for x in lithology})} distinct units — set "
                      f"'domain_units' to the ones that are the mineralised body")
 
+    seen, s2 = set(), []
+    for x in sorted(surveys, key=lambda r: (holeid.key(r["hole"]), r["depth"])):
+        k = (holeid.key(x["hole"]), x["depth"])
+        if k in seen:
+            continue
+        seen.add(k); s2.append(x)
+    surveys = s2
+
     ckeys = {holeid.key(c["hole"]) for c in collars}
     ikeys = {holeid.key(x["hole"]) for x in intervals}
+    skeys = {holeid.key(x["hole"]) for x in surveys}
     orphans = sorted(ikeys - ckeys)[:20]
     if orphans:
         notes.append(f"{len(ikeys - ckeys)} hole(s) have assays but no collar "
                      f"(e.g. {', '.join(orphans[:6])}) — they can only be placed if another "
                      f"source in the project has their collars")
+    # the three files are joined on the hole id, so say how well they joined
+    if collars and (surveys or intervals):
+        bits = [f"{len(collars)} collar(s)"]
+        if surveys:
+            bits.append(f"surveys on {len(skeys & ckeys)} of them ({len(surveys)} stations)")
+        if intervals:
+            bits.append(f"assays on {len(ikeys & ckeys)}")
+        notes.append("joined on hole id: " + ", ".join(bits))
+    sorph = sorted(skeys - ckeys)
+    if sorph:
+        notes.append(f"{len(sorph)} hole(s) have a survey but no collar "
+                     f"(e.g. {', '.join(sorph[:6])}) — the survey is kept and used if that collar "
+                     f"arrives from another file or source")
+    if collars and surveys and not (skeys & ckeys):
+        notes.append("surveys: not one survey hole id matches a collar hole id — check that both "
+                     "files spell the hole the same way")
+    one = sorted({k for k in skeys if sum(1 for x in surveys if holeid.key(x["hole"]) == k) == 1})
+    if one:
+        notes.append(f"{len(one)} hole(s) have a single survey station — it sets the hole's "
+                     f"orientation, but the path cannot be curved from one reading")
     clean_settings, errs = PARAMS.validate(settings or {})
     notes += [f"settings: {e}" for e in errs]
     slug = re.sub(r"[^a-z0-9]+", "-", (project or company or "import").lower()).strip("-")[:48] or "import"
@@ -590,8 +960,8 @@ def build_dataset(paths, project=None, company=None, epsg=None, utm_zone=None, h
         "collars": collars, "surveys": surveys, "intervals": intervals,
         "lithology": lithology,
         "counts": {"collars": len(collars), "intervals": len(intervals),
-                   "lithology": len(lithology),
-                   "surveyed_holes": len({s["hole"] for s in surveys}),
+                   "lithology": len(lithology), "survey_stations": len(surveys),
+                   "surveyed_holes": len({holeid.key(s["hole"]) for s in surveys}),
                    "holes_with_intervals": len(ikeys), "linked": len(ckeys & ikeys),
                    "elements": dict(Counter(x["el"] for x in intervals))},
         "tables": tables, "notes": notes,
@@ -639,6 +1009,11 @@ if __name__ == "__main__":
     ap.add_argument("--project"); ap.add_argument("--company")
     ap.add_argument("--epsg", type=int); ap.add_argument("--utm-zone", type=int)
     ap.add_argument("--hemisphere", default="N"); ap.add_argument("--datum", default="WGS84")
+    ap.add_argument("--crs-mode", default="auto",
+                    choices=["auto", "utm", "epsg", "latlon", "local"],
+                    help="what the coordinates are; auto works it out from the data")
+    ap.add_argument("--azimuth-ref", default="auto", choices=["auto", "magnetic", "true"],
+                    help="magnetic applies the survey declination to the azimuths")
     ap.add_argument("--attach-to", help="slug of an existing project to merge into")
     ap.add_argument("--set", nargs="*", default=[], help="model parameters, e.g. block=5,5,5 radius_m=60")
     ap.add_argument("--private", action="store_true", help="keep out of the public site")
@@ -648,7 +1023,8 @@ if __name__ == "__main__":
     settings = dict(x.split("=", 1) for x in a.set if "=" in x)
     ds = build_dataset(files, project=a.project, company=a.company, epsg=a.epsg, utm_zone=a.utm_zone,
                        hemisphere=a.hemisphere, datum=a.datum, attach_to=a.attach_to,
-                       settings=settings, private=a.private)
+                       settings=settings, private=a.private, crs_mode=a.crs_mode,
+                       azimuth_ref=a.azimuth_ref)
     print(json.dumps({"id": ds["id"], "counts": ds["counts"], "crs": ds["crs"], "center": ds["center"],
                       "tables": [{k: t[k] for k in ("table", "kind", "rows")} for t in ds["tables"]],
                       "notes": ds["notes"]}, indent=1))

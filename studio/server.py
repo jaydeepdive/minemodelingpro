@@ -448,7 +448,9 @@ def delete_project(pid: str, request: Request, u=Depends(require)):
 @app.post("/api/projects/{pid}/uploads")
 async def upload(pid: str, request: Request, files: list[UploadFile] = File(...),
                  name: str = Form(None), epsg: str = Form(None), utm_zone: str = Form(None),
-                 hemisphere: str = Form("N"), datum: str = Form("WGS84"), u=Depends(require)):
+                 hemisphere: str = Form("N"), datum: str = Form("WGS84"),
+                 crs_mode: str = Form("auto"), azimuth_ref: str = Form("auto"),
+                 u=Depends(require)):
     p = project_or_404(u, pid)
     F = store.files()
     used = 0
@@ -471,7 +473,11 @@ async def upload(pid: str, request: Request, files: list[UploadFile] = File(...)
         raise HTTPException(400, "no files were uploaded")
     opts = {"epsg": int(epsg) if (epsg or "").strip().isdigit() else None,
             "utm_zone": int(utm_zone) if (utm_zone or "").strip().isdigit() else None,
-            "hemisphere": (hemisphere or "N")[:1].upper(), "datum": datum or "WGS84"}
+            "hemisphere": (hemisphere or "N")[:1].upper(), "datum": datum or "WGS84",
+            "crs_mode": (crs_mode or "auto").lower()
+            if (crs_mode or "auto").lower() in ("auto", "utm", "epsg", "latlon", "local") else "auto",
+            "azimuth_ref": (azimuth_ref or "auto").lower()
+            if (azimuth_ref or "auto").lower() in ("auto", "magnetic", "true") else "auto"}
     d = store.db()
     ds = d.one("insert into datasets (project_id, owner, name, files, options, bytes) "
                "values (%s,%s,%s,%s,%s,%s) returning *",

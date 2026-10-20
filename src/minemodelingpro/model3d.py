@@ -1086,13 +1086,17 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                "dip": dip if dip is not None else -90.0, "depth": float(d), "key": h["key"],
                "src": sorted(h.get("src") or [])}
         sv = h.get("survey") or []
-        if len(sv) >= 2:
+        if sv:
+            # a collar table of x/y/z alone says nothing about where the hole went;
+            # the shallowest survey station does, even when it is the only one
             rec["depth"] = max(rec["depth"], max(s_[0] for s_ in sv))
             if h.get("az") is None:
                 rec["az"] = sv[0][1]
             if h.get("dip") is None:
                 rec["dip"] = sv[0][2]
-            rec["path"] = min_curve([(0.0, rec["az"], rec["dip"])] + [s_ for s_ in sv if s_[0] > 0], rec["depth"])
+            if len(sv) >= 2:
+                rec["path"] = min_curve([(0.0, rec["az"], rec["dip"])]
+                                        + [s_ for s_ in sv if s_[0] > 0], rec["depth"])
         H.append(rec)
     # --- recentre the frame on the drilling
     cx = float(np.median([h["x"] for h in H])); cy = float(np.median([h["y"] for h in H]))

@@ -26,24 +26,32 @@
   <div class="grid c2" style="margin-top:18px;align-items:start">
     <div class="card">
       <h3>Add drill data</h3>
-      <p class="note">CSV, Excel, Access or a zip. Collars, assays and surveys can be separate files or sheets in one workbook —
-        they're recognised by their columns.</p>
+      <p class="note">CSV, Excel, Access or a zip. Collars, assays, downhole surveys and logged geology can be separate
+        files or sheets in one workbook — they're recognised by their columns, and joined on the hole id. Assays may give
+        a column per metal or one row per metal.</p>
       <div class="drop" id="drop">Drop files here, or <b>choose files</b>
         <input type="file" id="files" multiple style="display:none">
       </div>
       <div class="row" style="margin-top:12px">
         <div><label>Coordinate system</label>
           <select id="crsmode">
+            <option value="auto">Work it out from the data</option>
             <option value="utm">UTM zone</option>
             <option value="epsg">EPSG code</option>
-            <option value="latlon">Latitude / longitude columns</option>
+            <option value="latlon">Latitude / longitude (or x/y in degrees)</option>
             <option value="local">Local mine grid (no map position)</option>
           </select></div>
         <div id="zonewrap"><label>Zone</label><input type="number" id="zone" placeholder="e.g. 11" min="1" max="60"></div>
         <div id="hemiwrap"><label>Hemisphere</label><select id="hemi"><option value="N">North</option><option value="S">South</option></select></div>
         <div id="datumwrap"><label>Datum</label><select id="datum"><option>WGS84</option><option>NAD83</option><option>NAD27</option></select></div>
         <div id="epsgwrap" style="display:none"><label>EPSG</label><input type="number" id="epsg" placeholder="e.g. 26911"></div>
+        <div><label>Survey azimuths</label>
+          <select id="azref">
+            <option value="auto">As filed</option>
+            <option value="magnetic">Magnetic — add the declination</option>
+          </select></div>
       </div>
+      <div class="note" id="crsnote" style="margin-top:8px"></div>
       <div id="uplog" class="note" style="margin-top:10px"></div>
       <button class="btn" id="upload" style="margin-top:12px" disabled>Upload and build</button>
     </div>
@@ -123,14 +131,27 @@ watchProject(id, paint);
 // ---- datasets
 async function paintDatasets() {
   const ds = await listDatasets(id);
-  $("#datasets").innerHTML = ds.length ? `<table><tr><th>Files</th><th>Status</th><th class="num">Collars</th><th class="num">Intervals</th><th>Notes</th></tr>
+  const crsLine = c => !c ? "" : c.kind === "projected"
+      ? `placed in EPSG:${c.epsg}${c.where ? " (" + c.where + ")" : ""}${c.dem_misfit_m != null ? ", elevations match the terrain to " + c.dem_misfit_m + " m" : ""}`
+      : c.kind === "latlon" ? "placed from latitude/longitude"
+      : "its own local grid — no map position";
+  // what each file was read as, and which column filled which role: the mapping is
+  // the thing to check before trusting a model, so it is on the page, not in a log
+  $("#datasets").innerHTML = ds.length ? `<table><tr><th>Files</th><th>Status</th><th class="num">Collars</th><th class="num">Intervals</th><th class="num">Survey<br>stations</th><th>What was read</th></tr>
     ${ds.map(d => { const c = d.summary?.counts || {};
       const notes = [...(d.summary?.notes || []), ...(d.error ? [d.error] : [])];
+      const cl = crsLine(d.summary?.crs);
       return `<tr><td>${esc(d.name || "—")}<div class="note">${new Date(d.created_at).toLocaleString()}</div></td>
         <td><span class="chip ${d.status === "ready" ? "ok" : d.status === "error" ? "err" : "info"}">${esc(d.status)}</span></td>
         <td class="num">${fmt(c.collars)}</td><td class="num">${fmt(c.intervals)}</td>
-        <td class="small">${notes.length ? notes.map(esc).join("<br>") : "—"}
-          ${d.summary?.tables ? `<div class="note">${d.summary.tables.map(t => `${esc(t.table)} → ${esc(t.kind || "not recognised")} (${fmt(t.rows)} rows)`).join("<br>")}</div>` : ""}</td></tr>`;
+        <td class="num">${fmt(c.survey_stations)}</td>
+        <td class="small">${cl ? `<div><b>${esc(cl)}</b></div>` : ""}
+          ${notes.length ? notes.map(esc).join("<br>") : ""}
+          ${d.summary?.tables ? `<div class="note" style="margin-top:6px">${d.summary.tables.map(t =>
+             `${esc(t.table)} → <b>${esc(t.kind || "not recognised")}</b> (${fmt(t.rows)} rows)`
+             + (t.roles ? `<br><span class="muted">${esc(Object.entries(t.roles).map(([r, col]) => r + " = " + col).join(", "))}</span>` : "")
+             + ((t.elements || []).length ? `<br><span class="muted">${esc(t.elements.map(e => e[1] + " from " + e[0]).join(", "))}</span>` : "")
+           ).join("<br>")}</div>` : ""}</td></tr>`;
     }).join("")}</table>` : `<p class="muted small">Nothing uploaded yet.</p>`;
 }
 await paintDatasets(); setInterval(paintDatasets, 8000);
@@ -150,18 +171,31 @@ function setFiles(list) {
   drop.appendChild(filesInput);
   $("#upload").disabled = !chosen.length;
 }
+const CRS_NOTE = {
+  auto: "Collar coordinates are read for what they are: x/y in decimal degrees are taken as longitude and latitude, " +
+        "and a bare easting/northing has its UTM zone identified by matching the collar elevations to the terrain. " +
+        "If neither works the data is modelled in its own grid and the upload log says so.",
+  utm: "Use this when you know the zone. The datum matters less than the zone — NAD83 and WGS84 differ by about a metre.",
+  epsg: "Any projected CRS: UTM, MTM, a state plane in feet, a national grid.",
+  latlon: "Degrees, in columns named lat/long or in columns named x/y. Negative longitudes west of Greenwich.",
+  local: "A mine grid with no map position: the model is built, with no terrain, and cannot merge with other sources for the same project.",
+};
 $("#crsmode").onchange = () => {
   const m = $("#crsmode").value;
   $("#zonewrap").style.display = m === "utm" ? "" : "none";
   $("#hemiwrap").style.display = m === "utm" ? "" : "none";
   $("#datumwrap").style.display = m === "utm" ? "" : "none";
   $("#epsgwrap").style.display = m === "epsg" ? "" : "none";
+  $("#crsnote").textContent = CRS_NOTE[m] || "";
 };
+$("#crsmode").onchange();
 $("#upload").onclick = async () => {
   banner(""); $("#upload").disabled = true;
   const m = $("#crsmode").value;
   const options = m === "utm" ? { utm_zone: Number($("#zone").value) || null, hemisphere: $("#hemi").value, datum: $("#datum").value }
     : m === "epsg" ? { epsg: Number($("#epsg").value) || null } : {};
+  options.crs_mode = m;
+  options.azimuth_ref = $("#azref").value;
   if (m === "utm" && !options.utm_zone) { $("#upload").disabled = false; return banner("Enter the UTM zone (1–60), or pick another coordinate option."); }
   if (m === "epsg" && !options.epsg) { $("#upload").disabled = false; return banner("Enter the EPSG code, or pick another coordinate option."); }
   try {

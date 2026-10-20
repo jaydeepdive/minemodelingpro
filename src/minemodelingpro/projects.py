@@ -747,7 +747,7 @@ def _materialise(p, news_holes, news_ivs, ov, styled_reports=()):
         for sv in r.get("surveys") or []:
             by[holeid.key(sv["hole"])].append((float(sv["depth"]), float(sv["az"]), float(sv["dip"])))
         for k, st in by.items():
-            if k in holes and len(st) >= 2 and not holes[k].get("survey"):
+            if k in holes and len(st) >= 1 and not holes[k].get("survey"):
                 holes[k]["survey"] = sorted(st)
     rel_seen = {}
     for i in p["news"]:

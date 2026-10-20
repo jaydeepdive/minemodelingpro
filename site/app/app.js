@@ -119,7 +119,8 @@ export async function uploadDataset(project, files, options = {}, onProgress) {
   const form = new FormData();
   [...files].forEach(f => form.append("files", f, f.name));
   form.append("name", [...files].map(f => f.name).join(", ").slice(0, 160));
-  for (const k of ["epsg", "utm_zone", "hemisphere", "datum"]) if (options[k]) form.append(k, options[k]);
+  for (const k of ["epsg", "utm_zone", "hemisphere", "datum", "crs_mode", "azimuth_ref"])
+    if (options[k]) form.append(k, options[k]);
   onProgress && onProgress(0, files.length, "uploading");
   const r = await api(`/projects/${project.id}/uploads`, { method: "POST", form });
   onProgress && onProgress(files.length, files.length, "queued");

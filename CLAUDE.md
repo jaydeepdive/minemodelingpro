@@ -329,6 +329,48 @@ floats, so `domain_units` was silently dropped and `anisotropy` had no limits
 entry. `NAME_LISTS` in params.py is the fix — add any new string-list parameter
 to it.
 
+## Importing a client's own drill files (2026-10-20)
+
+A drill database arrives as separate tables and the importer takes them that way:
+collars, downhole surveys, assays and logged geology, in any mix of files or
+sheets, recognised by their columns and **joined on the normalised hole id**
+(`holeid.key`, so `DDH-26-001` and `ddh26001` are one hole). What each file was
+read as, which column filled which role, and how many hole ids matched across
+them is written into the dataset's notes and shown on the project page — check
+that table before trusting a model. `scripts/test_imports.py` holds the cases.
+
+- **Assays may be wide or long.** A column per element (`Au_ppm`, `Cu (%)`) or one
+  row per element (`ANALYTE` + `GRADE_PPM`). In long form the unit comes from the
+  row's unit column, else the element label, else **the value column's header**,
+  else the element's default — copper in ppm read as per cent is out by ten
+  thousand. `_unit_in` treats `_` and brackets as separators, because an
+  underscore is a word character to a regex and `Cu_ppm` used to hide its unit
+  behind a missing word boundary.
+- **Surveys may be stations or sections.** `HOLEID, DEPTH, AZIMUTH, INCLINATION`
+  or `HOLEID, FROM, TO, AZIMUTH, INCLINATION`: a table with azimuth and dip, no
+  assays and no logging code is a survey either way, and with sections each
+  start is a station and the last end is the deepest point the survey reaches.
+  A declination column is read and **reported, not applied** — it is as often the
+  record of a correction already made as an instruction to make one. "Survey
+  azimuths → magnetic" on the upload form adds it (`azimuth_ref`).
+- **A collar file of x/y/z alone still orients its holes**: the shallowest survey
+  station gives the azimuth and dip, the deepest gives the hole length, and one
+  station is enough for the orientation (it just cannot curve the path). Before
+  this those holes were drawn vertical.
+- **The coordinate reference is worked out from the data** (`crs_mode="auto"`, the
+  form's default). x/y inside ±180/±90 with a spread under two units are decimal
+  degrees — no drill programme spans less than two metres — and which of the two
+  is the latitude is settled by the terrain, or by which assignment lands in a
+  known region. A bare easting/northing has its **UTM zone identified by matching
+  the collar elevations to the DEM**: zones that land on land (`terrain.region_of`)
+  are shortlisted at zoom 11 and judged at zoom 13 on three numbers — deviation
+  about the mean difference, that offset, and the slope of ground against stated
+  elevation. A constant offset is forgiven (a GPS z is an ellipsoid height), a
+  wrong hillside is not, and the winner must beat its rival by a distance or the
+  answer is reported as ambiguous and the data stays in its own grid. A flat
+  plateau cannot be placed this way and says so. Feet are only considered after
+  metres fail, because a compressed elevation range fits too many places.
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.

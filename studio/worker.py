@@ -108,7 +108,8 @@ def do_import(job):
         datum=o.get("datum", "WGS84"), attach_to=proj.get("attach_to"),
         settings=proj.get("params") or {}, dataset_id="import:" + str(ds_row["id"]),
         owner=str(ds_row["owner"]), private=not proj.get("is_public"),
-        source_name=ds_row.get("name") or ", ".join(os.path.basename(p) for p in paths))
+        source_name=ds_row.get("name") or ", ".join(os.path.basename(p) for p in paths),
+        crs_mode=o.get("crs_mode", "auto"), azimuth_ref=o.get("azimuth_ref", "auto"))
     errors = IMP.validate(data)
     summary = {"counts": data["counts"], "tables": data["tables"], "notes": data["notes"],
                "crs": data["crs"], "center": data["center"], "errors": errors}
