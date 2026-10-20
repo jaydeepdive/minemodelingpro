@@ -117,6 +117,36 @@ with tempfile.TemporaryDirectory() as tmp:
     check("Ag (g/t) in a wide table stays g/t",
           all(abs(x["grade"] - 5.0) < 1e-6 for x in ds3["intervals"] if x["el"] == "Ag"))
 
+    # 3b — a full ICP package is not nineteen deposits
+    trace = {"As": 0.002, "Bi": 0.0008, "Cu": 0.004, "Pb": 0.003, "Zn": 0.006, "Au": 0.004,
+             "S": 0.4, "Mn": 0.05, "Mo": 0.0002, "Sb": 0.004, "Sn": 0.0005, "W": 0.0003,
+             "U": 0.0002, "Li": 0.002, "Ga": 0.001}
+    iv = []
+    for h in range(20):
+        for i in range(40):
+            iv.append({"hole": "L%02d" % h, "from": i, "to": i + 1, "el": "Ag",
+                       "grade": 120.0, "unit": "g/t", "sub": 0})
+            iv.append({"hole": "L%02d" % h, "from": i, "to": i + 1, "el": "Co",
+                       "grade": 0.4, "unit": "%", "sub": 0})
+            for el, g in trace.items():
+                iv.append({"hole": "L%02d" % h, "from": i, "to": i + 1, "el": el, "grade": g,
+                           "unit": "g/t" if el in IMP.PRECIOUS_STD else "%", "sub": 0})
+    n = []
+    kept, seen = IMP.carry_elements(iv, None, n)
+    els = {x["el"] for x in kept}
+    check("the metals that reach an ore grade are carried", {"Ag", "Co"} <= els, sorted(els))
+    check("the pathfinders at trace level are not", not ({"Ga", "Sn", "W", "Bi"} & els), sorted(els))
+    check("what was left out is reported", any("trace level" in x for x in n), n)
+    check("everything read is still reported", len(seen) == 17, len(seen))
+    check("naming elements overrides the decision",
+          {x["el"] for x in IMP.carry_elements(iv, ["Ag", "Ga"], [])[0]} == {"Ag", "Ga"})
+    low = [{"hole": "H%02d" % h, "from": i, "to": i + 1, "el": el, "grade": g,
+            "unit": "g/t" if el == "Au" else "%", "sub": 0}
+           for h in range(10) for i in range(30)
+           for el, g in (("Au", 0.06), ("Fe", 7.0), ("S", 12.0), ("As", 0.01), ("Mn", 0.2))]
+    check("a low-grade deposit keeps its own metal",
+          "Au" in {x["el"] for x in IMP.carry_elements(low, None, [])[0]})
+
     # 4 — a flat local grid cannot be placed, and says so
     d3 = os.path.join(tmp, "c"); os.makedirs(d3)
     loc = "hole,east,north,elev\n" + "".join(

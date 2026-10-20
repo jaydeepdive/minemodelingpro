@@ -371,6 +371,47 @@ that table before trusting a model. `scripts/test_imports.py` holds the cases.
   plateau cannot be placed this way and says so. Feet are only considered after
   metres fail, because a compressed elevation range fits too many places.
 
+## What a real client database costs the modeller (2026-10-20)
+
+The first client upload — 602 collars, 10,779 survey stations, a 48,260-row
+multi-element assay table — found four things, measured not guessed. The
+modeller has **1 GB** (`apps-s-1vcpu-1gb`), and at that scale it peaked at
+**1.67 GB**: the kernel killed it, which from the page looked like a parse that
+never ended. After the fixes below the same build peaks at **720 MB** in 42 s.
+
+- **A job that dies with its worker used to stay `running` for ever.** Nothing
+  requeued it, nothing reset the project. `jobs.heartbeat_at` + `requeue_stale`
+  + the sweep at worker start fix that; `scripts/test_jobs.py` covers it against
+  a real Postgres (`apt-get install postgresql-16`, initdb under
+  `/var/lib/postgresql`, `DATABASE_URL=...host=/var/run/postgresql&port=5433`).
+  `/api/health` now reports the worker's pulse, so "is anything listening" is
+  answerable without signing in.
+- **The block search was chunked by block count, not by what the search
+  allocates.** Every block carries its 24 nearest samples, so a 400,000-block
+  chunk was half a gigabyte in flight. `MMP_BLOCK_CHUNK` (60,000 fine blocks)
+  bounds it; identical results, and faster for cache reasons.
+- **A modern ICP package reports 19 elements on every sample.** Carrying all of
+  them to model three cost 915,000 intervals through every stage.
+  `imports.carry_elements` keeps an element that reaches a grade worth modelling
+  (`_WORTH_MODELLING`, coarse floors per metal), plus the highest-priority metal
+  present whatever its grade — a low-grade bulk deposit must not lose its pay
+  metal — plus anything the project's `elements` setting names, which overrides
+  the lot. Everything read is reported in `elements_seen`, and the full suite is
+  kept on the dataset as `suite` so `deposit_style` still sees the pathfinders.
+- **A lab export names au_cert_num, au_analysis_code and au_flag beside
+  au_ppm.** All four start with the element, and all four were being read as
+  gold; a certificate number makes a six-figure grade that passes every
+  plausibility check. `_element_of` now requires the words beside the element to
+  be units or grade words. (Related, same day: stripping a unit suffix before
+  matching every column role turned `y_ppm` — yttrium — into the northing. The
+  stripped name answers for the value column only.)
+- **A collar table with a `zone` column has already answered the coordinate
+  question.** `_stated_zone` uses it, and the terrain check still runs as a
+  cross-check rather than as the only method.
+
+`POST /api/datasets/{id}/reimport` ("Read the files again") re-parses stored
+files in place, so an importer fix costs the client no second upload.
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.

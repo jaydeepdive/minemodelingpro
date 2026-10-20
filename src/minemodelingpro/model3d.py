@@ -430,7 +430,13 @@ def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None,
     dtree = cKDTree(dom @ W.T if (dom is not None and W is not None) else dom) \
         if dom is not None else None
     ijk_out, g_out, c_out = [], [], []
-    CH = max(1, 400_000 // len(off))
+    # Blocks are estimated in chunks, and the chunk is sized by the arrays the
+    # search builds, not by the block count: every block carries its 24 nearest
+    # samples, so a chunk costs 24 numbers per block several times over. At
+    # 400,000 blocks a chunk that was half a gigabyte in flight on a deposit that
+    # otherwise fits in memory — the modeller has a gigabyte, and the kernel
+    # kills it without a word, which reads from the page as a job that never ends.
+    CH = max(1, int(os.environ.get("MMP_BLOCK_CHUNK", "60000")) // len(off))
     for s in range(0, len(cand_c), CH):
         cc = cand_c[s:s + CH]
         fine = (cc[:, None, :] * f + off[None, :, :]).reshape(-1, 3)
@@ -1117,7 +1123,9 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
     _g = [float(x.get("grade") or 0) for x in _iv]
     _from_report = (ds.get("report_params") or {}).get("deposit_style")
     _stated = PS.get("deposit_style") or _from_report
-    skey, sdef, swhy, sconf = DSTY.classify(_w, _g, set(by_el), stated=_stated,
+    _suite = set(by_el) | {e for r in (ds.get("sources") or []) for e in (r.get("suite") or [])} \
+        | set(ds.get("suite") or [])
+    skey, sdef, swhy, sconf = DSTY.classify(_w, _g, _suite, stated=_stated,
                                             nearby=ds.get("nearby_style"))
     # PORIGIN says where the value came from: "auto" means the report supplied it,
     # anything else means a person set it for this project

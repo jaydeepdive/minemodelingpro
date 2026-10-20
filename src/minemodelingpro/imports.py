@@ -40,6 +40,11 @@ from collections import Counter, defaultdict
 from minemodelingpro import holeid
 from minemodelingpro import params as PARAMS
 
+# the modeller's own ranking of which metal a project is about
+_PRIORITY = ["Au", "Cu", "Ni", "Ag", "Zn", "U3O8", "Li2O", "Pb", "Co", "Mo", "Pt", "Pd", "PGE",
+             "3E", "Sn", "W", "WO3", "Sb", "TREO", "REO", "V2O5", "Fe", "Mn", "Cg", "P2O5",
+             "AuEq", "CuEq", "AgEq", "ZnEq", "NiEq"]
+
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 IMPORT_DIR = os.path.join(_ROOT, "data", "keep", "mmp_imports")          # public/committed
 PRIVATE_DIR = os.path.join(_ROOT, "data", "private", "imports")          # gitignored
@@ -900,6 +905,74 @@ def _place(en, code, notes, source, zone=None):
     return crs
 
 
+# The grade at which a metal starts to be worth modelling, in the standard unit
+# (g/t for the precious metals, per cent for the rest). A modern drill database
+# reports a 30-element ICP package on every sample, so a silver-cobalt property
+# arrives with nineteen elements at trace level and the modeller carries all of
+# them through every stage to model three. These floors are coarse — the point is
+# only to tell a deposit metal from a pathfinder — and a project's `elements`
+# setting overrides them outright.
+_WORTH_MODELLING = {
+    "Au": 0.08, "AuEq": 0.08, "Ag": 3.0, "AgEq": 3.0, "Pt": 0.05, "Pd": 0.05,
+    "Rh": 0.05, "PGE": 0.05, "3E": 0.05,
+    "Cu": 0.03, "CuEq": 0.03, "Zn": 0.1, "ZnEq": 0.1, "Pb": 0.1, "Ni": 0.03,
+    "NiEq": 0.03, "Co": 0.005, "Mo": 0.003, "Sn": 0.02, "W": 0.05, "WO3": 0.02,
+    "U": 0.005, "U3O8": 0.005, "Li": 0.05, "Li2O": 0.1, "Sb": 0.5, "Bi": 0.05,
+    "V2O5": 0.2, "Cr2O3": 2.0, "TiO2": 2.0, "P2O5": 1.0, "Fe": 5.0, "Mn": 5.0,
+    "TREO": 0.1, "REO": 0.1, "Nb2O5": 0.1, "Ta2O5": 0.01, "Cg": 1.0, "S": 10.0,
+}
+MAX_CARRY = int(os.environ.get("MMP_MAX_ELEMENTS", "10"))
+
+
+def _p95(vals):
+    v = sorted(vals)
+    return v[min(len(v) - 1, int(0.95 * len(v)))] if v else 0.0
+
+
+def carry_elements(intervals, wanted, notes):
+    """Keep the elements a model can use, and say which were left out.
+
+    An element earns its place by reaching, somewhere in the drilling, a grade at
+    which that metal is worth modelling — or by being named in the project's
+    `elements` setting, which overrides this entirely. Everything read is reported
+    either way, so a decision the geologist disagrees with is visible and one
+    setting away from being reversed."""
+    by = defaultdict(list)
+    for x in intervals:
+        by[x["el"]].append(x["grade"])
+    if len(by) <= 3:
+        return intervals, {e: len(v) for e, v in by.items()}
+    seen = {e: {"n": len(v), "p95": round(_p95(v), 4)} for e, v in by.items()}
+    named = [e for e in (wanted or []) if e in by]
+    if named:
+        keep = set(named)
+    else:
+        keep = {e for e, d in seen.items()
+                if d["p95"] >= _WORTH_MODELLING.get(e, float("inf"))}
+        rank = sorted(by, key=lambda e: (_PRIORITY.index(e) if e in _PRIORITY else 99,
+                                         -seen[e]["n"]))
+        if rank:
+            # the metal the modeller would most likely take as the deposit's own is
+            # kept whatever its grade: a low-grade bulk deposit is still a deposit,
+            # and dropping its pay metal is the one mistake this must not make
+            keep.add(rank[0])
+        if len(keep) > MAX_CARRY:
+            keep = set(sorted(keep, key=lambda e: (_PRIORITY.index(e) if e in _PRIORITY else 99,
+                                                   -seen[e]["n"]))[:MAX_CARRY])
+    left = sorted(set(by) - keep, key=lambda e: -seen[e]["n"])
+    if left:
+        notes.append("assays: %d elements were read; the model carries %s. %s %s at trace level "
+                     "here (%s) and %s left out of the model to keep it within memory — the rest "
+                     "of the file is untouched, and naming them in the project's 'elements' "
+                     "setting brings them back."
+                     % (len(by), ", ".join(sorted(keep, key=lambda e: -seen[e]["n"])),
+                        ", ".join(left[:8]) + ("…" if len(left) > 8 else ""),
+                        "is" if len(left) == 1 else "are",
+                        ", ".join("%s p95 %g" % (e, seen[e]["p95"]) for e in left[:3]),
+                        "was" if len(left) == 1 else "were"))
+    return [x for x in intervals if x["el"] in keep], seen
+
+
 def georeference(collars, epsg=None, utm_zone=None, hemisphere="N", datum="WGS84", notes=None,
                  crs_mode=None):
     """Add lat/lon to collars that carry projected coordinates.
@@ -1078,6 +1151,8 @@ def build_dataset(paths, project=None, company=None, epsg=None, utm_zone=None, h
             continue
         seen.add(k); i2.append(x)
     intervals = i2
+    clean_settings, errs = PARAMS.validate(settings or {})
+    intervals, elements_seen = carry_elements(intervals, clean_settings.get("elements"), notes)
     crs, center = georeference(collars, epsg, utm_zone, hemisphere, datum, notes,
                                crs_mode=crs_mode)
     if lithology:
@@ -1122,7 +1197,6 @@ def build_dataset(paths, project=None, company=None, epsg=None, utm_zone=None, h
     if one:
         notes.append(f"{len(one)} hole(s) have a single survey station — it sets the hole's "
                      f"orientation, but the path cannot be curved from one reading")
-    clean_settings, errs = PARAMS.validate(settings or {})
     notes += [f"settings: {e}" for e in errs]
     slug = re.sub(r"[^a-z0-9]+", "-", (project or company or "import").lower()).strip("-")[:48] or "import"
     did = dataset_id or f"import:{slug}-{datetime.datetime.utcnow():%Y%m%d%H%M%S}"
@@ -1136,6 +1210,9 @@ def build_dataset(paths, project=None, company=None, epsg=None, utm_zone=None, h
         "files": [os.path.basename(p) for p in paths],
         "collars": collars, "surveys": surveys, "intervals": intervals,
         "lithology": lithology,
+        # the whole suite the file reported, so the deposit style still sees the
+        # pathfinders even when the model does not carry their assays
+        "suite": sorted(elements_seen), "elements_seen": elements_seen,
         "counts": {"collars": len(collars), "intervals": len(intervals),
                    "lithology": len(lithology), "survey_stations": len(surveys),
                    "surveyed_holes": len({holeid.key(s["hole"]) for s in surveys}),
