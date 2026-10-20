@@ -89,6 +89,7 @@
 <script type="module">
 import { chrome, requireUser, getProject, listDatasets, uploadDataset, saveParams, setPublic,
          deleteProject, build, watchProject, paramForm, readParams, statusChip, modelUrl, defaults,
+         reimportDataset,
          $, $$, esc, fmt, fmtT, fmtC, banner } from "./app.js";
 await chrome("dashboard");
 const user = await requireUser(); if (!user) throw new Error("redirecting");
@@ -161,7 +162,8 @@ async function paintDatasets() {
     ${ds.map(d => { const c = d.summary?.counts || {};
       const notes = [...(d.summary?.notes || []), ...(d.error ? [d.error] : [])];
       const cl = crsLine(d.summary?.crs);
-      return `<tr><td>${esc(d.name || "—")}<div class="note">${new Date(d.created_at).toLocaleString()}</div></td>
+      return `<tr><td>${esc(d.name || "—")}<div class="note">${new Date(d.created_at).toLocaleString()}</div>
+        <button class="btn ghost sm reread" data-id="${d.id}" style="margin-top:6px">Read the files again</button></td>
         <td><span class="chip ${d.status === "ready" ? "ok" : d.status === "error" ? "err" : "info"}">${esc(d.status)}</span></td>
         <td class="num">${fmt(c.collars)}</td><td class="num">${fmt(c.intervals)}</td>
         <td class="num">${fmt(c.survey_stations)}</td>
@@ -173,6 +175,13 @@ async function paintDatasets() {
              + ((t.elements || []).length ? `<br><span class="muted">${esc(t.elements.map(e => e[1] + " from " + e[0]).join(", "))}</span>` : "")
            ).join("<br>")}</div>` : ""}</td></tr>`;
     }).join("")}</table>` : `<p class="muted small">Nothing uploaded yet.</p>`;
+  // the files stay on the server, so an importer fix costs no second upload
+  $$(".reread").forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try { await reimportDataset(b.dataset.id); banner("Reading those files again.", "ok");
+          watchProject(id, paint); paintDatasets(); }
+    catch (e) { b.disabled = false; banner(e.message || String(e)); }
+  });
 }
 await paintDatasets(); setInterval(paintDatasets, 8000);
 

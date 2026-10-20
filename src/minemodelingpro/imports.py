@@ -119,20 +119,34 @@ _FT_HEADER = re.compile(r"\(\s*(ft|feet|foot)\s*\)|\b(ft|feet)\b", re.I)
 
 
 _UNIT_SUFFIX = re.compile(r"(ft|feet|foot|m|metres|meters|metre|meter|masl|msl|mts)$")
+_VALUE_RX = dict(_PATTERNS)["value"]
+
+# What may sit beside the element in a grade column's name. A lab export carries
+# au_ppm next to au_cert_num, au_analysis_code and au_flag, and reading the
+# certificate number as a gold grade is worse than missing the column: a
+# six-figure "grade" survives every plausibility check the model applies.
+_BESIDE_ELEMENT = {"", "ppm", "ppb", "gpt", "gt", "g", "t", "pct", "percent", "pc",
+                   "opt", "ozt", "oz", "kg", "lb", "lbs", "kgt", "lbt", "mgkg", "ugkg",
+                   "grade", "assay", "value", "result", "conc", "concentration",
+                   "final", "best", "wt", "wtpct", "ppmw", "dl"}
+_NAMES_ELEMENT_LAST = {"grade", "assay", "result", "value", "conc", "total", "tot"}
 
 
 def _role(col):
     """Column role, tolerating unit suffixes ('FROM_FT', 'Depth_m', 'Elev (masl)')."""
     n = _norm(col)
-    # a grade column often carries its unit in the name; strip it before matching so
-    # "Grade_ppm" and "Result (g/t)" are still the value column
-    nu = re.sub(r"(ppm|ppb|gpt|gt|pct|percent|ozt|opt|kgt|lbt)$", "", n)
-    for cand in (n, _UNIT_SUFFIX.sub("", n), nu):
+    for cand in (n, _UNIT_SUFFIX.sub("", n)):
         if len(cand) < 1:
             continue
         for role, rx in _PATTERNS:
             if re.match(rx, cand):
                 return role
+    # a grade column often carries its unit in the name ("Grade_ppm"), so try the
+    # stripped name — but against the value pattern ALONE. Stripping the unit for
+    # every pattern made y_ppm, which is yttrium, into the northing.
+    nu = re.sub(r"(ppm|ppb|gpt|gt|pct|percent|ozt|opt|kgt|lbt)$", "", n)
+    if nu and nu != n and re.match(_VALUE_RX, nu):
+        return "value"
     return None
 
 
@@ -150,28 +164,32 @@ def _unit_in(label):
 
 
 def _element_of(col):
-    """(element, unit) for an assay column like 'Au_ppm', 'Cu (%)', 'AuEq g/t'."""
+    """(element, unit) for an assay column like 'Au_ppm', 'Cu (%)', 'AuEq g/t'.
+
+    The element has to be the column's subject, not merely a word in it: a real
+    drill database names au_cert_num, au_analysis_code and au_flag beside au_ppm,
+    and all four start with the element. Only a name whose remaining words are
+    units or grade words is a grade."""
     raw = str(col).strip()
     unit = _unit_in(raw)
-    tok = _norm(re.split(r"[\s_\-(\[/]", raw.replace("%", " "))[0] or raw)
-    tok = re.sub(r"(gpt|ppm|ppb|pct|percent|grade|assay)$", "", tok)
-    hit = _ELEMENTS.get(tok)
-    if not hit:
-        hit = _ELEMENTS.get(_norm(raw))
-    if not hit:
-        # the element is not always the first word: "Grade (% U3O8)" names it last.
-        # Only a header that looks like a grade is scanned this way, or "sample as
-        # received" becomes an arsenic assay.
-        for t in (re.split(r"[^A-Za-z0-9]+", raw)
-                  if (unit or re.search(r"grade|assay|result|value|conc", raw, re.I)) else []):
-            h2 = _ELEMENTS.get(_norm(t))
-            if h2:
-                hit = h2
-                break
-    if not hit:
+    whole = _ELEMENTS.get(_norm(raw))
+    if whole:
+        return whole[0], (unit or whole[1])
+    toks = [t for t in re.split(r"[^A-Za-z0-9]+", raw.replace("%", " ")) if t]
+    if not toks:
         return None
-    el, defunit = hit
-    return el, (unit or defunit)
+    head = _norm(toks[0])
+    hit = _ELEMENTS.get(head) or _ELEMENTS.get(
+        re.sub(r"(gpt|ppm|ppb|pct|percent|grade|assay)$", "", head))
+    if hit and all(_norm(t) in _BESIDE_ELEMENT for t in toks[1:]):
+        return hit[0], (unit or hit[1])
+    # the element is not always the first word: "Grade (% U3O8)" names it last
+    if head in _NAMES_ELEMENT_LAST:
+        for t in toks[1:]:
+            h = _ELEMENTS.get(_norm(t))
+            if h:
+                return h[0], (unit or h[1])
+    return None
 
 
 def to_std(el, unit, v):
@@ -371,6 +389,12 @@ def parse_collars(df, roles, notes, feet=None):
         if rec.get("e") is None and rec.get("lat") is None:
             bad["no coordinates"] += 1
             continue
+        if "zone" in roles:
+            m = re.search(r"(\d{1,2})\s*([NSns])?", str(r.get(roles["zone"]) or ""))
+            if m and 1 <= int(m.group(1)) <= 60:
+                rec["zone"] = int(m.group(1))
+                if m.group(2):
+                    rec["hemi"] = m.group(2).upper()
         z = _num(r.get(roles.get("elev")))
         rec["z"] = round(z * zf, 2) if z is not None else None
         az = _num(r.get(roles.get("az")))
@@ -814,6 +838,68 @@ def infer_utm(en, notes, datum="WGS84"):
     return None
 
 
+def _stated_zone(en):
+    """The UTM zone the collar table states, when most of its rows agree on one."""
+    zs = [c["zone"] for c in en if c.get("zone")]
+    if len(zs) < max(2, 0.6 * len(en)):
+        return None
+    zone = Counter(zs).most_common(1)[0][0]
+    if sum(1 for z in zs if z == zone) < 0.6 * len(en):
+        return None
+    hemis = [c.get("hemi") for c in en if c.get("hemi")]
+    return zone, (Counter(hemis).most_common(1)[0][0] if hemis else None)
+
+
+def _utm_epsg(zone, hemisphere="N", datum="WGS84"):
+    base = 32700 if str(hemisphere).upper().startswith("S") else 32600
+    d = str(datum or "").upper()
+    if d.startswith("NAD83") and not str(hemisphere).upper().startswith("S"):
+        base = 26900
+    elif d.startswith("NAD27"):
+        base = 26700
+    return base + int(zone)
+
+
+def _place(en, code, notes, source, zone=None):
+    """Project the collars with a known CRS, and say whether the ground agrees."""
+    crs = {"kind": "local"}
+    try:
+        from pyproj import Transformer
+        tr = Transformer.from_crs(f"EPSG:{int(code)}", "EPSG:4326", always_xy=True)
+    except Exception as e:
+        notes.append(f"coordinates: EPSG:{code} could not be used ({str(e)[:60]}) — kept as a local grid")
+        return crs
+    ok = 0
+    for c in en:
+        try:
+            lo, la = tr.transform(c["e"], c["n"])
+        except Exception:
+            continue
+        if math.isfinite(la) and math.isfinite(lo) and abs(la) <= 90:
+            c["lat"], c["lon"] = round(la, 6), round(lo, 6); ok += 1
+    crs = {"kind": "projected", "epsg": int(code), "located": ok, "source": source}
+    where = _region(en[0].get("lat"), en[0].get("lon")) if en and en[0].get("lat") is not None else None
+    if where:
+        crs["where"] = where
+    zc = [c for c in en if c.get("z") is not None and c.get("lat") is not None][:40]
+    mad = None
+    if ok and len(zc) >= 3 and _spread([c["z"] for c in zc]) > 15:
+        f = _dem_fit([c["lat"] for c in zc], [c["lon"] for c in zc], [c["z"] for c in zc], 13)
+        mad = f["mad"] if f else None
+        if mad is not None:
+            crs["dem_misfit_m"] = round(mad, 1)
+    notes.append("coordinates: placed in EPSG:%d%s from %s%s"
+                 % (int(code), f" (UTM zone {zone}{'' if zone is None else ''})" if zone else "",
+                    source,
+                    (f" — {where}" if where else "")
+                    + (", and the terrain matches the collar elevations to %d m" % round(mad)
+                       if mad is not None and mad <= 60 else
+                       ", but the terrain there does not match the collar elevations (off by %d m) "
+                       "— check the zone, the hemisphere and the datum" % round(mad)
+                       if mad is not None else "")))
+    return crs
+
+
 def georeference(collars, epsg=None, utm_zone=None, hemisphere="N", datum="WGS84", notes=None,
                  crs_mode=None):
     """Add lat/lon to collars that carry projected coordinates.
@@ -864,6 +950,11 @@ def georeference(collars, epsg=None, utm_zone=None, hemisphere="N", datum="WGS84
             crs = _as_latlon(en, notes)
         if crs.get("kind") != "latlon":
             notes.append("coordinates: told to read latitude/longitude columns but none were found")
+    elif en and mode in ("auto", "utm") and _stated_zone(en):
+        # a collar table with a zone column has already answered the question
+        zone, hemi = _stated_zone(en)
+        crs = _place(en, _utm_epsg(zone, hemi or hemisphere, datum), notes,
+                     "the zone column in the collar table", zone=zone)
     elif en and mode == "auto":
         hit = infer_utm(en, notes, datum)
         if hit:
@@ -922,10 +1013,10 @@ def read_for_modelling(path, notes=None):
     if not keep or len(keep) >= len(sample.columns):
         return read_tables(path)
     dropped = [c for c in sample.columns if c not in keep]
-    notes.append("%s: read %d of %d columns — %s %s not something a model reads"
-                 % (os.path.basename(path), len(keep), len(sample.columns),
-                    ", ".join(map(str, dropped[:6])) + ("…" if len(dropped) > 6 else ""),
-                    "is" if len(dropped) == 1 else "are"))
+    notes.append("%s: using the %d column(s) a model reads, of %d — the other %d are lab and "
+                 "logging fields (%s) and are left in the file, not discarded"
+                 % (os.path.basename(path), len(keep), len(sample.columns), len(dropped),
+                    ", ".join(map(str, dropped[:5])) + ("…" if len(dropped) > 5 else "")))
     try:
         return read_tables(path, usecols=keep)
     except Exception:

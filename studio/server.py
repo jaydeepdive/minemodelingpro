@@ -510,6 +510,27 @@ async def upload(pid: str, request: Request, files: list[UploadFile] = File(...)
     return {"dataset": jsonable(ds), "job": jsonable(j)}
 
 
+@app.post("/api/datasets/{did}/reimport")
+def reimport_dataset(did: str, request: Request, u=Depends(require)):
+    """Read the same uploaded files again.
+
+    The files are kept, so when the importer learns something — a column it was
+    reading wrongly, a coordinate reference it can now work out — the fix should
+    not cost the client another upload."""
+    d = store.db()
+    ds = d.one("select * from datasets where id = %s", did)
+    if not ds or (str(ds["owner"]) != str(u["id"]) and u["role"] != "admin"):
+        raise HTTPException(404, "no such dataset")
+    if not (ds["files"] or []):
+        raise HTTPException(400, "this dataset has no stored files to read again")
+    d.run("update datasets set status = 'queued', error = null where id = %s", did)
+    d.run("update projects set status = 'parsing', error = null, updated_at = now() where id = %s",
+          ds["project_id"])
+    j = queue("import", ds["owner"], str(ds["project_id"]), did)
+    event(u["id"], "dataset.reimport", project=str(ds["project_id"]), dataset=did)
+    return {"job": jsonable(j)}
+
+
 @app.delete("/api/datasets/{did}")
 def delete_dataset(did: str, request: Request, u=Depends(require)):
     d = store.db()

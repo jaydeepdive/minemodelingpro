@@ -111,6 +111,8 @@ export function watchProject(id, onTick, ms = 3000) {
 /* ---------------------------------------------------------------- datasets */
 export async function listDatasets(project_id) { return (await api(`/projects/${project_id}`)).datasets || []; }
 export async function deleteDataset(id) { return api(`/datasets/${id}`, { method: "DELETE" }); }
+/** Parse the same uploaded files again — after the importer has been improved. */
+export async function reimportDataset(id) { return api(`/datasets/${id}/reimport`, { method: "POST", body: {} }); }
 
 /** Upload files for a project and queue the import. onProgress(done, total, name). */
 export async function uploadDataset(project, files, options = {}, onProgress) {
