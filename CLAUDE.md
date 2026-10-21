@@ -424,13 +424,48 @@ never ended. After the fixes below the same build peaks at **720 MB** in 42 s.
 `POST /api/datasets/{id}/reimport` ("Read the files again") re-parses stored
 files in place, so an importer fix costs the client no second upload.
 
-**The next real fix** is columnar intervals: 915,000 rows as Python dicts are
-~500 MB whatever arrangement they are in, and that single fact is what makes a
-gigabyte tight. Stored and carried as parallel arrays (hole index, from, to,
-element index, grade) the same data is ~20 MB, and the per-element work the
-modeller already does would read a slice at a time. It touches `projects.py`,
-`model3d.py`, `sanity.py` and `domain.py`, so it needs the validation suite run
-against the 595 models before and after.
+## Intervals are columns, not rows (2026-10-21)
+
+`src/minemodelingpro/ivtable.py`. A drill assay was a dictionary — about 360
+bytes of dictionary and three boxed floats for 26 bytes of measurement — and a
+client database is 900,000 of them, carried twice. They are now five numpy
+arrays and a few short string tables, written to disk as deflated buffers rather
+than as text, and built back into row objects **one element at a time**, because
+that is how the modeller reads them (composite this metal, then that one).
+
+Measured on a 600,000-interval import:
+
+| | rows | columns |
+|---|---|---|
+| dataset on disk | 65.9 MB | **2.1 MB** |
+| load | 0.93 s | **0.05 s** |
+| in memory | ~330 MB | **22.8 MB** |
+
+And at the client's scale (602 holes, 915,040 intervals, 19 elements), the build
+peaks at **663 MB** with every metal reported — against 1.67 GB when this started.
+
+**Nothing about the data changes**, and that is held to the corpus rather than
+asserted: `scripts/test_ivtable.py` checks 28 properties including 82 real
+extracted reports round-tripping unchanged, and the harness in the session notes
+rebuilds real projects and diffs the model JSON field by field — 11 of 11
+identical, timestamps aside. Keep that habit for anything that touches this
+path.
+
+- `Intervals` holds the columns; `Row` is a `__slots__` object that answers to
+  `x["grade"]` and `x.get(...)` exactly as the dictionary did, so the estimator,
+  the compositing and the wireframe did not have to learn a new shape.
+- `ByElement` is the `by_el` mapping the modeller had, over the table. Only the
+  element being worked on is ever built into rows (cache of one).
+- `sanity.fix_table` is `fix_intervals` on columns — the same `fix_values`
+  decision, different plumbing. `dedupe`, `restrict_keys`, `max_to_by_key` and
+  the per-element means are all vectorised; none of them builds a row.
+- `to_store` / `from_store` are the storage seam. `from_json` reads **either**
+  shape, so the 4,931 committed report JSONs still load as lists and nothing had
+  to be re-extracted. Converting those to columns too is the next easy win —
+  `assemble()` holding every report's intervals as dicts is what the nightly
+  build's memory is now mostly made of.
+- Depths and grades stay float64 on purpose. float32 would round the fifth
+  decimal of a grade, and "the same data" has to mean exactly that.
 
 ## Reasonable backlog / ideas
 

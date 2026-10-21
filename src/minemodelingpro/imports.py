@@ -39,6 +39,7 @@ import subprocess
 from collections import Counter, defaultdict
 
 from minemodelingpro import holeid
+from minemodelingpro import ivtable as IVT
 from minemodelingpro import params as PARAMS
 
 # the modeller's own ranking of which metal a project is about
@@ -951,8 +952,7 @@ def intern_rows(ds):
             got = pool[v] = sys.intern(v)
         return got
 
-    for rows, keys in ((ds.get("intervals") or [], ("hole", "el", "unit", "src")),
-                       (ds.get("lithology") or [], ("hole", "rock", "alt")),
+    for rows, keys in ((ds.get("lithology") or [], ("hole", "rock", "alt")),
                        (ds.get("surveys") or [], ("hole",)),
                        (ds.get("collars") or [], ("hole",))):
         for x in rows:
@@ -1217,6 +1217,12 @@ def build_dataset(paths, project=None, company=None, epsg=None, utm_zone=None, h
     notes += [f"settings: {e}" for e in errs]
     slug = re.sub(r"[^a-z0-9]+", "-", (project or company or "import").lower()).strip("-")[:48] or "import"
     did = dataset_id or f"import:{slug}-{datetime.datetime.utcnow():%Y%m%d%H%M%S}"
+    # into columns, releasing the parsed rows as they are read: from here on the
+    # assays are five arrays, not a dictionary per interval
+    n_iv = len(intervals)
+    el_counts = dict(Counter(x["el"] for x in intervals))
+    iv = IVT.Intervals.from_rows(intervals, consume=True)
+    del intervals
     ds = {
         "id": did, "source": "import", "project": project, "company": company,
         "owner": owner, "private": bool(private), "attach_to": attach_to,
@@ -1225,16 +1231,16 @@ def build_dataset(paths, project=None, company=None, epsg=None, utm_zone=None, h
         "imported": datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z",
         "source_name": source_name or ", ".join(os.path.basename(p) for p in paths)[:160],
         "files": [os.path.basename(p) for p in paths],
-        "collars": collars, "surveys": surveys, "intervals": intervals,
+        "collars": collars, "surveys": surveys, "intervals": iv,
         "lithology": lithology,
         # the whole suite the file reported, so the deposit style still sees the
         # pathfinders even when the model does not carry their assays
         "suite": sorted(elements_seen), "elements_seen": elements_seen,
-        "counts": {"collars": len(collars), "intervals": len(intervals),
+        "counts": {"collars": len(collars), "intervals": n_iv,
                    "lithology": len(lithology), "survey_stations": len(surveys),
                    "surveyed_holes": len({holeid.key(s["hole"]) for s in surveys}),
                    "holes_with_intervals": len(ikeys), "linked": len(ckeys & ikeys),
-                   "elements": dict(Counter(x["el"] for x in intervals))},
+                   "elements": el_counts},
         "tables": tables, "notes": notes,
     }
     return ds
@@ -1257,7 +1263,7 @@ def save(ds, private=None):
     d = PRIVATE_DIR if (ds.get("private") if private is None else private) else IMPORT_DIR
     os.makedirs(d, exist_ok=True)
     fn = os.path.join(d, re.sub(r"[^A-Za-z0-9_.-]", "_", ds["id"]) + ".json")
-    json.dump(ds, open(fn, "w"), separators=(",", ":"))
+    json.dump(IVT.to_store(ds), open(fn, "w"), separators=(",", ":"))
     return fn
 
 
@@ -1267,7 +1273,7 @@ def load_all(include_private=False):
     for d in dirs:
         for f in sorted(glob.glob(os.path.join(d, "*.json"))):
             try:
-                out.append(json.load(open(f)))
+                out.append(IVT.from_store(json.load(open(f))))
             except Exception:
                 pass
     return out

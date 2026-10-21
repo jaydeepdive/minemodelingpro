@@ -37,6 +37,7 @@ sys.path.insert(0, _ROOT)
 
 from studio import store                              # noqa: E402
 from minemodelingpro import imports as IMP             # noqa: E402
+from minemodelingpro import ivtable as IVT             # noqa: E402
 from minemodelingpro import projects as PROJ           # noqa: E402
 from minemodelingpro import model3d as M3              # noqa: E402
 from minemodelingpro import params as PARAMS           # noqa: E402
@@ -171,7 +172,7 @@ def do_import(job):
     summary = {"counts": data["counts"], "tables": data["tables"], "notes": data["notes"],
                "crs": data["crs"], "center": data["center"], "errors": errors}
     key = f"{ds_row['owner']}/{ds_row['project_id']}/datasets/{ds_row['id']}.json"
-    F.put_json(key, data)
+    F.put_json(key, IVT.to_store(data))
     d.run("update datasets set status = %s, summary = %s, data_key = %s, error = %s where id = %s",
           "error" if errors else "ready", json.dumps(summary), key,
           "; ".join(errors) or None, ds_row["id"])
@@ -198,7 +199,8 @@ def do_build(job):
     if not rows and not proj.get("attach_to"):
         raise RuntimeError("no parsed data in this project yet")
     d.run("update projects set status = 'building', error = null where id = %s", proj["id"])
-    datasets = [IMP.intern_rows(F.get_json(r["data_key"])) for r in rows if r.get("data_key")]
+    datasets = [IVT.from_store(IMP.intern_rows(F.get_json(r["data_key"])))
+                for r in rows if r.get("data_key")]
     ds = assemble_user_project(datasets, proj)
     settings = PARAMS.validate(proj.get("params") or {})[0]
     model = M3.build_project(ds, settings=settings)
@@ -271,7 +273,7 @@ def assemble_user_project(datasets, proj):
         # fold the public project's holes/intervals/sources in alongside the import, so
         # the client's own drilling is modelled WITH the public data, not instead of it
         merged["holes"].update({k: v for k, v in base["holes"].items() if k not in merged["holes"]})
-        merged["intervals"] += base["intervals"]
+        merged["intervals"].extend(base["intervals"])
         merged["sources"] += base["sources"]
         merged["resources"] = (merged.get("resources") or []) + (base.get("resources") or [])
         merged["report_params"] = merged.get("report_params") or base.get("report_params")

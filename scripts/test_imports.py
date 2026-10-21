@@ -137,12 +137,24 @@ with tempfile.TemporaryDirectory() as tmp:
     check("naming elements does not drop the rest",
           len(IMP.carry_elements(iv, ["Ag"], [])[0]) == len(iv))
 
-    # 3c — and they survive a round trip through the stored dataset
+    # 3c — and they survive the round trip through the stored dataset, in columns
     import json as _json
-    ds_rt = IMP.intern_rows(_json.loads(_json.dumps({"intervals": kept})))
+    from minemodelingpro import ivtable as _IVT
+    before = {(x["hole"], x["from"], x["to"], x["el"], x["grade"], x.get("unit")) for x in kept}
+    stored = _json.dumps(_IVT.to_store({"intervals": kept}))
+    ds_rt = _IVT.from_store(_json.loads(stored))
+    after = {(x["hole"], x["from"], x["to"], x["el"], x["grade"], x.get("unit"))
+             for x in ds_rt["intervals"]}
+    check("a dataset read back is the same data, row for row", before == after,
+          len(before ^ after))
     check("a dataset read back keeps every element",
           len({x["el"] for x in ds_rt["intervals"]}) == 16)
-    check("the repeated strings are shared after reading back",
+    check("the stored form is columns, not a row apiece",
+          _json.loads(stored)["intervals"].get("format") == "columns/1")
+    rows_json = _json.dumps([dict(x.items()) for x in ds_rt["intervals"]])
+    check("columns are smaller on disk than rows", len(stored) < len(rows_json) * 0.6,
+          "%d vs %d bytes" % (len(stored), len(rows_json)))
+    check("the repeated strings are one object each",
           len({id(x["el"]) for x in ds_rt["intervals"]}) == 16,
           len({id(x["el"]) for x in ds_rt["intervals"]}))
 

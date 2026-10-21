@@ -163,6 +163,31 @@ def fix_intervals(by_el, verbose=False):
     return flags, dropped
 
 
+def fix_table(table, verbose=False):
+    """`fix_intervals` over a column table — the same test, element by element.
+
+    The decision is `fix_values`, unchanged and shared with the row version; only
+    the reading and writing of the grades differs, because here they are already
+    a numpy column."""
+    flags, dropped = [], []
+    for el in list(table.elements()):
+        g = table.grades(el)
+        vals = [None if v != v else float(v) for v in g]
+        new, why, gone = fix_values(el, vals)
+        if gone and gone >= len(vals):
+            dropped.append(el)
+            flags.append({"level": "dropped", "element": el, "message": why})
+            table.drop_element(el)
+            continue
+        if why:
+            table.set_grades(el, new)
+            table.keep(el, [v is not None for v in new])
+            flags.append({"level": "repaired", "element": el, "message": why})
+            if verbose:
+                print(f"  [sanity] {why}", flush=True)
+    return flags, dropped
+
+
 def top_cut_floor(values, stated, pct=90.0):
     """A grade cap may not sit below the data it caps.
 

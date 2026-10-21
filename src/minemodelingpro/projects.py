@@ -34,6 +34,7 @@ from collections import Counter, defaultdict
 import numpy as np
 
 from minemodelingpro import holeid
+from minemodelingpro.ivtable import Intervals
 from minemodelingpro import imports as IMP
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -705,7 +706,9 @@ def _slugify(s):
 
 def _materialise(p, news_holes, news_ivs, ov, styled_reports=(), consume=False):
     holes = {}          # key -> hole dict (frame fields: lat/lon or local e/n)
-    intervals = []
+    # Intervals are held in columns, not as a row per assay: a client database is
+    # most of a million of them and a dictionary apiece is half a gigabyte.
+    intervals = Intervals()
     sources = []
     reports = p["reports"]
     # --- report collars first (most complete), then news fills gaps
@@ -729,25 +732,15 @@ def _materialise(p, news_holes, news_ivs, ov, styled_reports=(), consume=False):
                     h[a] = c[b]
             h["src"].add(sid)
             holes[k] = h
-        src_iv = r.get("intervals") or []
+        # the hole key and the source are stamped over the string table, so the
+        # key function runs once per hole rather than once per assay
+        t = Intervals.coerce(r.get("intervals")).relabel(keyfn=holeid.key, src=sid)
+        n_iv = len(t)
+        intervals.extend(t)
+        del t
         if consume:
-            # The caller owns this dataset and will not read it again, so each row
-            # is released as it is read: a multi-element database runs to hundreds
-            # of megabytes and the modeller does not have room to hold it twice.
-            # The row is rebuilt rather than added to — a dict that came from JSON
-            # has its own key table, and two more keys make it bigger again, while
-            # dicts built here from one literal share a single key table between
-            # them.
-            while src_iv:
-                x = src_iv.pop()
-                intervals.append({"key": holeid.key(x["hole"]), "hole": x["hole"], "from": x["from"],
-                                  "to": x["to"], "el": x["el"], "grade": x["grade"],
-                                  "unit": x.get("unit"), "sub": x.get("sub", 0), "src": sid})
-        else:
-            for x in src_iv:
-                intervals.append({"key": holeid.key(x["hole"]), "hole": x["hole"], "from": x["from"],
-                                  "to": x["to"], "el": x["el"], "grade": x["grade"],
-                                  "unit": x.get("unit"), "sub": x.get("sub", 0), "src": sid})
+            # the caller owns this dataset and will not read it again
+            r["intervals"] = None
         res = r.get("resource")
         sources.append({"kind": ("imported data" if r.get("source") == "import"
                                  else "NI 43-101 technical report"), "id": sid,
@@ -755,7 +748,7 @@ def _materialise(p, news_holes, news_ivs, ov, styled_reports=(), consume=False):
                         "url": _filing_url(r), "archive": r.get("archive_url"),
                         "listing": r.get("report_url"),
                         "date": r.get("date"), "collars": len(r.get("collars") or []),
-                        "intervals": len(r.get("intervals") or []), "has_resource": bool(res)})
+                        "intervals": n_iv, "has_resource": bool(res)})
     # downhole surveys from reports (joined by normalised hole id)
     for r in reports:
         by = defaultdict(list)
@@ -776,8 +769,10 @@ def _materialise(p, news_holes, news_ivs, ov, styled_reports=(), consume=False):
                 h[a] = nh[a]
         h["src"].add("news:" + nh["rid"])
         holes[k] = h
-        for x in news_ivs.get((nh["rid"], nh["id"]), []):
-            intervals.append({"key": k, "hole": nh["id"], **x, "src": "news:" + nh["rid"]})
+        nv = news_ivs.get((nh["rid"], nh["id"]), [])
+        if nv:
+            intervals.extend(Intervals.from_rows(
+                [{"key": k, "hole": nh["id"], **x, "src": "news:" + nh["rid"]} for x in nv]))
         if nh["url"] and nh["url"] not in rel_seen:
             rel_seen[nh["url"]] = {"kind": "news release", "id": "news:" + nh["rid"],
                                    "title": re.sub(r"\s*-\s*Junior Mining Network.*$", "", (nh["title"] or nh["url"]))[:140],
@@ -794,16 +789,7 @@ def _materialise(p, news_holes, news_ivs, ov, styled_reports=(), consume=False):
                               "src": r["id"]})
 
     # --- dedupe intervals across sources (same hole/from/to/element)
-    seen, iv2 = set(), []
-    for x in intervals:
-        if not x["key"] or x["to"] is None or x["from"] is None or x["to"] <= x["from"]:
-            continue
-        kk = (x["key"], round(x["from"], 1), round(x["to"], 1), x["el"])
-        if kk in seen:
-            continue
-        seen.add(kk)
-        iv2.append(x)
-    intervals = iv2
+    intervals.dedupe()
 
     # --- frame: geographic when possible
     geo = [h for h in holes.values() if h.get("lat") is not None]

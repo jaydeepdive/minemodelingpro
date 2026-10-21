@@ -781,8 +781,10 @@ def _by_metal(primary, grids, by_el, units, key2i, H, PS, margin=None, style=Non
         ks.append(int((grs > 0).sum()) if c <= 0 else int(np.searchsorted(-grs, -c, "right")))
     tonnes = [round(k * bt) for k in ks]
 
+    # ordered by how many holes carry the metal, counted off the key column so
+    # that ranking nineteen metals does not build nineteen metals' worth of rows
     want = [primary] + sorted([e for e in by_el if e != primary],
-                              key=lambda e: -len({x["key"] for x in by_el[e]}))
+                              key=lambda e: -len(by_el.keys_of(e)))
     metals, order_out, by_metal_grades = {}, [], {}
     tcp = float(PS.get("top_cut_pct") or 99.5)
     # Every metal the drilling assayed is reported over the one deposit tonnage.
@@ -1036,19 +1038,21 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
         raise ValueError("no located holes")
     key2i = {h["key"]: i for i, h in enumerate(holes)}
     # --- intervals by element (only those on located holes)
-    by_el = defaultdict(list)
-    units = {}
-    for x in ds["intervals"]:
-        if x["key"] in key2i and x.get("el"):
-            by_el[x["el"]].append(x)
-            units.setdefault(x["el"], x.get("unit") or ("g/t" if x["el"] in PRECIOUS else "%"))
+    # The rows stay in columns and are built into row objects one element at a
+    # time, as the estimator asks for them. by_el answers exactly as the
+    # dictionary of lists it replaces did.
+    from minemodelingpro.ivtable import Intervals, ByElement
+    table = Intervals.coerce(ds["intervals"])
+    table.restrict_keys(set(key2i))
+    by_el = ByElement(table)
+    units = {e: (table.unit_of(e) or ("g/t" if e in PRECIOUS else "%")) for e in table.elements()}
     if not by_el:
         raise ValueError("no intervals on located holes")
     # repair or drop grades that cannot be true before they reach a model: a column
     # of parts per million read as per cent sets the grade, the cut-off, the cap and
     # the tonnage, all wrong, and nothing downstream can tell
     from minemodelingpro import sanity as SANITY
-    integrity, _dropped = SANITY.fix_intervals(by_el, verbose=verbose)
+    integrity, _dropped = SANITY.fix_table(table, verbose=verbose)
     for _el in _dropped:
         units.pop(_el, None)
     if not by_el:
@@ -1058,7 +1062,7 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
     res_el = next((r.get("element") for r in ds.get("resources") or [] if r.get("element")), None)
 
     def score(el):
-        n = len({x["key"] for x in by_el[el]})
+        n = len(table.keys_of(el))
         pri = ELEMENT_PRIORITY.index(el) if el in ELEMENT_PRIORITY else 50
         bonus = 0
         if res_unit == "oz" and el in ("Au", "Ag"):
@@ -1072,7 +1076,7 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
         if el.endswith("Eq"):
             bonus = 0.6
         return n * (bonus or 1.0) - pri * 0.01
-    els = sorted([e for e in by_el if len(by_el[e]) >= 4], key=score, reverse=True)[:max_elements]
+    els = sorted([e for e in by_el if by_el.count(e) >= 4], key=score, reverse=True)[:max_elements]
     if not els:
         els = sorted(by_el, key=score, reverse=True)[:1]
     if PS.get("elements"):                      # explicit element list from project settings
@@ -1096,10 +1100,7 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
         except Exception as e:
             if verbose:
                 print("  dem collars failed", e)
-    max_to = defaultdict(float)
-    for el in by_el:
-        for x in by_el[el]:
-            max_to[x["key"]] = max(max_to[x["key"]], float(x["to"]))
+    max_to = defaultdict(float, table.max_to_by_key())
     zs_known = [h.get("z") for h in holes if h.get("z") is not None]
     zfallback = float(np.median(zs_known)) if zs_known else 0.0
     H = []
@@ -1165,11 +1166,11 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
         sconf, swhy = "report", f"the technical report describes a {sdef['label']}"
     med_w = float(np.median([x for x in _w if x > 0])) if any(x > 0 for x in _w) else None
     mean_by_el = {}
-    for _e, _xs in by_el.items():
-        _vals = [float(x.get("grade") or 0) for x in _xs]
-        _vals = [v for v in _vals if v > 0]
-        if _vals:
-            mean_by_el[_e] = round(float(np.mean(_vals)), 4)
+    for _e in table.elements():
+        _g = table.grades(_e)
+        _g = _g[np.isfinite(_g) & (_g > 0)]
+        if len(_g):
+            mean_by_el[_e] = round(float(np.mean(_g)), 4)
     style_info = DSTY.describe(skey, swhy, sconf)
 
     # how far the zero-filled gaps may run past a reported intercept. One drill
