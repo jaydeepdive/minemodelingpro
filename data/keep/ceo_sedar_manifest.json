@@ -823,5 +823,20 @@
   "size_kb": 55965,
   "collected": "2026-10-20T23:54:00Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_AYA-2026-10-20-technical-report-ni-43-101-english-85b0.pdf"
+ },
+ {
+  "file": "ceo_HBM-2026-10-21-technical-report-ni-43-101-english-30a7.pdf",
+  "filing_ref": "HBM-2026-10-21-technical-report-ni-43-101-english-30a7.pdf",
+  "company": "HBM",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-10-21",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/HBM-2026-10-21-technical-report-ni-43-101-english-30a7.pdf",
+  "source": "ceo.ca",
+  "size_kb": 17777,
+  "collected": "2026-10-21T15:15:44Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_HBM-2026-10-21-technical-report-ni-43-101-english-30a7.pdf"
  }
 ]
