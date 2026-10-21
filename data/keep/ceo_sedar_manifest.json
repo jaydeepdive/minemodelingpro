@@ -838,5 +838,20 @@
   "size_kb": 17777,
   "collected": "2026-10-21T15:15:44Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_HBM-2026-10-21-technical-report-ni-43-101-english-30a7.pdf"
+ },
+ {
+  "file": "ceo_STU-2026-10-21-amended-restated-technical-report-ni-43-101-english-59e8.pdf",
+  "filing_ref": "STU-2026-10-21-amended-restated-technical-report-ni-43-101-english-59e8.pdf",
+  "company": "STU",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-10-21",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/STU-2026-10-21-amended-restated-technical-report-ni-43-101-english-59e8.pdf",
+  "source": "ceo.ca",
+  "size_kb": 23609,
+  "collected": "2026-10-21T19:20:56Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_STU-2026-10-21-amended-restated-technical-report-ni-43-101-english-59e8.pdf"
  }
 ]
