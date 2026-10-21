@@ -212,10 +212,16 @@ def do_build(job):
     gt = pe.get("gt") or [[0, 0, 0, 0]]
     want = pe.get("default_cutoff") or (pe["bins"][1] if len(pe["bins"]) > 1 else pe["bins"][0])
     cut = next((r for r in gt if r[0] >= want), gt[0])
+    whole = next((r for r in gt if r[0] <= 0), gt[0])    # every block the model holds
     stats = {"holes": model["counts"]["holes"], "intervals": model["counts"]["intervals"],
              "blocks": model["counts"]["blocks"], "element": model["primary"],
              "unit": pe["unit"], "cutoff": cut[0], "tonnes": cut[1], "grade": cut[2],
              "contained": cut[3], "contained_unit": pe.get("contained_unit"),
+             # a cut-off tonnage on its own has misled every reader of this card:
+             # it is a slice of the deposit, and the deposit's own size belongs
+             # beside it
+             "tonnes_all": whole[1], "grade_all": whole[2],
+             "elements": list(model.get("elements") or {}),
              "region": model.get("region"), "sources": len(model.get("sources") or []),
              "params": (pe.get("blocks") or {}).get("params", {}),
              "built": datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z"}

@@ -467,6 +467,46 @@ path.
 - Depths and grades stay float64 on purpose. float32 would round the fifth
   decimal of a grade, and "the same data" has to mean exactly that.
 
+## Which metal a deposit is about (2026-10-21)
+
+A silver mine was reported in copper. The cause: `score(el)` ranked elements by
+**how many holes carry them**, and a modern laboratory package assays every
+element on every hole — so every element tied, and the tie fell through to
+`ELEMENT_PRIORITY`, a generic list on which Cu sits two places above Ag. The
+same tie ordered `_by_metal`, so the metal table and the NSR value formula left
+the silver out of a silver deposit as well. One cause, three visible wrongs.
+
+`ore.py` is the fix: the grade at which each metal starts to be ore, and
+`significance(el, grades)` — how far above that floor this element gets here, in
+orders of magnitude, measured at the 99th percentile rather than the middle,
+because a deposit is the few per cent of the rock worth mining. Ranking is now
+`holes x (0.05 + significance) x bonus`.
+
+**Measured, not asserted.** Against the metal the filed resource names, with the
+filed-element bonus removed from both scorers so neither is helped: ranking by
+hole coverage picked it for 156 of 269 projects (58%); ranking by ore
+significance picks it for 175 (65%). Against each project's own stated
+commodity: 81% -> 84%. Of 449 multi-element projects, 39 change primary, and the
+ones that can be checked against the geology are nearly all corrections —
+Pulacayo, San Acacio, Haldane, La Parrilla and Cachinal to Ag; Lucky Shot,
+Rajapalot and Frotet to Au; Accha and Brabant-McKenzie to Zn; Maniitsoq to Ni;
+Opemiska to Cu.
+
+Also on the back of that build:
+
+- **A cut-off tonnage on its own misleads every reader of the project card.**
+  "7 kt" was the rock above a 0.1% *copper* cut-off on a silver property whose
+  model held 13.26 Mt. The card now shows the whole model's tonnage beside the
+  cut-off slice, names the metal in both labels, and lists which elements were
+  estimated with a line saying `elements` overrides the choice.
+- A collar table with a zone column that yields no usable zone now says so
+  rather than reporting "no UTM zone given".
+
+**A model built before this is wrong in these ways and does not fix itself** —
+the stored dataset and model are what they were. "Read the files again" re-parses
+and rebuilds; "Rebuild model" alone re-runs the model on the old parse, which is
+why a rebuild did not restore the coordinates.
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.

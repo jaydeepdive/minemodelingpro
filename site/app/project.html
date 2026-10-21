@@ -110,10 +110,15 @@ function paint(p, job, worker) {
       <div class="stat"><b>${fmt(s.holes)}</b><span>Holes</span></div>
       <div class="stat"><b>${fmt(s.intervals)}</b><span>Intervals</span></div>
       <div class="stat"><b>${fmt(s.blocks)}</b><span>Blocks</span></div>
-      <div class="stat"><b>${fmtT(s.tonnes)}</b><span>Tonnes ≥ ${s.cutoff ?? ""}</span></div>
-      <div class="stat"><b>${s.grade ?? "–"} ${esc(s.unit || "")}</b><span>Grade</span></div>
+      <div class="stat"><b>${fmtT(s.tonnes_all ?? s.tonnes)}</b><span>Tonnes, whole model</span></div>
+      <div class="stat"><b>${fmtT(s.tonnes)}</b><span>Tonnes ≥ ${s.cutoff ?? ""} ${esc(s.unit || "")} ${esc(s.element || "")}</span></div>
+      <div class="stat"><b>${s.grade ?? "–"} ${esc(s.unit || "")}</b><span>${esc(s.element || "")} grade above that cut-off</span></div>
       <div class="stat"><b>${fmtC(s.contained, s.contained_unit)}</b><span>Contained ${esc(s.element || "")}</span></div>
-    </div>` : `<p class="note">${p.status === "error" ? esc(p.error || "The last build failed.") : "Upload drill data to build the model."}</p>`;
+    </div>
+    ${s.elements && s.elements.length ? `<div class="note" style="margin-top:8px">Estimated on
+      <b>${esc(s.elements.join(", "))}</b> — <b>${esc(s.element || "")}</b> is taken as the metal this
+      deposit is about. Set <code>elements</code> in the model settings to choose for yourself.</div>` : ""}` :
+    `<p class="note">${p.status === "error" ? esc(p.error || "The last build failed.") : "Upload drill data to build the model."}</p>`;
   const open = $("#openmodel");
   if (p.model_key && p.status === "ready") { open.style.display = ""; open.href = "model.html?id=" + p.id; }
   else open.style.display = "none";

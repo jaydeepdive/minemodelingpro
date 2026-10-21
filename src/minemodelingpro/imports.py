@@ -1067,6 +1067,9 @@ def georeference(collars, epsg=None, utm_zone=None, hemisphere="N", datum="WGS84
     elif en:
         notes.append("coordinates: no EPSG code or UTM zone given — modelled in its own local grid "
                      "(no terrain, cannot merge with other sources)")
+    if crs.get("kind") == "local" and any("zone" in c for c in collars) and not _stated_zone(en):
+        notes.append("coordinates: the collar table has a zone column, but no zone between 1 and 60 "
+                     "could be read from it on enough rows to use")
     pts = sorted((c["lat"], c["lon"]) for c in collars if c.get("lat") is not None)
     center = [round(pts[len(pts) // 2][0], 5), round(pts[len(pts) // 2][1], 5)] if pts else None
     return crs, center

@@ -781,10 +781,16 @@ def _by_metal(primary, grids, by_el, units, key2i, H, PS, margin=None, style=Non
         ks.append(int((grs > 0).sum()) if c <= 0 else int(np.searchsorted(-grs, -c, "right")))
     tonnes = [round(k * bt) for k in ks]
 
-    # ordered by how many holes carry the metal, counted off the key column so
-    # that ranking nineteen metals does not build nineteen metals' worth of rows
-    want = [primary] + sorted([e for e in by_el if e != primary],
-                              key=lambda e: -len(by_el.keys_of(e)))
+    # Ordered by whether the metal is ore here, then by how many holes carry it —
+    # counted off the columns, so ranking nineteen metals does not build nineteen
+    # metals' worth of rows. Coverage alone cannot order a laboratory package:
+    # every element in it was assayed on every hole.
+    tbl = getattr(by_el, "table", None)
+    def _rank(e):
+        sig = tbl.ore_fraction(e) if tbl is not None else 1.0
+        n = len(by_el.keys_of(e)) if hasattr(by_el, "keys_of") else len({x["key"] for x in by_el[e]})
+        return -(n * (0.05 + sig))
+    want = [primary] + sorted([e for e in by_el if e != primary], key=_rank)
     metals, order_out, by_metal_grades = {}, [], {}
     tcp = float(PS.get("top_cut_pct") or 99.5)
     # Every metal the drilling assayed is reported over the one deposit tonnage.
@@ -1063,6 +1069,11 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
 
     def score(el):
         n = len(table.keys_of(el))
+        # A laboratory package assays every element on every hole, so counting
+        # holes ties them all and the generic priority list decides — which is how
+        # a silver mine came to be reported in copper. What breaks the tie is
+        # whether the metal ever reaches a grade worth mining here.
+        sig = table.ore_fraction(el)
         pri = ELEMENT_PRIORITY.index(el) if el in ELEMENT_PRIORITY else 50
         bonus = 0
         if res_unit == "oz" and el in ("Au", "Ag"):
@@ -1075,7 +1086,7 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
             bonus = max(bonus, 2.0)
         if el.endswith("Eq"):
             bonus = 0.6
-        return n * (bonus or 1.0) - pri * 0.01
+        return n * (0.05 + sig) * (bonus or 1.0) - pri * 0.01
     els = sorted([e for e in by_el if by_el.count(e) >= 4], key=score, reverse=True)[:max_elements]
     if not els:
         els = sorted(by_el, key=score, reverse=True)[:1]

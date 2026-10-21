@@ -218,6 +218,11 @@ class Intervals:
             return set()
         return {self.keys[i] for i in np.unique(self.key_i[w])}
 
+    def ore_fraction(self, el):
+        """The share of this element's assays that reach a grade worth mining."""
+        from minemodelingpro import ore
+        return ore.significance(el, self.grades(el))
+
     def mean(self, el):
         g = self.grades(el)
         g = g[np.isfinite(g)]

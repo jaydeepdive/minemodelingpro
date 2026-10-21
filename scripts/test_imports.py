@@ -187,5 +187,19 @@ with tempfile.TemporaryDirectory() as tmp:
     except Exception as e:
         print("  skip  UTM zone from terrain (DEM unavailable: %s)" % str(e)[:60])
 
+# 6 — which metal a project is about
+from minemodelingpro import ore                                  # noqa: E402
+
+check("silver in a vein outranks background copper",
+      ore.significance("Ag", [2, 3, 5, 900, 1800, 4] * 30) >
+      ore.significance("Cu", [0.02, 0.05, 0.1, 0.25, 0.03] * 30))
+check("a metal that never reaches ore grade scores nothing",
+      ore.significance("W", [0.0001, 0.0005, 0.002] * 40) == 0.0)
+check("a gold deposit still reads as gold",
+      ore.significance("Au", [0.1, 0.4, 3.0, 12.0, 0.2] * 30) >
+      ore.significance("Ag", [1, 2, 8, 20, 3] * 30))
+check("an element with no floor cannot outrank one that is ore",
+      ore.significance("Hf", [1, 2, 3]) < ore.significance("Ag", [50, 400, 900] * 40))
+
 print("\n%d passed, %d failed" % (len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)
