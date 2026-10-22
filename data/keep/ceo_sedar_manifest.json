@@ -853,5 +853,20 @@
   "size_kb": 23609,
   "collected": "2026-10-21T19:20:56Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_STU-2026-10-21-amended-restated-technical-report-ni-43-101-english-59e8.pdf"
+ },
+ {
+  "file": "ceo_GGL-2026-10-22-technical-report-ni-43-101-english-922e.pdf",
+  "filing_ref": "GGL-2026-10-22-technical-report-ni-43-101-english-922e.pdf",
+  "company": "GGL",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-10-22",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/GGL-2026-10-22-technical-report-ni-43-101-english-922e.pdf",
+  "source": "ceo.ca",
+  "size_kb": 17484,
+  "collected": "2026-10-22T20:08:00Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_GGL-2026-10-22-technical-report-ni-43-101-english-922e.pdf"
  }
 ]
