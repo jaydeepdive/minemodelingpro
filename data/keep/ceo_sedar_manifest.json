@@ -883,5 +883,35 @@
   "size_kb": 18702,
   "collected": "2026-10-22T23:31:17Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_CNL-2026-10-22-technical-report-ni-43-101-english-b2ff.pdf"
+ },
+ {
+  "file": "ceo_DMET-2026-10-23-technical-report-ni-43-101-english-6246.pdf",
+  "filing_ref": "DMET-2026-10-23-technical-report-ni-43-101-english-6246.pdf",
+  "company": "DMET",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-10-23",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/DMET-2026-10-23-technical-report-ni-43-101-english-6246.pdf",
+  "source": "ceo.ca",
+  "size_kb": 12810,
+  "collected": "2026-10-24T00:43:23Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_DMET-2026-10-23-technical-report-ni-43-101-english-6246.pdf"
+ },
+ {
+  "file": "ceo_PNPN-2026-10-23-technical-report-ni-43-101-english-10c6.pdf",
+  "filing_ref": "PNPN-2026-10-23-technical-report-ni-43-101-english-10c6.pdf",
+  "company": "PNPN",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-10-23",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/PNPN-2026-10-23-technical-report-ni-43-101-english-10c6.pdf",
+  "source": "ceo.ca",
+  "size_kb": 19691,
+  "collected": "2026-10-24T00:43:30Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_PNPN-2026-10-23-technical-report-ni-43-101-english-10c6.pdf"
  }
 ]
