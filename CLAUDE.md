@@ -507,6 +507,78 @@ the stored dataset and model are what they were. "Read the files again" re-parse
 and rebuilds; "Rebuild model" alone re-runs the model on the old parse, which is
 why a rebuild did not restore the coordinates.
 
+## How far mineralisation is carried between holes (2026-10-24)
+
+Jordan: "we aren't accounting for mineralisation in the gaps between holes which
+are a reasonable distance apart ... we are coming up too short." He was right,
+and the corpus says by how much.
+
+**What qualified persons actually search.** 796 extracted reports state the
+search range their own estimate used; 149 of those are projects MMP also models,
+so the range can be read as a multiple of the drill spacing MMP measures from
+the same collars.
+
+| style | n | stated range, median | as a multiple of spacing |
+|---|---|---|---|
+| orogenic | 63 | 45 m | 1.4x |
+| vms | 40 | 60 m | 2.2x |
+| bulk | 123 | 100 m | 2.2x |
+| pegmatite | 81 | 65 m | 2.7x |
+| skarn | 69 | 75 m | 3.7x |
+| vein | 284 | 60 m | 4.7x |
+| iron | 30 | 100 m | 5.0x |
+| porphyry | 58 | 200 m | 5.9x |
+
+MMP searched **0.75x the spacing, capped at 70 m, for every deposit on earth** —
+a median envelope of 31 m, clamped at the cap on 134 of 612 projects. (Also
+worth knowing: nearest-neighbour spacing understates the pattern. The median
+distance to the *fourth* nearest hole is 2.34x the nearest, because collars
+cluster on pads. The multiples above are measured against the same
+nearest-neighbour definition MMP uses, so they already absorb that.)
+
+**What shipped.** `STYLE_REACH` + `reach_for_style`, and the key distinction:
+
+- **Inside the body** — the gaps between holes — the estimate now carries as far
+  as filings of that style carry it (`domain_reach`), bounded by the upper
+  quartile of what those filings state. This is the change that fills the gaps.
+- **Outside the body**, every metre is extrapolation past the last hole, and
+  that leash is unchanged: 0.75x the spacing, capped at 70 m.
+- The three passes now tier on **distance as well as hole count** (0.35 / 0.65 /
+  1.0 of the envelope, with 3 / 2 / 1 holes), which is what a classification is.
+  The tiers stay MMP's own words — well / moderately / thinly drilled — not CIM
+  categories.
+- The search radius is now never smaller than the envelope. It could be, and a
+  block at the edge then had nothing to be estimated from: a silent hole.
+
+**Measured on 78-33 projects with a filed statement, same projects each arm:**
+
+| | med abs log error | median ratio | within 1.5x | within 2x | worse than 10x |
+|---|---|---|---|---|---|
+| grade-matched, as it was | 1.097 | 0.82 | 16 | 26 | 20 |
+| grade-matched, shipped | **1.029** | **0.87** | 17 | 27 | 20 |
+| at their cut-off, as it was | 1.149 | 1.41 | 7 | 9 | 3 |
+| at their cut-off, shipped | **1.047** | 1.41 | 7 | 10 | 4 |
+
+### Tested and NOT shipped: the long reach outside the body too
+
+Letting the style reach set the extrapolation envelope as well looks better on
+the band counts (within 1.5x 7 -> 11 at their cut-off) and is not worth having:
+it leaves the symmetric error flat on the larger sample (1.097 -> 1.100), and it
+creates blow-ups. **Blue Moon went to 121x its filed tonnage**, Cachinal to 9.5x,
+Eastern Borosi to 7.9x — small deposits on wide spacing, where 0.75x a sparse
+pattern is a long way and nothing stops it. Twelve projects moved closer to
+their filing and nineteen moved further.
+
+A related mistake, caught the same way: raising the **wireframe's** link reach to
+the estimator's reach. The body's shape is a geological question — how far a unit
+of this kind can be carried between two holes before the link is invention — and
+`halo_max_m x 3` is what bounds it. The estimator may search further than the
+body is drawn; it may not redraw the body.
+
+**What is actually limiting accuracy now is not reach.** 20 of those 78 projects
+are off by more than 10x in *both* arms, and no setting of this knob touches
+them. That bucket — not the search distance — is where the next gain is.
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.

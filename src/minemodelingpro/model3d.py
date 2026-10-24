@@ -225,6 +225,48 @@ def _limit_per_hole(hid_cols, near, max_per_hole):
     return keep
 
 
+
+# How far mineralisation may be carried between holes, by deposit style.
+#
+# Measured, not assumed. 796 of the extracted technical reports state the search
+# range their own estimate used, and 149 of those are projects MMP also models,
+# so the range can be read as a multiple of the drill spacing MMP measures from
+# the same collars. The qualified persons who filed these resources searched a
+# median 1.4x the spacing on an orogenic gold vein and 5.9x on a porphyry. MMP
+# was estimating out to 0.75x, capped at 70 m, on every deposit on earth — a
+# median envelope of 31 m, clamped at the cap on 134 of 612 projects — which is
+# why its tonnages came up short against the statements they are checked against.
+#
+#   style: (multiple of drill spacing, cap in metres)
+# The cap is the upper quartile of what reports of that style actually state, so
+# a project drilled unusually tightly stays tight and one drilled on a wide grid
+# is not carried further than its peers' own estimates go.
+STYLE_REACH = {
+    "orogenic":  (1.4, 70.0),
+    "vms":       (2.2, 200.0),
+    "bulk":      (2.2, 175.0),
+    "sedex":     (2.5, 175.0),
+    "laterite":  (2.5, 150.0),
+    "pegmatite": (2.7, 140.0),
+    "phosphate": (3.0, 300.0),
+    "skarn":     (3.7, 130.0),
+    "vein":      (4.7, 100.0),
+    "iron":      (5.0, 200.0),
+    "porphyry":  (5.9, 250.0),
+}
+REACH_DEFAULT = (2.5, 150.0)
+
+
+def reach_for_style(style, spacing, block_max=5.0):
+    """The outermost distance a block may sit from a composite, for this style.
+
+    This is the inferred-resource reach: the distance at which a filing of this
+    kind still carries grade between holes. The two tighter tiers are fractions
+    of it (see `_passes`), so one number sets the whole ladder."""
+    k, cap = STYLE_REACH.get(str(style or "").lower(), REACH_DEFAULT)
+    return float(np.clip(k * float(spacing or 50.0), 1.6 * float(block_max), cap))
+
+
 def _passes(radius, max_gap, min_holes, min_samples, given=None):
     """Three estimation passes of decreasing confidence, inside one envelope.
 
@@ -253,8 +295,13 @@ def _passes(radius, max_gap, min_holes, min_samples, given=None):
     # three quarters of the drill spacing, so "within half of that" is closer than
     # any second hole ever gets, and the top tier stayed empty no matter how the
     # sample counts moved.
-    return [(radius, max_gap * 0.75, max(3, min_holes + 1), 3),
-            (radius, max_gap, max(2, min_holes), 2),
+    # Now that the envelope is the style's own inferred reach rather than three
+    # quarters of the drill spacing, the tiers can be what a classification
+    # actually is: how close the drilling is AND how much of it sees the block.
+    # A block beside several holes is well drilled; one carried most of a reach
+    # out from a single hole is not, and says so.
+    return [(radius, max_gap * 0.35, max(3, min_holes + 1), 3),
+            (radius, max_gap * 0.65, max(2, min_holes), 2),
             (radius, max_gap, 1, 2)]
 def frame_from_trend(dip, dip_direction, plunge=0.0):
     """The body's own axes from a stated orientation, as rows (major, intermediate,
@@ -342,8 +389,22 @@ def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None,
     o = opts or {}
     bx, by, bz = [float(v) for v in block]
     bmax = max(bx, by, bz)
-    radius = float(o.get("radius_m") or np.clip(spacing * 1.6, 4 * bmax, 160.0))
+    # Two different distances, and running them together is how a model either
+    # comes up short or invents a deposit.
+    #
+    # INSIDE the body — the gaps between holes — the estimate should carry as far
+    # as a filing of this kind carries it: that is `domain_reach`, set from the
+    # style's own measured search range, and it is what fills the ground between
+    # holes that are a reasonable distance apart.
+    #
+    # OUTSIDE it, every metre is extrapolation past the last hole, and the right
+    # leash is the project's own drill spacing. The old rule — three quarters of
+    # the spacing, capped at 70 m for every deposit on earth — was too tight for
+    # both jobs at once; the cap alone clamped 134 of 612 projects, most of them
+    # the big low-grade ones where the gaps are widest.
     max_gap = float(o.get("max_gap_m") or np.clip(spacing * 0.75, 1.6 * bmax, 70.0))
+    radius = float(o.get("radius_m") or np.clip(spacing * 1.6, 4 * bmax, 160.0))
+    radius = max(radius, max_gap)
     min_holes = int(o.get("min_holes") or 2)
     min_samples = int(o.get("min_samples") or 3)
     power = float(o.get("power") if o.get("power") is not None else 2.0)
@@ -1271,10 +1332,20 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
             # What those projects need is more drilling in the model, not a longer
             # reach in the estimator.
             from minemodelingpro import domain as DOM
+            # how far this deposit's own kind of filing carries grade between holes
+            el_reach = float(PS.get("max_gap_m") or PS.get("reach_m") or
+                             reach_for_style(skey, spacing, max(blk)))
             dom_pts, dom_info = (None, None)
             if PS.get("domain") is not False:
                 rot_d, an_d = anisotropy(pts, g, eopts.get("anisotropy"),
                                          trend=eopts.get("trend"))
+                # The body's own shape stays a geological question: how far a
+                # unit of this kind can be carried between two holes before the
+                # link is invention. Letting the estimator's reach raise this cap
+                # was a mistake measured at Blue Moon, whose tonnage went to 121x
+                # its filing because the wireframe linked a vein across a hundred
+                # metres. The estimator may search further than the body is drawn;
+                # it may not redraw the body.
                 reach = DOM.reach_for(PS.get("link_reach_m") or spacing,
                                       style_reach=sdef.get("halo_max_m", 0) * 3 or None)
                 # the logged geology where the project states which units are ore,
@@ -1307,10 +1378,18 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                 # membership is "inside this wireframe", a block's own size, not
                 # "within a halo of a line"
                 dom_r = max(0.75 * float(max(blk)), 2.0)
-                dom_reach = max(float(PS.get("radius_m") or 0.0), 0.6 * float(reach))
+                # what a filing of this kind searches, which is the distance it
+                # carries grade across a gap inside the body it has drawn
+                dom_reach = max(float(PS.get("radius_m") or 0.0), el_reach)
+                _k, _cap = STYLE_REACH.get(str(skey or "").lower(), REACH_DEFAULT)
+                reach_why = ("the search range this project's report states"
+                             if PS.get("radius_m") else
+                             "%g x the %.0f m drill spacing, what %s filings search"
+                             % (_k, spacing, skey or "these"))
                 if dom_info:
                     dom_info["thickness_m"] = round(dom_r, 1)
                     dom_info["grade_reach_m"] = round(dom_reach, 1)
+                    dom_info["grade_reach_why"] = reach_why
             lo, bsz, ijk, gr, params, bcls = estimate_blocks(
                 pts, g, hid, blk, spacing, opts=eopts,
                 domain_pts=dom_pts, domain_radius=dom_r,
