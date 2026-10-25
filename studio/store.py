@@ -124,8 +124,19 @@ class DB:
                                      r["project_id"]))
                 else:
                     requeued.append(r)
-                    cur.execute("update jobs set status = 'queued', heartbeat_at = null, "
-                                "started_at = null where id = %s", (r["id"],))
+                    # say so, and say it somewhere the successful retry will not
+                    # overwrite: otherwise a build that died once and worked the
+                    # second time reads as "attempt 2" with no explanation, which
+                    # is indistinguishable from it failing for ever
+                    cur.execute(
+                        "update jobs set status = 'queued', heartbeat_at = null, "
+                        "started_at = null, notes = concat_ws(chr(10), notes, %s::text) "
+                        "where id = %s",
+                        # attempts counts the one that just died, not the next one
+                        ("attempt %d stopped responding after %g minutes and was "
+                         "restarted — most often the modeler ran out of memory and "
+                         "the kernel stopped it without a message"
+                         % (max(1, r["attempts"] or 1), timeout_min), r["id"]))
             return requeued, dead
 
     def worker_beat(self, wid="modeler", note=None):

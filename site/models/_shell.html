@@ -197,8 +197,8 @@ button.mini:hover{background:var(--chip)}
 #labels span{position:absolute;font-size:10.5px;font-weight:500;color:#1d2530;background:rgba(255,255,255,.78);padding:0 4px;border-radius:3px;
   transform:translate(6px,-50%);white-space:nowrap}
 /* a body's own name, sitting in the middle of it */
-#labels span.zl{font-size:11.5px;font-weight:700;color:#fff;padding:1px 7px;border-radius:9px;
-  transform:translate(-50%,-50%);box-shadow:0 1px 4px rgba(0,0,0,.28);letter-spacing:.2px}
+#labels span.zl{font-size:10px;font-weight:700;color:#fff;padding:0 5px;border-radius:7px;
+  transform:translate(-50%,-50%);opacity:.82;box-shadow:none;letter-spacing:.2px}
 #mtools{display:none}
 @media (max-width:760px){
   #leftcol{display:contents}
@@ -257,6 +257,7 @@ button.mini:hover{background:var(--chip)}
       <label class="tg"><input type="checkbox" id="L-trace" checked>Drill traces &amp; collars</label>
       <label class="tg"><input type="checkbox" id="L-blocks" checked>Block model<small id="blk-note"></small></label>
       <label class="tg"><input type="checkbox" id="L-body">Deposit shape (wireframe)<small id="body-note"></small></label>
+      <label class="tg" id="zlab-row" style="display:none;padding-left:18px"><input type="checkbox" id="L-zlabels">Name each body on screen</label>
       <label class="tg"><input type="checkbox" id="L-terrain">Terrain<small id="ter-note"></small></label>
       <label class="tg"><input type="checkbox" id="L-labels">Hole labels</label>
       <div class="rng" id="ter-op-row"><div class="row"><span>Terrain opacity</span><span class="v" id="ter-op-v">45%</span></div>

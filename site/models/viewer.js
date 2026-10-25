@@ -170,11 +170,23 @@ function buildBody(){
   if(why){
     if(B){why.style.display="";
       const nz=(B.zones||[]).filter(z=>z.id>0).length,un=(B.zones||[]).some(z=>z.id===0);
+      why.innerHTML="";
       why.textContent="The shape the model triangulated through the mineralised intercepts"
         +(nz?" — "+nz+" named "+(nz===1?"body":"bodies")+", coloured to match the zone chips":"")
         +(un?", plus grey ground that belongs to no named body":"")
         +(B.reach_m?". Holes are linked up to "+B.reach_m+" m apart":"")
         +". Blocks are only estimated inside it, so a gap here is a gap the drilling could not justify closing.";
+      // and the question that matters: how much of the drilled mineralisation
+      // actually ended up inside it
+      setTimeout(()=>{try{
+        const R=reconcile();if(!R||!R.ore)return;
+        const pc=Math.round(100*R.mod/R.ore);
+        const d=document.createElement("div");
+        d.style.cssText="margin-top:5px;font-weight:700;color:"+(pc<70?"#c0392b":"#1d2530");
+        d.textContent="Of the "+fmtN(Math.round(R.ore))+" m of "+EL+" the assays report at or above "
+          +fmtG(curCut,E.unit)+", the model covers "+pc+"%"
+          +(pc<70?" — the rest is outside the shape. Open Drill data to see which holes.":".");
+        why.appendChild(d);}catch(e){}},0);
     } else {why.style.display="none";}
   }
   BD=null;
@@ -184,12 +196,32 @@ function buildBody(){
   for(let i=0;i<n;i++){const p=V(o[0]+(ijk[i*3]+.5)*bx,o[1]+(ijk[i*3+1]+.5)*by,o[2]+(ijk[i*3+2]+.5)*bz);
     pos[i*3]=p.x;pos[i*3+1]=p.y;pos[i*3+2]=p.z;}
   BD={n,pos,zone:B.zone?b64(B.zone,Uint8Array):null,zones:B.zones||[]};
+  // Put each name ON its body, not at its average position. A body that bends
+  // round a corner, or is two lobes with a gap, has a mean that lands in empty
+  // ground — or inside a different zone — which is why the names looked like
+  // they had nothing to do with the shapes they were naming. The medoid (the
+  // cell nearest the mean) is always a cell of that body.
+  {
+    const sum={},cnt={};
+    for(let i=0;i<n;i++){const z=BD.zone?BD.zone[i]:0;
+      const a=sum[z]||(sum[z]=[0,0,0]);a[0]+=pos[i*3];a[1]+=pos[i*3+1];a[2]+=pos[i*3+2];
+      cnt[z]=(cnt[z]||0)+1;}
+    const best={};
+    for(let i=0;i<n;i++){const z=BD.zone?BD.zone[i]:0,c=cnt[z],a=sum[z];
+      const dx=pos[i*3]-a[0]/c,dy=pos[i*3+1]-a[1]/c,dz=pos[i*3+2]-a[2]/c;
+      const d=dx*dx+dy*dy+dz*dz;
+      if(!best[z]||d<best[z][0])best[z]=[d,i];}
+    BD.anchor={};
+    for(const z in best){const i=best[z][1];
+      BD.anchor[z]=[pos[i*3],pos[i*3+1],pos[i*3+2]];}
+  }
   const geo=new THREE.BoxGeometry(bx,bz,by);
   bodyMesh=new THREE.InstancedMesh(geo,new THREE.MeshLambertMaterial({
     transparent:true,opacity:+(($("body-op")||{}).value||18)/100,
     depthWrite:false,side:THREE.DoubleSide}),n);
   bodyMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   bodyMesh.visible=!!(cb&&cb.checked);
+  {const r=$("zlab-row");if(r)r.style.display=bodyMesh.visible?"":"none";}
   scene.add(bodyMesh);applyBody();}
 
 /* Which of the envelope is drawn: everything, or one body when a zone is picked.
@@ -208,15 +240,21 @@ function applyBody(){
 /* the body's name, written in the middle of it */
 function zoneLabels(){
   if(!BD||!bodyMesh||!bodyMesh.visible||!BD.zones.length)return[];
+  const cb=$("L-zlabels");
+  // Names over a deposit are a reading aid, not a default. Nineteen of them
+  // covered the model they were describing, so they are opt-in — and when one
+  // body is picked, that body's name is the only one worth drawing anyway.
+  if(!curZone&&!(cb&&cb.checked))return[];
   const out=[];
-  // a property can carry fifty bodies and fifty labels is a wall of text; the
-  // list is biggest-first, so the ones worth naming are at the front
   const cap=curZone?BD.zones.length:(MOBILE?6:14);
   for(const z of BD.zones){
     if(curZone&&z.id!==curZone)continue;
     if(out.length>=cap)break;
-    if(!z.centre)continue;
-    const s=scr(V(z.centre[0],z.centre[1],z.centre[2]));
+    const a=(BD.anchor&&BD.anchor[z.id])||null;   // a point on the body itself
+    const p=a?new THREE.Vector3(a[0],a[1],a[2])
+             :(z.centre?V(z.centre[0],z.centre[1],z.centre[2]):null);
+    if(!p)continue;
+    const s=scr(p);
     if(s[2]>1||s[0]<0||s[1]<0||s[0]>W()||s[1]>Hh())continue;
     out.push(`<span class="zl" style="left:${s[0]}px;top:${s[1]}px;background:${zoneColor(z.id)}">`
              +esc(z.name)+`</span>`);}
@@ -265,9 +303,13 @@ function reconcile(){
   for(const x of IV){
     if(!(x.g>=curCut))continue;
     const L=Math.max(0,(x.t||0)-(x.f||0));if(!L)continue;
-    const nsteps=Math.max(1,Math.ceil(L/step));let inside=0,gsum=0,gn=0;
+    const nsteps=Math.max(1,Math.min(64,Math.ceil(L/step)));let inside=0,gsum=0,gn=0;
+    // the hole is desurveyed once per interval, not once per step: over a metre
+    // or two of core a surveyed path is a straight line to well under a block
+    const A=atM(x.h,x.f),Bb=atM(x.h,x.t);
     for(let s=0;s<nsteps;s++){
-      const md=x.f+L*(s+0.5)/nsteps,P=atM(x.h,md),bg=blockAt(P[0],P[1],P[2]);
+      const u=(s+0.5)/nsteps;
+      const bg=blockAt(A[0]+(Bb[0]-A[0])*u,A[1]+(Bb[1]-A[1])*u,A[2]+(Bb[2]-A[2])*u);
       if(bg!==undefined){inside++;if(bg>0){gsum+=bg;gn++;}}}
     const cov=L*inside/nsteps;
     ore+=L;mod+=cov;
@@ -1056,7 +1098,10 @@ $("L-terrain").onchange=e=>{if(terrain)terrain.visible=e.target.checked;store.se
 $("ter-op").oninput=e=>{const v=+e.target.value;$("ter-op-v").textContent=v+"%";if(terrain){terrain.material.uniforms.uOp.value=v/100;terrain.material.depthWrite=v>=100;}store.set("terop",v);};
 $("blk-op").oninput=e=>{const v=+e.target.value;$("blk-op-v").textContent=v+"%";if(blockMesh){blockMesh.material.opacity=v/100;blockMesh.material.transparent=v<100;blockMesh.material.depthWrite=v>=100;blockMesh.material.needsUpdate=true;}store.set("blkop",v);};
 {const v=store.get("blkop",35);$("blk-op").value=v;$("blk-op-v").textContent=v+"%";$("L-blocks").checked=store.get("blocks",true);}
-$("L-body").onchange=e=>{if(bodyMesh)bodyMesh.visible=e.target.checked;store.set("body",e.target.checked);drawLabels();};
+$("L-body").onchange=e=>{if(bodyMesh)bodyMesh.visible=e.target.checked;store.set("body",e.target.checked);
+  const r=$("zlab-row");if(r)r.style.display=e.target.checked?"":"none";drawLabels();};
+$("L-zlabels").onchange=e=>{store.set("zlabels",e.target.checked);drawLabels();};
+{const v=store.get("zlabels",false);const c=$("L-zlabels");if(c)c.checked=v;}
 $("body-op").oninput=e=>{const v=+e.target.value;$("body-op-v").textContent=v+"%";
   if(bodyMesh){bodyMesh.material.opacity=v/100;bodyMesh.material.needsUpdate=true;}store.set("bodyop",v);};
 {const v=store.get("bodyop",18);$("body-op").value=v;$("body-op-v").textContent=v+"%";

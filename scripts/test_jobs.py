@@ -142,5 +142,30 @@ check("a version bump trickles rather than stampeding",
       n == W.REFRESH_BATCH and
       d.one("select count(*) as n from jobs where kind='build'")["n"] == W.REFRESH_BATCH, n)
 
+# --- a build that dies once and works the second time must say what happened
+d.run("delete from jobs")
+jn = queue("build")
+d.run("update jobs set status='running', attempts=1, heartbeat_at=now()-interval '90 minutes' "
+      "where id=%s", jn["id"])
+req, dead = d.requeue_stale(20, 3)
+row = d.one("select status, notes from jobs where id=%s", jn["id"])
+check("a requeued job records why it was requeued", bool(row["notes"]), row)
+check("the note names the attempt that died", "attempt 1" in (row["notes"] or ""), row["notes"])
+check("the note is readable, not a stack trace",
+      "memory" in (row["notes"] or "") and "restarted" in (row["notes"] or ""))
+
+d.run("update jobs set status='running', attempts=2, heartbeat_at=now()-interval '90 minutes' "
+      "where id=%s", jn["id"])
+d.requeue_stale(20, 3)
+row = d.one("select notes from jobs where id=%s", jn["id"])
+check("a second death adds a second line", len((row["notes"] or "").splitlines()) == 2,
+      row["notes"])
+
+# the whole point: the attempt that succeeds must not erase the one that failed
+d.run("update jobs set status='done', log='built 602 holes' where id=%s", jn["id"])
+row = d.one("select log, notes from jobs where id=%s", jn["id"])
+check("the success log does not erase the failure note",
+      row["log"] == "built 602 holes" and bool(row["notes"]))
+
 print("\n%d passed, %d failed" % (len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

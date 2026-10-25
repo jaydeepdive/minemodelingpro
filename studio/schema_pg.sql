@@ -106,6 +106,10 @@ create index if not exists events_at on events (at desc);
 -- a job that dies with its worker must not leave the project parsing forever:
 -- the worker beats while it works, and a job whose beat has stopped is requeued.
 alter table jobs add column if not exists heartbeat_at timestamptz;
+-- what happened on an attempt that did not finish. `log` is overwritten by the
+-- attempt that succeeds, so a build that died once and worked the second time
+-- showed "attempt 2" and no reason at all.
+alter table jobs add column if not exists notes text;
 create index if not exists jobs_running on jobs (status, heartbeat_at);
 
 -- so the app can say "the modeler is not responding" instead of spinning

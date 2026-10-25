@@ -143,6 +143,10 @@ function paint(p, job, worker) {
       `<div class="note">${spin}${esc(job.kind)} · ${esc(job.status)}${age ? " · " + esc(age) : ""}` +
       `${job.attempts > 1 ? " · attempt " + job.attempts : ""}</div>` +
       (warn ? `<div class="note" style="color:var(--red)">${esc(warn)}</div>` : "") +
+      // what went wrong on an attempt that did not finish. The log belongs to the
+      // attempt that did, so without this a build that died once and worked the
+      // second time said "attempt 2" and nothing else.
+      (job.notes ? `<div class="note" style="color:var(--red);margin-top:6px">${esc(job.notes)}</div>` : "") +
       (job.log ? `<div class="log" style="margin-top:6px">${esc(job.log)}</div>` : "");
   }
 }

@@ -117,6 +117,19 @@ def sweep(verbose=True):
     return len(requeued) + len(dead)
 
 
+def _pulse():
+    """What the worker wants anyone debugging it to know, on every beat.
+
+    The memory limit above all: this container is sized in the DO console, not in
+    the repo, and a build that dies at 1 GB and survives at 2 GB looks identical
+    from the page. /api/health reports this, so "how much memory does the modeler
+    actually have" is answerable without opening a console."""
+    try:
+        return "mem %d MB · model v%d" % (int(M3.mem_budget_mb()), M3.MODEL_VERSION)
+    except Exception:
+        return "polling"
+
+
 def refresh_stale_models(verbose=True):
     """Rebuild the models an improvement has not reached yet.
 
@@ -464,7 +477,7 @@ def main():
     last_refresh = 0.0                     # look for stale models on the first idle tick
     while True:
         try:
-            store.db().worker_beat("modeler")
+            store.db().worker_beat("modeler", _pulse())
             busy = run_once()
         except KeyboardInterrupt:
             return

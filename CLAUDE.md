@@ -805,6 +805,62 @@ of them) — but Studio no longer depends on them.
 a null element, so a page whose baked shell predates a control simply does not
 show it. Keep that habit.
 
+## A build that failed silently, and names that lied (2026-10-25)
+
+Three complaints, three real causes.
+
+**"building the model also keeps failing."** The card said "attempt 2" and gave no
+reason, because there was none to give: `requeue_stale` put a dead job back on
+the queue without writing anything, and `log()` on the attempt that succeeded
+overwrote whatever had been there. A build that died once and worked the second
+time was indistinguishable from one failing for ever. `jobs.notes` (idempotent
+ALTER) now accumulates a line per dead attempt — "attempt 1 stopped responding
+after 20 minutes and was restarted — most often the modeler ran out of memory and
+the kernel stopped it without a message" — and the project card shows it in red
+above the log. Four tests in `test_jobs.py`, including that a later success does
+not erase it.
+
+**The worker now says how much memory it has**, on every beat
+(`worker._pulse()` → `/api/health.worker_note`: "mem 2048 MB · model v8"). The
+modeler is sized in the DO console, not in the repo, and a build that dies at
+1 GB and survives at 2 GB looks identical from the page. Check this first when a
+build dies.
+
+*Caught by the test, worth remembering:* `concat_ws(chr(10), notes, %s)` fails
+with "could not determine data type of parameter $1" — Postgres cannot infer a
+bare parameter's type inside `concat_ws`. It needs `%s::text`, and without the
+cast `requeue_stale` raises, the sweep swallows it, and **no stale job is ever
+requeued again**. Always exercise a store change against the real Postgres.
+
+## The zone names were in the wrong place (2026-10-25)
+
+Jordan: "zone labels are completly blocking my ability to be able to see the
+model" and "why does the wireframe not correspond whatsoever to the zones being
+outlined."
+
+The second is the real bug. A label was drawn at its zone's **mean** cell
+position, and a body that bends round a corner or sits in two lobes has a mean
+in empty ground — or inside a different zone's body. The names genuinely did not
+correspond to the shapes. The viewer now computes each body's **medoid** (the
+cell nearest the mean, which is always a cell of that body) when it builds the
+mesh — client-side, from cells already shipped, so no rebuild — and anchors the
+name there. Verified 17/17 anchors are cells of their own body on Angilak.
+
+The first is a default: nineteen names over a deposit cover the thing they
+describe. Labels are now **opt-in** ("Name each body on screen", nested under the
+shape layer, which only appears when the shape is on), smaller and at 82%
+opacity. Picking a zone still names that one body, because then it is the only
+label on screen.
+
+**And the question under both:** "is this telling me the bulk of the
+mineralization has been excluded from the wireframe?" That is answerable, so the
+shape note now answers it in place rather than leaving it to the eye: *"Of the
+723 m of U3O8 the assays report at or above 0.050%, the model covers 89%"* —
+turning red with "open Drill data to see which holes" below 70%. `reconcile()`
+got there by desurveying once per interval instead of once per sample step (a
+surveyed path is straight to well under a block over a metre of core): 1.6 s →
+1.1 s, and it scales with the intervals above the cut-off, not all of them.
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.
