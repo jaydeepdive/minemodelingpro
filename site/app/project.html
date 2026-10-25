@@ -71,11 +71,6 @@
     </div>
   </div>
 
-  <div class="card" style="margin-top:18px">
-    <h3>Uploaded data</h3>
-    <div id="datasets"><p class="muted small">Nothing uploaded yet.</p></div>
-  </div>
-
   <!-- The data itself. Asked for repeatedly, and every earlier attempt lived
        inside the 3D viewer, which is not where someone checking an import is. -->
   <div class="card" style="margin-top:18px" id="browsecard">
@@ -96,6 +91,12 @@
       <span class="muted small" id="dpage"></span>
       <a class="btn ghost" id="ddl" style="margin-left:auto" download>Download this table</a>
     </div>
+  </div>
+
+  <div class="card" style="margin-top:18px">
+    <h3>Import log</h3>
+    <p class="note">What each file was read as, and anything worth checking.</p>
+    <div id="datasets"><p class="muted small">Nothing uploaded yet.</p></div>
   </div>
 
   <div class="card" style="margin-top:18px">
@@ -190,7 +191,10 @@ async function loadData() {
                                      limit: D.limit, offset: D.offset });
     r = await api(`/projects/${project.id}/data?${qs}`);
   } catch (e) {
-    box.innerHTML = `<p class="muted small" style="padding:10px">${esc(String(e.message || e))}</p>`;
+    // "500" on its own told the reader nothing at all
+    box.innerHTML = `<p class="muted small" style="padding:10px">Could not read the data`
+      + ` <span class="muted">(${esc(String(e.message || e))})</span>.`
+      + ` If this project has just been uploaded, the parse may still be running.</p>`;
     $("#dcount").textContent = ""; $("#dpage").textContent = ""; return;
   }
   D.total = r.total || 0;
@@ -260,12 +264,13 @@ async function paintDatasets() {
         <td class="num">${fmt(c.collars)}</td><td class="num">${fmt(c.intervals)}</td>
         <td class="num">${fmt(c.survey_stations)}</td>
         <td class="small">${cl ? `<div><b>${esc(cl)}</b></div>` : ""}
-          ${notes.length ? notes.map(esc).join("<br>") : ""}
-          ${d.summary?.tables ? `<div class="note" style="margin-top:6px">${d.summary.tables.map(t =>
+          ${notes.length ? `<details><summary class="muted">${notes.length} note${notes.length === 1 ? "" : "s"} about this import</summary>
+             <div style="margin-top:5px">${notes.map(esc).join("<br>")}</div></details>` : ""}
+          ${d.summary?.tables ? `<details class="note" style="margin-top:6px"><summary class="muted">Which column became what</summary><div style="margin-top:5px">${d.summary.tables.map(t =>
              `${esc(t.table)} → <b>${esc(t.kind || "not recognised")}</b> (${fmt(t.rows)} rows)`
              + (t.roles ? `<br><span class="muted">${esc(Object.entries(t.roles).map(([r, col]) => r + " = " + col).join(", "))}</span>` : "")
              + ((t.elements || []).length ? `<br><span class="muted">${esc(t.elements.map(e => e[1] + " from " + e[0]).join(", "))}</span>` : "")
-           ).join("<br>")}</div>` : ""}</td></tr>`;
+           ).join("<br>")}</div></details>` : ""}</td></tr>`;
     }).join("")}</table>` : `<p class="muted small">Nothing uploaded yet.</p>`;
   // the files stay on the server, so an importer fix costs no second upload
   $$(".reread").forEach(b => b.onclick = async () => {

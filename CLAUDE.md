@@ -882,6 +882,22 @@ being refused, and a project with no parsed data saying so.
 `md`/`az`/`dip`. The endpoint accepts `x`/`y` as well, but check `from_rows`
 before assuming a key name.
 
+**The first version 500'd on the real file and the tests did not catch it**,
+because the fixture had four rows. It built a `Row` object per interval to count
+and slice them — a million objects in a web process on a 919,152-row assay file.
+The endpoint now does every selection, filter and count on the numpy columns and
+materialises **only the rows on screen**: `index()` for the element, `isin` on
+the hole NAME TABLE (a few hundred strings, not a million), then a slice.
+`test_data_api.py` builds a **720,000-row** dataset and asserts the first page,
+a page at offset 700,000, both filters, and that peak RSS does not move across
+them — 510 MB before and after. **Any endpoint over a client's data gets a test
+at a client's scale; a four-row fixture proves nothing about this.**
+
+The page layout followed the same lesson as the viewer panel: **Your data** sits
+*above* the import log, and the log's prose ("using 32 of 338 columns…", which
+column became what) is folded into `<details>`. A wall of text between the person
+and their data is the same mistake as a wall of controls.
+
 ## Zones were being split by the wrong distance (2026-10-25)
 
 Jordan: "if mineralization is intersected at roughly the same depth theyre just

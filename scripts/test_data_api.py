@@ -114,5 +114,61 @@ empty = d.one("insert into projects (owner, slug, name) values (%s,%s,%s) return
 check("a project with no data says so",
       c.get(f"/api/projects/{empty['id']}/data").status_code == 404)
 
+# --- at a real client's scale. The first version of this endpoint built a Row
+# per interval to count and slice them, which on a 919,152-row assay file is a
+# million objects in a web process and a 500 on the page. Nothing here may grow
+# with the file; only with the page.
+import time                                                      # noqa: E402
+import resource                                                  # noqa: E402
+
+N_HOLES, N_EL, PER = 600, 20, 60                                 # 720,000 intervals
+big = []
+for h in range(N_HOLES):
+    hid = "LM-26-%03d" % h
+    for i in range(PER):
+        for e in range(N_EL):
+            big.append({"hole": hid, "from": float(i), "to": float(i) + 1.0,
+                        "el": "E%02d" % e, "grade": 1.0 + i, "unit": "g/t"})
+bigp = d.one("insert into projects (owner, slug, name) values (%s,%s,%s) returning *",
+             uid, "big-" + uuid.uuid4().hex[:6], "Big")
+bk = f"{uid}/{bigp['id']}/data.json"
+F.put_json(bk, {"collars": [], "surveys": [], "intervals": big})
+d.run("insert into datasets (project_id, owner, status, data_key) values (%s,%s,'ready',%s)",
+      bigp["id"], uid, bk)
+del big
+
+bb = f"/api/projects/{bigp['id']}/data"
+m0 = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+t0 = time.time()
+r = c.get(bb + "?table=assays&limit=200")
+dt = time.time() - t0
+m1 = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+check("a 720,000-row assay file does not 500", r.status_code == 200, r.status_code)
+j = r.json() if r.status_code == 200 else {}
+check("it reports the full row count", j.get("total") == N_HOLES * N_EL * PER,
+      j.get("total"))
+check("it returns only the page asked for", len(j.get("rows") or []) == 200,
+      len(j.get("rows") or []))
+check("the first page is quick", dt < 20, "%.1fs" % dt)
+check("every element is listed", len(j.get("elements") or []) == N_EL,
+      len(j.get("elements") or []))
+
+t0 = time.time()
+r2 = c.get(bb + "?table=assays&offset=700000&limit=200").json()
+check("a deep page works and costs no more",
+      len(r2["rows"]) == 200 and r2["total"] == j["total"] and time.time() - t0 < 20)
+check("a deep page is a different page", r2["rows"] != j["rows"])
+
+r3 = c.get(bb + "?table=assays&q=LM-26-005&limit=50").json()
+check("the hole filter works at scale",
+      r3["total"] == N_EL * PER and all(x[0] == "LM-26-005" for x in r3["rows"]),
+      (r3["total"], r3["rows"][:1]))
+r4 = c.get(bb + "?table=assays&el=E03&limit=10").json()
+check("the element filter works at scale",
+      r4["total"] == N_HOLES * PER and all(x[4] == "E03" for x in r4["rows"]),
+      r4["total"])
+print("    (peak RSS %d MB -> %d MB across the page requests)"
+      % (m0 // 1024, resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024))
+
 print("\n%d passed, %d failed" % (len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

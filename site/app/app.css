@@ -91,3 +91,8 @@ code{background:#f4f6f9;border:1px solid #e3e7ec;border-radius:4px;padding:1px 5
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
 .seg button{border:0;background:#fff;padding:7px 13px;font:inherit;font-size:13px;cursor:pointer;color:var(--ink)}
 .seg button.on{background:var(--red);color:#fff;font-weight:700}
+/* the import log is reference, not reading: folded until asked for */
+#datasets details>summary{cursor:pointer;list-style:none;font-size:12px;font-weight:600;padding:3px 0}
+#datasets details>summary::-webkit-details-marker{display:none}
+#datasets details>summary::after{content:" ▸"}
+#datasets details[open]>summary::after{content:" ▾"}

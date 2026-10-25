@@ -569,71 +569,80 @@ def project_model(pid: str, request: Request, u=Depends(require)):
 @app.get("/api/projects/{pid}/data")
 def project_data(pid: str, request: Request, u=Depends(require),
                  table: str = "assays", q: str = "", el: str = "",
-                 limit: int = 200, offset: int = 0, order: str = ""):
-    """The client's own drill data, as rows, from here.
+                 limit: int = 200, offset: int = 0):
+    """The client's own drill data, as rows, from the project page.
 
-    Asked for four times before it existed, because every version of it I built
-    lived inside the 3D viewer — which is the wrong place: a person checking what
-    was imported is on the project page, not orbiting a block model. Reads the
-    parsed dataset straight out of storage, so it shows exactly what the modeller
-    was given, not a re-derivation of it."""
+    **Never materialises more than the page asked for.** The first version built
+    a Row object per interval to count and slice them, which on a 919,152-row
+    assay file is a million objects in a web process and a 500. The columns are
+    numpy; selecting, filtering and counting all happen there, and only the rows
+    on screen are ever turned into values."""
     project_or_404(u, pid)
     d, F = store.db(), store.files()
-    rows_in = d.all("select * from datasets where project_id = %s and status = 'ready' "
-                    "order by created_at", pid)
-    keys = [r["data_key"] for r in rows_in if r.get("data_key")]
+    keys = [r["data_key"] for r in
+            d.all("select * from datasets where project_id = %s and status = 'ready' "
+                  "order by created_at", pid) if r.get("data_key")]
     if not keys:
         raise HTTPException(404, "this project has no parsed data yet")
     limit = max(1, min(int(limit or 200), 1000))
     offset = max(0, int(offset or 0))
     ql = (q or "").strip().lower()
     out, total, cols, elements = [], 0, [], set()
-    from minemodelingpro import ivtable as IVT
+
+    def _page(seq, make):
+        """Count everything, build only what the window needs."""
+        nonlocal total
+        for item in seq:
+            total += 1
+            if offset < total <= offset + limit:
+                out.append(make(item))
+
     for k in keys:
         try:
             raw = F.get_json(k)
         except Exception:
             continue
         if table == "collars":
-            # the importer writes easting/northing as e/n; an extracted report's
-            # collars use the same names. Accept x/y too rather than assuming.
             cols = ["hole", "easting", "northing", "elevation", "azimuth", "dip", "depth_m"]
-            for h in (raw.get("collars") or raw.get("holes") or []):
-                hid = str(h.get("hole") or h.get("id") or h.get("hole_id") or "")
-                if ql and ql not in hid.lower():
-                    continue
-                total += 1
-                if total > offset and len(out) < limit:
-                    out.append([hid, h.get("e", h.get("x")), h.get("n", h.get("y")),
-                                h.get("z"), h.get("az"), h.get("dip"), h.get("depth")])
+            src = [h for h in (raw.get("collars") or raw.get("holes") or [])
+                   if not ql or ql in str(h.get("hole") or h.get("id") or "").lower()]
+            _page(src, lambda h: [str(h.get("hole") or h.get("id") or ""),
+                                  h.get("e", h.get("x")), h.get("n", h.get("y")),
+                                  h.get("z"), h.get("az"), h.get("dip"), h.get("depth")])
         elif table == "surveys":
             cols = ["hole", "depth_m", "azimuth", "dip"]
-            for sv in (raw.get("surveys") or []):
-                hid = str(sv.get("hole") or sv.get("id") or "")
-                if ql and ql not in hid.lower():
-                    continue
-                total += 1
-                if total > offset and len(out) < limit:
-                    out.append([hid, sv.get("md", sv.get("depth")),
-                                sv.get("az"), sv.get("dip")])
+            src = [v for v in (raw.get("surveys") or [])
+                   if not ql or ql in str(v.get("hole") or v.get("id") or "").lower()]
+            _page(src, lambda v: [str(v.get("hole") or v.get("id") or ""),
+                                  v.get("md", v.get("depth")), v.get("az"), v.get("dip")])
         else:
+            import numpy as np
+            from minemodelingpro import ivtable as IVT
             cols = ["hole", "from_m", "to_m", "length_m", "element", "grade", "unit"]
             t = IVT.Intervals.coerce(raw.get("intervals") or [])
-            elements |= set(t.elements())
-            want = [el] if el else list(t.elements())
-            for e in want:
-                for r in t.rows_for(e):
-                    hid = str(r.get("hole") or "")
-                    if ql and ql not in hid.lower():
-                        continue
-                    total += 1
-                    if total > offset and len(out) < limit:
-                        fr, to = r.get("from"), r.get("to")
-                        out.append([hid, fr, to,
-                                    (round(to - fr, 2) if fr is not None and to is not None else None),
-                                    e, r.get("grade"), r.get("unit")])
+            idx = t.index()
+            elements |= set(idx)
+            want = [el] if el else sorted(idx)
+            sel = [idx[e] for e in want if e in idx]
+            sel = np.concatenate(sel) if sel else np.zeros(0, np.int64)
+            if ql and len(sel):
+                # match on the hole NAME TABLE, not per row: a few hundred strings
+                hits = np.array([i for i, h in enumerate(t.holes)
+                                 if ql in str(h or "").lower()], dtype=np.int64)
+                sel = sel[np.isin(t.hole_i[sel], hits)] if len(hits) else sel[:0]
+            n = int(len(sel))
+            lo, hi = min(offset, n), min(offset + limit, n)
+            total += n
+            for j in sel[lo:hi]:
+                j = int(j)
+                fr = float(t.frm[j]) if np.isfinite(t.frm[j]) else None
+                to = float(t.to[j]) if np.isfinite(t.to[j]) else None
+                gr = float(t.grade[j]) if np.isfinite(t.grade[j]) else None
+                out.append([t.holes[t.hole_i[j]] or "", fr, to,
+                            (round(to - fr, 2) if fr is not None and to is not None else None),
+                            t.els[t.el_i[j]] or "", gr, t.units[t.unit_i[j]] or ""])
     return {"table": table, "columns": cols, "rows": out, "total": total,
-            "offset": offset, "limit": limit, "elements": sorted(elements)}
+            "offset": offset, "limit": limit, "elements": sorted(e for e in elements if e)}
 
 
 @app.post("/api/adopt")
