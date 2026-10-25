@@ -1332,6 +1332,8 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
             # What those projects need is more drilling in the model, not a longer
             # reach in the estimator.
             from minemodelingpro import domain as DOM
+            from minemodelingpro import zones as ZON
+            zone_pts, zone_lab, zone_list = None, None, []
             # how far this deposit's own kind of filing carries grade between holes
             el_reach = float(PS.get("max_gap_m") or PS.get("reach_m") or
                              reach_for_style(skey, spacing, max(blk)))
@@ -1360,12 +1362,58 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                         dom_info["from"] = "logged geology"
                         dom_info["units"] = lu
                 else:
-                    dom_pts, dom_info = DOM.wireframe(
-                        pts, g, hid, max(bins[0], 1e-9), rot=rot_d, aniso=an_d,
-                        reach=reach, step=max(float(blk[0]), 3.0),
-                        thickness=PS.get("true_width_m") or med_w)
-                    if dom_info:
-                        dom_info["from"] = "mineralised intercepts"
+                    # One body per zone. A property is not a deposit: triangulating
+                    # every mineralised intercept together draws a sheet across the
+                    # ground between two lenses a kilometre apart and fills it with
+                    # grade. Each zone gets its own surface, and the project is the
+                    # union of them.
+                    mz = g > max(bins[0], 1e-9)
+                    zlab, zlist = ZON.find(pts[mz], hid[mz], reach)
+                    zone_pts, zone_lab = pts[mz], zlab
+                    parts, zinfo = [], []
+                    for z in (zlist or []):
+                        belong = ZON.assign(pts, zone_pts, zlab, reach) == z["id"]
+                        if belong.sum() < 6:
+                            continue
+                        zp, zi = DOM.wireframe(
+                            pts[belong], g[belong], hid[belong], max(bins[0], 1e-9),
+                            rot=rot_d, aniso=an_d, reach=reach,
+                            step=max(float(blk[0]), 3.0),
+                            thickness=PS.get("true_width_m") or med_w)
+                        if zp is not None and len(zp):
+                            parts.append(zp)
+                            zinfo.append({**{k: v for k, v in z.items() if k != "idx"},
+                                          "points": int(len(zp))})
+                            zone_list.append({k: v for k, v in z.items() if k != "idx"})
+                    # Mineralisation that belongs to no zone is still mineralisation.
+                    # Dropping it is how splitting a property into bodies shrank the
+                    # models that were already short — the zones must take rock away
+                    # from the bridges between them, never from the drilling itself.
+                    if parts:
+                        zof = ZON.assign(pts, zone_pts, zlab, reach)
+                        left = (zof == 0) & mz
+                        if left.sum() >= 6:
+                            near = ZON.assign(pts, pts[left], np.ones(int(left.sum()), int),
+                                              reach) > 0
+                            lp, li = DOM.wireframe(
+                                pts[near], g[near], hid[near], max(bins[0], 1e-9),
+                                rot=rot_d, aniso=an_d, reach=reach,
+                                step=max(float(blk[0]), 3.0),
+                                thickness=PS.get("true_width_m") or med_w)
+                            if lp is not None and len(lp):
+                                parts.append(lp)
+                    if parts:
+                        dom_pts = np.concatenate(parts)
+                        dom_info = {"from": "mineralised intercepts, zone by zone",
+                                    "intercepts": int(mz.sum()), "zones": zinfo,
+                                    "bodies": len(parts)}
+                    else:
+                        dom_pts, dom_info = DOM.wireframe(
+                            pts, g, hid, max(bins[0], 1e-9), rot=rot_d, aniso=an_d,
+                            reach=reach, step=max(float(blk[0]), 3.0),
+                            thickness=PS.get("true_width_m") or med_w)
+                        if dom_info:
+                            dom_info["from"] = "mineralised intercepts"
                 # How THICK the body is, and how far to look for grade inside it.
                 # Both were wrong, which is why the skeleton measured neutral: a
                 # domain the thickness of the composite halo is a sleeve a few
@@ -1448,7 +1496,22 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
             if el == els[0]:
                 el_out["check"] = _self_check(el, segs_out, pts, g, hid, lo, bsz,
                                               ijk, gr, params)
-            el_out["blocks"] = {"cls": (_b64(bcls[keep].astype(np.uint8))
+            # Which zone each block belongs to, so one model can be read whole or
+            # a body at a time. The project total is still the project total —
+            # this is a decomposition of it, not a second model.
+            bzone = None
+            if zone_list and zone_pts is not None and len(zone_pts):
+                ctr = lo + (ijk.astype(np.float64) + 0.5) * np.asarray(bsz, float)
+                bzone = ZON.assign(ctr, zone_pts, zone_lab, dom_reach or el_reach)
+                try:
+                    el_out["zones"] = ZON.summarise(
+                        zone_list, bzone, gr, bt, [r[0] for r in gt][:10], el, unit, contained)
+                except Exception as _ze:
+                    print(f"[model3d] zone summary failed: {type(_ze).__name__}: {str(_ze)[:90]}",
+                          flush=True)
+            el_out["blocks"] = {"zone": (_b64(bzone[keep].astype(np.uint8))
+                                         if bzone is not None else None),
+                                "cls": (_b64(bcls[keep].astype(np.uint8))
                                        if len(bcls) == len(gr) else None),
                                 "classes": list(CLASSES),
                                 "origin": [round(float(v), 2) for v in lo], "size": list(bsz),

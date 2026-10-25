@@ -141,7 +141,7 @@ function buildBlocks(){if(blockMesh){scene.remove(blockMesh);blockMesh.geometry.
   $("L-blocks").disabled=!B;$("blk-note").textContent=B?(fmtN(B.n_total)+" blocks"):"too few holes";
   if(!B)return;const ijk=b64(B.ijk,Uint16Array),g=b64(B.g,Float32Array),n=B.n,[bx,by,bz]=B.size,o=B.origin;
   const pos=new Float32Array(n*3);for(let i=0;i<n;i++){const p=V(o[0]+(ijk[i*3]+.5)*bx,o[1]+(ijk[i*3+1]+.5)*by,o[2]+(ijk[i*3+2]+.5)*bz);pos[i*3]=p.x;pos[i*3+1]=p.y;pos[i*3+2]=p.z;}
-  BK={n,g,pos};
+  BK={n,g,pos,zone:B.zone?b64(B.zone,Uint8Array):null};
   const geo=new THREE.BoxGeometry(bx*0.97,bz*0.97,by*0.97);
   blockMesh=new THREE.InstancedMesh(geo,new THREE.MeshLambertMaterial({transparent:true,opacity:+$("blk-op").value/100,depthWrite:false}),n);
   blockMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);blockMesh.visible=$("L-blocks").checked;scene.add(blockMesh);applyCut();}
@@ -166,6 +166,7 @@ function drawSize(){
     const X=[],Y=[],Z=[];
     for(let i=0;i<BK.n;i++){
       if(BK.g[i]<curCut)continue;
+      if(curZone&&BK.zone&&BK.zone[i]!==curZone)continue;
       X.push(o[0]+ijk[i*3]*bx);Y.push(o[1]+ijk[i*3+1]*by);Z.push(o[2]+ijk[i*3+2]*bz);}
     if(X.length){
       X.sort((a,b)=>a-b);Y.sort((a,b)=>a-b);Z.sort((a,b)=>a-b);
@@ -182,7 +183,8 @@ function drawSize(){
       const fx=X[X.length-1]-X[0]+bx, fy=Y[Y.length-1]-Y[0]+by;
       if(fx>cx*1.3||fy>cy*1.3)
         rows.push(["Full footprint", `${m(fx)} E–W × ${m(fy)} N–S`]);
-      rows.push(["Blocks above cut-off", fmtN(X.length)+" of "+fmtN(B.n_total)]);
+      rows.push(["Blocks above cut-off", fmtN(X.length)+" of "+fmtN(B.n_total)
+                 +(curZone?" (this zone only)":"")]);
     }
   }
   box.innerHTML=rows.map(([k,v])=>`<div class="kv"><span>${k}</span><b>${v}</b></div>`).join("")
@@ -196,9 +198,11 @@ function medianCollar(){if(!HO.length)return NaN;const z=HO.map(h=>h.z).filter(v
 
 const _m=new THREE.Matrix4(),_c=new THREE.Color();
 function applyCut(){if(!BK||!blockMesh)return;const E=M.elements[EL];let j=0;
-  for(let i=0;i<BK.n;i++){if(BK.g[i]<curCut)continue;_m.makeTranslation(BK.pos[i*3],BK.pos[i*3+1],BK.pos[i*3+2]);blockMesh.setMatrixAt(j,_m);
+  for(let i=0;i<BK.n;i++){if(BK.g[i]<curCut)continue;
+    if(curZone&&BK.zone&&BK.zone[i]!==curZone)continue;_m.makeTranslation(BK.pos[i*3],BK.pos[i*3+1],BK.pos[i*3+2]);blockMesh.setMatrixAt(j,_m);
     _c.set(E.colors[Math.max(0,binIdx(E,BK.g[i]))]);blockMesh.setColorAt(j,_c);j++;}
-  blockMesh.count=j;blockMesh.instanceMatrix.needsUpdate=true;if(blockMesh.instanceColor)blockMesh.instanceColor.needsUpdate=true;drawSize();}
+  blockMesh.count=j;blockMesh.instanceMatrix.needsUpdate=true;if(blockMesh.instanceColor)blockMesh.instanceColor.needsUpdate=true;drawSize();
+  if(typeof drawZoneBox==="function")drawZoneBox();}
 
 /* ---- terrain ---- */
 let terrain=null;
@@ -228,13 +232,48 @@ let terrain=null;
   $("ter-note").textContent=Math.round(rel)+" m relief · "+ci+" m contours";})();
 
 /* ---------------- element chips, legend, grade panel ---------------- */
+/* ---------------- zones: one project, body by body ---------------- */
+let curZone=0;
+function drawZones(){
+  const E=M.elements[EL],Z=(E&&E.zones)||[],sec=$("zonesec");
+  if(!sec)return;
+  if(!Z.length){sec.style.display="none";curZone=0;return;}
+  sec.style.display="";
+  $("zone-n").textContent="· "+Z.length+" in this project";
+  const chip=(id,label)=>`<button class="chip${curZone===id?" on":""}" data-z="${id}">${label}</button>`;
+  $("zones").innerHTML=chip(0,"Whole project")+Z.map(z=>chip(z.id,z.name)).join("");
+  [...$("zones").querySelectorAll("button")].forEach(b=>b.onclick=()=>{
+    const id=+b.dataset.z;curZone=(curZone===id?0:id);drawZones();applyCut();drawZoneBox();
+    if(curZone)flyToZone(Z.find(z=>z.id===curZone));});
+  drawZoneBox();
+}
+function drawZoneBox(){
+  const E=M.elements[EL],Z=(E&&E.zones)||[],box=$("zonebox");if(!box)return;
+  const rows=[];
+  const at=z=>{const s=(z.series||[]).find(r=>r.cutoff>=curCut)||(z.series||[])[0]||{};return s;};
+  for(const z of Z){
+    const s=at(z);
+    const on=curZone===z.id;
+    rows.push(`<div class="kv"${on?' style="font-weight:700"':''}><span>${z.name}
+      <small>${z.holes} holes · ${m(z.span_m[0])} × ${m(z.span_m[1])}</small></span>
+      <b>${s.tonnes?fmtT(s.tonnes):"–"}${s.grade!=null?" @ "+fmtG(s.grade,E.unit):""}</b></div>`);
+  }
+  box.innerHTML=rows.join("");
+}
+function flyToZone(z){
+  if(!z||!z.bbox)return;
+  const [lo,hi]=z.bbox,cx=(lo[0]+hi[0])/2,cy=(lo[1]+hi[1])/2,cz=(lo[2]+hi[2])/2;
+  const span=Math.max(hi[0]-lo[0],hi[1]-lo[1],hi[2]-lo[2],60);
+  const p=V(cx,cy,cz);
+  fly({x:p.x,y:p.y,z:p.z,dist:span*2.2},600);
+}
 function drawEls(){const box=$("els");box.innerHTML="";if(ELS.length<2){$("elsec").style.display="none";}
   ELS.forEach(e=>{const b=document.createElement("button");b.className="chip"+(e===EL?" on":"");b.textContent=e;b.onclick=()=>setEl(e);box.appendChild(b);});}
 function drawLegend(){const E=M.elements[EL];$("lg-h").textContent=EL+" grade ("+E.unit+")";const L=$("legend");L.innerHTML="";
   for(let k=E.bins.length-1;k>=0;k--){const d=document.createElement("div");const hi=k<E.bins.length-1?E.bins[k+1]:null;
     d.innerHTML=`<i style="background:${E.colors[k]}"></i>${hi==null?"≥ "+E.bins[k]:E.bins[k]+" – "+hi} ${esc(E.unit)}`;L.appendChild(d);}
   const d=document.createElement("div");d.innerHTML=`<i class="lo"></i>&lt; ${E.bins[0]} ${esc(E.unit)} · <span style="color:var(--mut)">grey = no reported intercept</span>`;L.appendChild(d);}
-function setEl(e){EL=e;store.set("el:"+M.slug,e);drawEls();buildIntervals();drawLegend();setupGT();buildBlocks();drawData();}
+function setEl(e){EL=e;store.set("el:"+M.slug,e);curZone=0;drawEls();buildIntervals();drawLegend();setupGT();buildBlocks();drawData();drawZones();}
 
 function setupGT(){const E=M.elements[EL];const cut=$("cut");
   if(!E.gt){$("gtsec").hidden=true;$("nogt").hidden=false;
@@ -815,7 +854,7 @@ function updHud(){const mpp=2*dist*Math.tan(camera.fov*Math.PI/360)/Hh();const n
   $("needle").setAttribute("transform",`rotate(${(-yaw*180/Math.PI+180).toFixed(1)})`);}
 
 /* ---------------- start ---------------- */
-drawEls();buildIntervals();drawLegend();drawSources();buildBlocks();setupGT();drawData();drawBreakdown();drawSize();
+drawEls();buildIntervals();drawLegend();drawSources();buildBlocks();setupGT();drawData();drawBreakdown();drawSize();drawZones();
 {const ib=$("intbox");if(ib)ib.innerHTML=integrity();
  const mb=$("metbox");if(mb)mb.innerHTML=metallurgy();}
 resize();F=framing();view("3d",0);

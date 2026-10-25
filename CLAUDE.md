@@ -632,6 +632,42 @@ statement covers one. MMP builds one model per project by design; clustering the
 mineralised intercepts and reporting the zone that matches the filing's own
 extent would make those nineteen comparable. That is the work, not more reach.
 
+## One project, modelled body by body (2026-10-25)
+
+`src/minemodelingpro/zones.py`. A property is not a deposit. Triangulating every
+mineralised intercept on a property together draws a sheet across the ground
+between two lenses a kilometre apart and fills it with grade — which is how
+Aguila's 112 kt filing came to sit beside a model of the whole property.
+
+A **zone** is a connected body: intercepts reachable from one another in steps no
+longer than the style's own reach. Each zone now gets its own wireframe, and the
+project is the union of them plus a body built from mineralisation that belongs
+to no zone — **the zones take rock away from the bridges between them, never from
+the drilling itself.** Dropping those leftovers was measured and is worse (see
+below). 71 of 79 scored models carry more than one zone.
+
+**It is still one model.** `el["zones"]` carries each body's holes, span, bounding
+box, block count and its own tonnes/grade/contained series on the project's own
+cut-offs; every block carries a zone id (`blocks.zone`). The viewer shows a Zones
+panel listing what each body holds, and picking one isolates its blocks and flies
+to it — the totals above it stay the project's. Measured in a browser on
+Forrest Kerr: 12,027 blocks whole, 7,598 for Zone 1, 4,425 for Zone 2.
+
+**Measured on the 79 scored projects, same projects each arm:**
+
+| | med abs log error | median | within 1.5x | within 2x | worse than 10x |
+|---|---|---|---|---|---|
+| one body per project | 1.013 | 0.89 | 18 | 28 | 20 |
+| zones, leftovers dropped | 1.073 | 0.83 | 16 | 29 | 18 |
+| **zones, leftovers kept** | **0.994** | **0.91** | 16 | 28 | 19 |
+
+Accuracy is a small net gain, not a transformation — the point of this work is
+that a property with four lenses can now be *assessed*: what each body holds,
+how much of the project it is, and which one the filing beside it describes.
+Splitting without keeping the leftovers is the trap: it helps the over-estimates
+(Auld Creek 112x -> 92x) by shrinking everything, and pushes the already-short
+further down (Aurora 0.40x -> 0.11x).
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.
