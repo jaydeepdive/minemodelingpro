@@ -601,8 +601,37 @@ def project_data(pid: str, request: Request, u=Depends(require),
                                  % (type(e).__name__, str(e)[:200]))
 
 
+# A dataset is read once and kept decoded. Without this every page click
+# re-downloaded the stored file and rebuilt 919,152 intervals' columns to show
+# 200 rows — which is why the table sat on "Loading…". One project's worth is
+# tens of megabytes; two is a cache, a dozen is the memory bug this modeller
+# spent a week escaping.
+_DATA_CACHE = {}
+_DATA_CACHE_CAP = int(os.environ.get("MMP_DATA_CACHE", "2"))
+
+
+def _dataset(key):
+    """The parsed dataset for a stored key: intervals as columns, collars and
+    surveys as they were written. Cached by key; the file is immutable once the
+    parse has written it, so a stale read is not possible — a re-import writes a
+    new key."""
+    hit = _DATA_CACHE.get(key)
+    if hit is not None:
+        return hit
+    from minemodelingpro import ivtable as IVT
+    raw = store.files().get_json(key)
+    iv = raw.get("intervals")
+    t = (IVT.Intervals.from_json(iv) if isinstance(iv, dict)
+         else IVT.Intervals.coerce(iv or []))
+    t.index()                                    # build the per-element index once
+    val = (t, raw.get("collars") or raw.get("holes") or [], raw.get("surveys") or [])
+    _DATA_CACHE[key] = val
+    while len(_DATA_CACHE) > max(1, _DATA_CACHE_CAP):
+        _DATA_CACHE.pop(next(iter(_DATA_CACHE)))
+    return val
+
+
 def _read_project_data(keys, table, ql, el, limit, offset, problems):
-    F = store.files()
     out, total, cols, elements = [], 0, [], set()
 
     def _page(seq, make):
@@ -614,35 +643,26 @@ def _read_project_data(keys, table, ql, el, limit, offset, problems):
 
     for k in keys:
         try:
-            raw = F.get_json(k)
+            t, collars, surveys = _dataset(k)
         except Exception as e:
             problems.append("could not read a stored file: %s" % str(e)[:120])
             continue
         if table == "collars":
             cols = ["hole", "easting", "northing", "elevation", "azimuth", "dip", "depth_m"]
-            src = [h for h in (raw.get("collars") or raw.get("holes") or [])
+            src = [h for h in collars
                    if not ql or ql in str(h.get("hole") or h.get("id") or "").lower()]
             _page(src, lambda h: [str(h.get("hole") or h.get("id") or ""),
                                   h.get("e", h.get("x")), h.get("n", h.get("y")),
                                   h.get("z"), h.get("az"), h.get("dip"), h.get("depth")])
         elif table == "surveys":
             cols = ["hole", "depth_m", "azimuth", "dip"]
-            src = [v for v in (raw.get("surveys") or [])
+            src = [v for v in surveys
                    if not ql or ql in str(v.get("hole") or v.get("id") or "").lower()]
             _page(src, lambda v: [str(v.get("hole") or v.get("id") or ""),
                                   v.get("md", v.get("depth")), v.get("az"), v.get("dip")])
         else:
             import numpy as np
-            from minemodelingpro import ivtable as IVT  # noqa: F811
             cols = ["hole", "from_m", "to_m", "length_m", "element", "grade", "unit"]
-            # A stored dataset's intervals are COLUMNS (to_store -> to_json:
-            # deflated base64 buffers), not a list of rows. coerce() reads a list
-            # or a table and would iterate a dict's keys as if they were rows —
-            # which is the 500 this endpoint shipped with, invisible to a test
-            # whose fixture was a plain list.
-            iv = raw.get("intervals")
-            t = (IVT.Intervals.from_json(iv) if isinstance(iv, dict)
-                 else IVT.Intervals.coerce(iv or []))
             idx = t.index()
             elements |= set(idx)
             want = [el] if el else sorted(idx)

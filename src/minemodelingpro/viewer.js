@@ -175,8 +175,28 @@ function buildBody(){
         +(B.reach_m?" Holes linked up to "+B.reach_m+" m apart.":"");
       why.title="Blocks are only estimated inside this shape, so a gap in it is ground the "
         +"drilling could not justify closing. Grey belongs to no named body.";
-      // and the question that matters: how much of the drilled mineralisation
-      // actually ended up inside it
+      // Is the shape in the estimate? A cell of the shape with no block in it is
+      // ground the model drew and then did not fill. Asked repeatedly because the
+      // two layers look nothing alike on screen — and they look nothing alike
+      // because the BLOCKS are filtered to the cut-off and the SHAPE is not.
+      setTimeout(()=>{try{
+        if(BD&&BD.n&&BK){
+          const C=blockCells();let inside=0;
+          const [bx,by,bz]=B.size,o2=B.origin;
+          for(let i=0;i<BD.n;i++){
+            // BD.pos is scene space; back to the grid the blocks live on
+            const sx=BD.pos[i*3],sy=BD.pos[i*3+1],sz=BD.pos[i*3+2];
+            const wx=sx, wy=-sz, wz=sy+zRef;
+            if(blockAt(wx,wy,wz)!==undefined)inside++;}
+          const pc=Math.round(100*inside/BD.n);
+          const d2=document.createElement("div");
+          d2.style.cssText="margin-top:4px;font-weight:700;color:"+(pc<80?"#c0392b":"#1d2530");
+          d2.textContent="The estimate fills "+pc+"% of this shape ("+fmtN(inside)+" of "
+            +fmtN(BD.n)+" cells). Blocks shown are only those above the cut-off.";
+          d2.title="The shape is drawn whole; the block layer is filtered to the "
+            +"cut-off slider, which is why the two look different on screen.";
+          why.appendChild(d2);}
+      }catch(e){}},0);
       setTimeout(()=>{try{
         const R=reconcile();if(!R||!R.ore)return;
         const pc=Math.round(100*R.mod/R.ore);
