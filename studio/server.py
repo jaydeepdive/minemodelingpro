@@ -587,17 +587,31 @@ def project_data(pid: str, request: Request, u=Depends(require),
     limit = max(1, min(int(limit or 200), 1000))
     offset = max(0, int(offset or 0))
     ql = (q or "").strip().lower()
+    problems = []
+    try:
+        return _read_project_data(keys, table, ql, el, limit, offset, problems)
+    except HTTPException:
+        raise
+    except Exception as e:
+        # An opaque 500 costs a round trip every time it happens. This is the
+        # person's own project and their own file: say what went wrong.
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, "could not read this project's data: %s: %s"
+                                 % (type(e).__name__, str(e)[:200]))
+
+
+def _read_project_data(keys, table, ql, el, limit, offset, problems):
+    F = store.files()
     out, total, cols, elements = [], 0, [], set()
 
     def _page(seq, make):
-        """Count everything, build only what the window needs."""
         nonlocal total
         for item in seq:
             total += 1
             if offset < total <= offset + limit:
                 out.append(make(item))
 
-    problems = []
     for k in keys:
         try:
             raw = F.get_json(k)

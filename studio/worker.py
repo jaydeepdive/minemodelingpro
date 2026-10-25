@@ -295,8 +295,11 @@ def do_build(job):
           "updated_at = now() where id = %s", key, json.dumps(stats), model.get("region"), proj["id"])
     if proj.get("is_public"):
         do_publish({**job, "project_id": proj["id"], "payload": {"public": True}}, model=model)
+    # say where the time went: "why is a rebuild nine minutes" should be
+    # answerable from the card, not from a profiler
+    where = model.get("build_summary") or ""
     return (f"built {stats['holes']} holes, {stats['intervals']} intervals, "
-            f"{stats['blocks']:,} blocks")
+            f"{stats['blocks']:,} blocks" + (f" — {where}" if where else ""))
 
 
 _SYNCED = False
