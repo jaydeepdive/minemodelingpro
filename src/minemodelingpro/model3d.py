@@ -43,6 +43,32 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(os.path.dirname(_HERE))
 _VIEWER_TMPL = os.path.join(_HERE, "model3d_viewer.html")
 
+# ------------------------------------------------------------- model version
+# A model is a stored artifact, not a live calculation: improving the estimator
+# does not change a block model that was written last week. The public gallery
+# is rebuilt nightly so it follows along on its own, but a client's private model
+# sat at whatever the code was on the day they pressed the button — which meant
+# every improvement needed them to notice and click "Rebuild model".
+#
+# Bump this whenever a change alters what a model CONTAINS — the estimator, the
+# wireframe, the reach, which metal is primary, the deposit style, the block
+# sizing. The worker compares it against the version stamped on each stored model
+# and rebuilds the ones that are behind, so an improvement reaches every model,
+# public and private, without anyone being told to go and press a button.
+# Do NOT bump it for a viewer or page change: those are re-rendered anyway and a
+# rebuild costs the client's data a trip through the estimator for nothing.
+#
+#  5 — zones, per-body wireframes (2026-10-25)
+#  6 — ore floors carry their units; the deposit suite is judged by grade
+#      (gallium at crustal background was taking primary metal, and a lab package
+#      reporting phosphorus was making vein properties sedimentary phosphate)
+#  7 — the wireframe is carried to the viewer, so the body the model imagined can
+#      be drawn over the blocks instead of only inferred from where they stop
+MODEL_VERSION = 7
+# the most domain cells to send to a browser; beyond this the envelope is drawn
+# on a coarser lattice, which is a picture of the same shape
+BODY_MAX_CELLS = 120_000
+
 # ------------------------------------------------------------ element settings
 BINS = {
     "Au": [0.1, 0.3, 0.5, 1, 2, 5, 10], "AuEq": [0.1, 0.3, 0.5, 1, 2, 5, 10],
@@ -1228,7 +1254,15 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
     _stated = PS.get("deposit_style") or _from_report
     _suite = set(by_el) | {e for r in (ds.get("sources") or []) for e in (r.get("suite") or [])} \
         | set(ds.get("suite") or [])
-    skey, sdef, swhy, sconf = DSTY.classify(_w, _g, _suite, stated=_stated,
+    # What the suite is EVIDENCE of is a different question from what is in it. A
+    # modern lab package reports phosphorus on every sample, and "P2O5 is present"
+    # returned sedimentary phosphate for a silver-cobalt vein property — the same
+    # presence-not-grade mistake that made background gallium the primary metal.
+    # An element only speaks to the deposit type where it reaches a grade worth
+    # mining; one we hold no assays for cannot be checked and is left to speak.
+    _ore_suite = {e for e in _suite
+                  if e not in by_el or table.ore_fraction(e) > 0}
+    skey, sdef, swhy, sconf = DSTY.classify(_w, _g, _ore_suite or _suite, stated=_stated,
                                             nearby=ds.get("nearby_style"))
     # PORIGIN says where the value came from: "auto" means the report supplied it,
     # anything else means a person set it for this project
@@ -1518,6 +1552,29 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                                 "ijk": _b64(ijk[keep].astype(np.uint16)), "g": _b64(gr[keep].astype(np.float32)),
                                 "n": int(keep.sum()), "n_total": int(len(gr)), "shown_from": round(show, 4),
                                 "tonnes_per_block": round(bt, 1), "density": dens, "params": params}
+            # ---- the body the model imagined, carried to the viewer
+            # The wireframe decided which blocks exist and was then thrown away,
+            # so a gap in the block model was unreadable: nobody could tell a
+            # place the estimator declined to fill from a place the body never
+            # reached. Sent on the block grid, deduped, so the viewer can draw
+            # the envelope over the blocks and the two can be compared.
+            if dom_pts is not None and len(dom_pts):
+                dijk = np.floor((np.asarray(dom_pts, float) - lo) / bsz).astype(np.int64)
+                # NOT clipped to where blocks were estimated: a body that reaches
+                # past the last block is the thing worth seeing
+                dijk = dijk[(dijk >= 0).all(1) & (dijk < 65535).all(1)]
+                if len(dijk):
+                    dijk = np.unique(dijk, axis=0)
+                    if len(dijk) > BODY_MAX_CELLS:       # thin on a coarser lattice
+                        k = int(np.ceil((len(dijk) / BODY_MAX_CELLS) ** (1 / 3)))
+                        dijk = np.unique(dijk // k, axis=0) * k
+                    el_out["body"] = {
+                        "origin": [round(float(v), 2) for v in lo], "size": list(bsz),
+                        "ijk": _b64(dijk.astype(np.uint16)), "n": int(len(dijk)),
+                        "from": (dom_info or {}).get("from"),
+                        "bodies": (dom_info or {}).get("bodies"),
+                        "reach_m": round(float(reach), 1) if dom_pts is not None else None,
+                    }
             el_out["gt"] = gt
             if PS.get("default_cutoff") is not None:
                 el_out["default_cutoff"] = float(PS["default_cutoff"])
@@ -1575,6 +1632,7 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
         "slug": ds["slug"], "project": ds["name"], "company": ds.get("company"), "region": region,
         "kinds": ds.get("kinds"), "updated": ds.get("updated"),
         "generated": datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "model_version": MODEL_VERSION,
         "frame": {"kind": fr["kind"], "lat0": round(lat0, 6) if geo else None, "lon0": round(lon0, 6) if geo else None,
                   "grid": fr.get("grid")},
         "holes": hole_rows, "elements": elements, "primary": primary, "by_metal": by_metal,
@@ -2005,6 +2063,11 @@ def build_all(site_dir="site", only=None, verbose=True, resume_after=None):
                 fresh = False
             if fresh:
                 m = _page_model(pg)
+                # a resumed run may not skip a page the modelling code has moved
+                # past: "built recently" and "built by this code" are not the
+                # same thing, and the whole point of the stamp is to tell them apart
+                if m and m.get("model_version") != MODEL_VERSION:
+                    m = None
                 if m:
                     built.add(ds["slug"] + ".html")
                     built.add(ds["slug"] + ".svg")

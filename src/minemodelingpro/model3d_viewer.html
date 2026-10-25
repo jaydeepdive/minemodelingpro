@@ -253,12 +253,16 @@ button.mini:hover{background:var(--chip)}
       <label class="tg"><input type="checkbox" id="L-int" checked>Drill intervals by grade</label>
       <label class="tg"><input type="checkbox" id="L-trace" checked>Drill traces &amp; collars</label>
       <label class="tg"><input type="checkbox" id="L-blocks" checked>Block model<small id="blk-note"></small></label>
+      <label class="tg"><input type="checkbox" id="L-body">Deposit shape (wireframe)<small id="body-note"></small></label>
       <label class="tg"><input type="checkbox" id="L-terrain">Terrain<small id="ter-note"></small></label>
       <label class="tg"><input type="checkbox" id="L-labels">Hole labels</label>
       <div class="rng" id="ter-op-row"><div class="row"><span>Terrain opacity</span><span class="v" id="ter-op-v">45%</span></div>
         <input type="range" id="ter-op" min="10" max="100" value="45"></div>
       <div class="rng"><div class="row"><span>Block opacity</span><span class="v" id="blk-op-v">35%</span></div>
         <input type="range" id="blk-op" min="10" max="100" value="35"></div>
+      <div class="rng" id="body-op-row" style="display:none"><div class="row"><span>Shape opacity</span><span class="v" id="body-op-v">18%</span></div>
+        <input type="range" id="body-op" min="4" max="60" value="18"></div>
+      <p class="note" id="body-why" style="display:none"></p>
     </div>
     <div class="sec">
       <p class="lab">View</p>

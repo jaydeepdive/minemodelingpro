@@ -290,8 +290,11 @@ def from_geometry(widths, grades, commodities=()):
         return "iron", f"wide iron intercepts (median {med:.0f} m)"
     if ("Li2O" in com or "Ta2O5" in com) and med > 3:
         return "pegmatite", f"lithium/tantalum over {med:.0f} m intercepts"
-    if "P2O5" in com:
-        return "phosphate", "phosphate horizons"
+    if "P2O5" in com and med > 2.0:
+        # a sedimentary phosphate is a bedded horizon; a metre of it is not one.
+        # Without the width test this rule fired on any lab package that reports
+        # phosphorus, whatever the grade and whatever the rock.
+        return "phosphate", f"phosphate horizons (median {med:.1f} m intercepts)"
     if med <= 3.0 and p90 <= 12.0:
         return "vein", (f"narrow intercepts (median {med:.1f} m, 90th percentile "
                         f"{p90:.1f} m) with erratic grade" if cv > 1.0

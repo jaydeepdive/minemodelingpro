@@ -92,5 +92,55 @@ d.worker_beat("modeler", "again")
 check("beating twice keeps one row",
       d.one("select count(*) as n from workers")["n"] == 1)
 
+# --- an improvement reaches a model without anyone pressing a button
+from studio import worker as W                                  # noqa: E402
+from minemodelingpro import model3d as M3                       # noqa: E402
+
+d.run("delete from jobs")
+cur = M3.MODEL_VERSION
+
+
+def ready(version, name="R"):
+    pid = d.one("insert into projects (owner, slug, name) values (%s,%s,%s) returning *",
+                owner, "r-" + uuid.uuid4().hex[:6], name)["id"]
+    d.run("update projects set status='ready', model_key='k', stats=%s, updated_at=now() "
+          "where id=%s", ('{"model_version": %d}' % version) if version is not None else "{}", pid)
+    return pid
+
+
+def build_jobs(pid):
+    return d.one("select count(*) as n from jobs where project_id=%s and kind='build'", pid)["n"]
+
+
+old_p = ready(cur - 1)
+new_p = ready(cur)
+never_p = ready(None)                       # built before the stamp existed
+W.refresh_stale_models(verbose=False)
+check("a model behind the code is queued for rebuild", build_jobs(old_p) == 1, build_jobs(old_p))
+check("a model already on the current version is left alone", build_jobs(new_p) == 0)
+check("a model with no version at all counts as behind", build_jobs(never_p) == 1)
+
+W.refresh_stale_models(verbose=False)
+check("a second sweep does not queue it twice", build_jobs(old_p) == 1, build_jobs(old_p))
+
+d.run("delete from jobs")
+d.run("update projects set status='error' where id=%s", old_p)
+W.refresh_stale_models(verbose=False)
+check("a project that is not ready is not rebuilt", build_jobs(old_p) == 0)
+
+d.run("delete from jobs")
+d.run("update projects set status='ready' where id=%s", old_p)
+os.environ["MMP_AUTO_REFRESH"] = "0"
+W.refresh_stale_models(verbose=False)
+check("the refresh can be switched off", build_jobs(old_p) == 0)
+os.environ["MMP_AUTO_REFRESH"] = "1"
+
+d.run("delete from jobs")
+many = [ready(cur - 1, "M%d" % i) for i in range(W.REFRESH_BATCH + 3)]
+n = W.refresh_stale_models(verbose=False)
+check("a version bump trickles rather than stampeding",
+      n == W.REFRESH_BATCH and
+      d.one("select count(*) as n from jobs where kind='build'")["n"] == W.REFRESH_BATCH, n)
+
 print("\n%d passed, %d failed" % (len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

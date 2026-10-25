@@ -47,6 +47,11 @@ POLL = float(os.environ.get("MMP_POLL_SECONDS", "5"))
 JOB_TIMEOUT_MIN = float(os.environ.get("MMP_JOB_TIMEOUT_MIN", "20"))
 JOB_ATTEMPTS = int(os.environ.get("MMP_JOB_ATTEMPTS", "3"))
 BEAT = float(os.environ.get("MMP_BEAT_SECONDS", "30"))
+# how often to look for models the modelling code has moved on from, and how many
+# to put back through the estimator at a time (one box, other people's jobs queue
+# behind these, so a corpus-wide refresh trickles rather than stampedes)
+REFRESH_MIN = float(os.environ.get("MMP_REFRESH_MIN", "10"))
+REFRESH_BATCH = int(os.environ.get("MMP_REFRESH_BATCH", "3"))
 MAX_FILE_MB = float(os.environ.get("MMP_MAX_FILE_MB", "200"))
 WORKDIR = os.environ.get("MMP_WORKDIR", os.path.join(tempfile.gettempdir(), "mmp-studio"))
 
@@ -110,6 +115,51 @@ def sweep(verbose=True):
             print(f"[worker] gave up on {r['kind']} job {str(r['id'])[:8]} "
                   f"after {r['attempts']} attempts", flush=True)
     return len(requeued) + len(dead)
+
+
+def refresh_stale_models(verbose=True):
+    """Rebuild the models an improvement has not reached yet.
+
+    A model is a stored artifact. Improving the estimator does not change a block
+    model that was written last week, so "we improved the modelling" and "your
+    model is better" were two different events with a button press in between —
+    and the client had no way to know the button was there, or that it mattered.
+
+    The public gallery never had this problem: CI rebuilds it nightly from the
+    current code. Private models are rebuilt here, on the same principle, by
+    comparing the version stamped on each stored model against the code's own.
+    A few at a time, newest first, and never for a project that already has a
+    build queued, so a version bump does not become a thundering herd.
+    """
+    if (os.environ.get("MMP_AUTO_REFRESH", "1") or "1").lower() in ("0", "false", "no"):
+        return 0
+    d = store.db()
+    try:
+        rows = d.all(
+            "select p.id, p.name, p.owner, "
+            "       coalesce((p.stats->>'model_version')::int, 0) as v "
+            "  from projects p "
+            " where p.status = 'ready' and p.model_key is not null "
+            "   and coalesce((p.stats->>'model_version')::int, 0) < %s "
+            "   and not exists (select 1 from jobs j "
+            "                    where j.project_id = p.id and j.kind = 'build' "
+            "                      and j.status in ('queued','running')) "
+            " order by p.updated_at desc nulls last limit %s",
+            M3.MODEL_VERSION, REFRESH_BATCH)
+    except Exception as e:
+        print(f"[worker] refresh sweep failed: {str(e)[:160]}", flush=True)
+        return 0
+    for r in rows:
+        try:
+            d.run("insert into jobs (kind, owner, project_id) values ('build',%s,%s)",
+                  r["owner"], r["id"])
+        except Exception as e:
+            print(f"[worker] could not queue refresh for {r['id']}: {str(e)[:120]}", flush=True)
+            continue
+        if verbose:
+            print(f"[worker] refresh: {r['name']} is on model v{r['v']}, "
+                  f"code is v{M3.MODEL_VERSION} — rebuilding", flush=True)
+    return len(rows)
 
 
 def queue_build(job, project_id):
@@ -224,6 +274,9 @@ def do_build(job):
              "elements": list(model.get("elements") or {}),
              "region": model.get("region"), "sources": len(model.get("sources") or []),
              "params": (pe.get("blocks") or {}).get("params", {}),
+             # which modelling code made this. The refresh sweep reads it to find
+             # the models an improvement has not reached yet.
+             "model_version": model.get("model_version"),
              "built": datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z"}
     d.run("update projects set status = 'ready', model_key = %s, stats = %s, region = %s, "
           "updated_at = now() where id = %s", key, json.dumps(stats), model.get("region"), proj["id"])
@@ -408,6 +461,7 @@ def main():
     # restarts this worker mid-job, and nothing else will ever pick those up
     sweep()
     last_sweep = time.time()
+    last_refresh = 0.0                     # look for stale models on the first idle tick
     while True:
         try:
             store.db().worker_beat("modeler")
@@ -422,6 +476,10 @@ def main():
         if time.time() - last_sweep > 60:
             sweep()
             last_sweep = time.time()
+        # only when the queue is empty: a client's own upload always goes first
+        if not busy and time.time() - last_refresh > REFRESH_MIN * 60:
+            refresh_stale_models()
+            last_refresh = time.time()
         if not busy:
             time.sleep(POLL)
 

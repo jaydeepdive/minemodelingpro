@@ -145,6 +145,40 @@ function buildBlocks(){if(blockMesh){scene.remove(blockMesh);blockMesh.geometry.
   const geo=new THREE.BoxGeometry(bx*0.97,bz*0.97,by*0.97);
   blockMesh=new THREE.InstancedMesh(geo,new THREE.MeshLambertMaterial({transparent:true,opacity:+$("blk-op").value/100,depthWrite:false}),n);
   blockMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);blockMesh.visible=$("L-blocks").checked;scene.add(blockMesh);applyCut();}
+/* ---- the body the model imagined ----
+   The wireframe decides which blocks may exist, so a hole in the block model has
+   two very different explanations: the body never reached there, or it did and
+   the estimator found nothing to put in it. Drawn over the blocks, the two are
+   told apart by eye. */
+let bodyMesh=null;
+function buildBody(){
+  if(bodyMesh){scene.remove(bodyMesh);bodyMesh.geometry.dispose();bodyMesh.material.dispose();bodyMesh=null;}
+  const E=M.elements[EL],B=E&&E.body;
+  const cb=$("L-body"),row=$("body-op-row"),why=$("body-why");
+  if(cb)cb.disabled=!B;
+  if($("body-note"))$("body-note").textContent=B?(fmtN(B.n)+" cells"):"not built";
+  if(row)row.style.display=B?"":"none";
+  if(why){
+    if(B){why.style.display="";
+      why.textContent="The shape the model triangulated through the mineralised intercepts"
+        +(B.bodies?" — "+B.bodies+" separate "+(B.bodies===1?"body":"bodies"):"")
+        +(B.reach_m?", linking holes up to "+B.reach_m+" m apart":"")
+        +". Blocks are only estimated inside it, so a gap here is a gap the drilling could not justify closing.";
+    } else {why.style.display="none";}
+  }
+  if(!B)return;
+  const ijk=b64(B.ijk,Uint16Array),[bx,by,bz]=B.size,o=B.origin,n=B.n;
+  const geo=new THREE.BoxGeometry(bx,bz,by);
+  bodyMesh=new THREE.InstancedMesh(geo,new THREE.MeshLambertMaterial({
+    color:0x6f7bdc,transparent:true,opacity:+(($("body-op")||{}).value||18)/100,
+    depthWrite:false,side:THREE.DoubleSide}),n);
+  const m=new THREE.Matrix4();
+  for(let i=0;i<n;i++){const p=V(o[0]+(ijk[i*3]+.5)*bx,o[1]+(ijk[i*3+1]+.5)*by,o[2]+(ijk[i*3+2]+.5)*bz);
+    m.makeTranslation(p.x,p.y,p.z);bodyMesh.setMatrixAt(i,m);}
+  bodyMesh.instanceMatrix.needsUpdate=true;
+  bodyMesh.visible=!!(cb&&cb.checked);
+  scene.add(bodyMesh);}
+
 /* ---------------- how big is it, and how deep ---------------- */
 function drawSize(){
   const box=$("sizebox");if(!box)return;
@@ -273,7 +307,7 @@ function drawLegend(){const E=M.elements[EL];$("lg-h").textContent=EL+" grade ("
   for(let k=E.bins.length-1;k>=0;k--){const d=document.createElement("div");const hi=k<E.bins.length-1?E.bins[k+1]:null;
     d.innerHTML=`<i style="background:${E.colors[k]}"></i>${hi==null?"≥ "+E.bins[k]:E.bins[k]+" – "+hi} ${esc(E.unit)}`;L.appendChild(d);}
   const d=document.createElement("div");d.innerHTML=`<i class="lo"></i>&lt; ${E.bins[0]} ${esc(E.unit)} · <span style="color:var(--mut)">grey = no reported intercept</span>`;L.appendChild(d);}
-function setEl(e){EL=e;store.set("el:"+M.slug,e);curZone=0;drawEls();buildIntervals();drawLegend();setupGT();buildBlocks();drawData();drawZones();}
+function setEl(e){EL=e;store.set("el:"+M.slug,e);curZone=0;drawEls();buildIntervals();drawLegend();setupGT();buildBlocks();buildBody();drawData();drawZones();}
 
 function setupGT(){const E=M.elements[EL];const cut=$("cut");
   if(!E.gt){$("gtsec").hidden=true;$("nogt").hidden=false;
@@ -842,6 +876,11 @@ $("L-terrain").onchange=e=>{if(terrain)terrain.visible=e.target.checked;store.se
 $("ter-op").oninput=e=>{const v=+e.target.value;$("ter-op-v").textContent=v+"%";if(terrain){terrain.material.uniforms.uOp.value=v/100;terrain.material.depthWrite=v>=100;}store.set("terop",v);};
 $("blk-op").oninput=e=>{const v=+e.target.value;$("blk-op-v").textContent=v+"%";if(blockMesh){blockMesh.material.opacity=v/100;blockMesh.material.transparent=v<100;blockMesh.material.depthWrite=v>=100;blockMesh.material.needsUpdate=true;}store.set("blkop",v);};
 {const v=store.get("blkop",35);$("blk-op").value=v;$("blk-op-v").textContent=v+"%";$("L-blocks").checked=store.get("blocks",true);}
+$("L-body").onchange=e=>{if(bodyMesh)bodyMesh.visible=e.target.checked;store.set("body",e.target.checked);};
+$("body-op").oninput=e=>{const v=+e.target.value;$("body-op-v").textContent=v+"%";
+  if(bodyMesh){bodyMesh.material.opacity=v/100;bodyMesh.material.needsUpdate=true;}store.set("bodyop",v);};
+{const v=store.get("bodyop",18);$("body-op").value=v;$("body-op-v").textContent=v+"%";
+ $("L-body").checked=store.get("body",false);}
 /* hole labels (nearest ~80 to screen centre) */
 const LBL=$("labels");let lblOn=false;$("L-labels").onchange=e=>{lblOn=e.target.checked;if(!lblOn)LBL.innerHTML="";};
 function drawLabels(){if(!lblOn)return;const cands=[];for(const h of HO){const s=scr(at(h,0));if(s[2]>1||s[0]<0||s[1]<0||s[0]>W()||s[1]>Hh())continue;cands.push([Math.hypot(s[0]-W()/2,s[1]-Hh()/2),h,s]);}
@@ -854,7 +893,7 @@ function updHud(){const mpp=2*dist*Math.tan(camera.fov*Math.PI/360)/Hh();const n
   $("needle").setAttribute("transform",`rotate(${(-yaw*180/Math.PI+180).toFixed(1)})`);}
 
 /* ---------------- start ---------------- */
-drawEls();buildIntervals();drawLegend();drawSources();buildBlocks();setupGT();drawData();drawBreakdown();drawSize();drawZones();
+drawEls();buildIntervals();drawLegend();drawSources();buildBlocks();buildBody();setupGT();drawData();drawBreakdown();drawSize();drawZones();
 {const ib=$("intbox");if(ib)ib.innerHTML=integrity();
  const mb=$("metbox");if(mb)mb.innerHTML=metallurgy();}
 resize();F=framing();view("3d",0);
