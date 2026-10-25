@@ -959,7 +959,14 @@ def _by_metal(primary, grids, by_el, units, key2i, H, PS, margin=None, style=Non
     # asked of the machine — a worker with a gigabyte reports fewer rather than
     # being killed halfway through reporting all of them.
     cap = PS.get("max_by_metal") or os.environ.get("MMP_MAX_BY_METAL")
-    cap = int(cap) if cap else (MAX_BY_METAL if mem_budget_mb() >= 1800 else 8)
+    # This cap was set to 8 below 1.8 GB back when every metal's intervals were
+    # dictionaries. Measured again on the columnar table at a client's scale
+    # (602 holes, 910,224 intervals, 27 elements): reporting 24 metals adds
+    # **0 MB** — it reuses the primary's blocks and estimates a grade at their
+    # centres, so it costs time, not memory. Cutting a client to 8 metals on a
+    # 1 GB box bought nothing and took away the one check that catches a wrong
+    # primary metal, which has now been wrong twice (copper, then gallium).
+    cap = int(cap) if cap else (MAX_BY_METAL if mem_budget_mb() >= 900 else 12)
     for el in want[:cap]:
         unit = units.get(el) or ("g/t" if el in PRECIOUS else "%")
         if el == primary:
@@ -1188,6 +1195,18 @@ def _by_value(grids, grades, order, units, bt, PS, cls=None, verbose=False):
             "order": [e for e in order if e in rows], "metals": rows}
 
 
+def _rss_mb():
+    """This process's resident size. Cheap enough to read at every phase, and
+    the only number that says whether the modeller fits in the box it has."""
+    try:
+        for ln in open("/proc/self/status"):
+            if ln.startswith("VmRSS:"):
+                return int(ln.split()[1]) / 1024.0
+    except Exception:
+        pass
+    return 0.0
+
+
 class Phases:
     """Where a build's minutes went, in a form the project card can show.
 
@@ -1200,12 +1219,18 @@ class Phases:
 
     def __init__(self):
         self.t = {}
+        self.mb = {}
         self._t0 = time.time()
+        self._m0 = _rss_mb()
+        self.start_mb = self._m0
 
     def mark(self, name):
-        now = time.time()
+        now, m = time.time(), _rss_mb()
         self.t[name] = self.t.get(name, 0.0) + (now - self._t0)
-        self._t0 = now
+        # what this phase ADDED and did not give back — the number that decides
+        # whether a 1 GB container survives
+        self.mb[name] = max(self.mb.get(name, 0.0), m - self._m0)
+        self._t0, self._m0 = now, m
 
     def summary(self, top=5):
         if not self.t:
@@ -1516,6 +1541,7 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                     zreach = max(float(reach), float(el_reach))
                     zlab, zlist = ZON.find(pts[mz], hid[mz], zreach,
                                            rot=rot_d, aniso=an_d)
+                    PH.mark("zones")
                     zone_pts, zone_lab = pts[mz], zlab
                     # which zone each composite belongs to — asked once, not once
                     # per zone, which was a KD-tree query per body on a property
@@ -1726,6 +1752,7 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                         "unzoned": (dom_info or {}).get("unzoned"),
                         "reach_m": round(float(reach), 1) if dom_pts is not None else None,
                     }
+            PH.mark("wireframe")
             el_out["gt"] = gt
             if PS.get("default_cutoff") is not None:
                 el_out["default_cutoff"] = float(PS["default_cutoff"])
@@ -1788,6 +1815,8 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
         "model_version": MODEL_VERSION,
         # where the build's minutes went, so "why is this slow" is a number
         "timings": {k: round(v, 1) for k, v in PH.t.items()},
+        "memory_mb": {k: round(v) for k, v in PH.mb.items()},
+        "peak_mb": round(_rss_mb()),
         "build_summary": PH.summary(),
         "frame": {"kind": fr["kind"], "lat0": round(lat0, 6) if geo else None, "lon0": round(lon0, 6) if geo else None,
                   "grid": fr.get("grid")},

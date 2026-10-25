@@ -954,6 +954,48 @@ Fair. I had been appending each new feature to one panel. Now:
 **Rule for anything added next: a new control goes in the panel whose question it
 answers, and prose goes on a tooltip.**
 
+## Efficiency inside 1 GB, measured not assumed (2026-10-25)
+
+Jordan: "im not increasing the monthly cost of this. you need to find a way to
+make it more efficient." The modeler stays on **1 GB** (`/api/health` reports
+what it actually has: `"mem 1048 MB"` — `.do/app.yaml` asks for 2 GB but that
+file is a reference copy; the live size is only in the DO console).
+
+**Every build now reports its own time AND memory per phase** (`Phases`,
+`_rss_mb`), stamped on the model as `timings` / `memory_mb` / `peak_mb` and
+printed on the project card: *"44s: estimate 38s, wireframe 5s, metal table 1s ·
+peak 882 MB"*. Measure before optimising; this is the instrument.
+
+Measured at a client's scale (602 holes, 910,224 intervals, 27 elements):
+
+| phase | time | memory added |
+|---|---|---|
+| block estimation | 26 s | 150 MB |
+| metal table (24 metals) | 12 s | **0 MB** |
+| wireframe | 4 s | 46 MB |
+| zones | 4 s | 41 MB |
+
+**The 8-metal cap below 1.8 GB was wrong.** It was set when every metal's
+intervals were dictionaries; on the columnar table the metal table reuses the
+primary's blocks and estimates a grade at their centres, so 24 metals cost
+**12 s and no memory at all**. Cutting a client to 8 metals on a 1 GB box bought
+nothing and removed the one check that catches a wrong primary metal — which has
+now been wrong twice (copper, then gallium), and is exactly why Jordan requires
+every metal. Threshold is now 900 MB, so a 1 GB modeler reports all 24.
+
+`grade_at` also caches its search plan (`_geom_key`, `_LRU(2)`): every metal is
+estimated at the same block centres from composites at the same positions, so it
+was one neighbour search repeated per metal with only the grade vector changing.
+The plan is bounded by a share of `mem_budget_mb()` and skipped when it would not
+fit — the modeller has been killed by exactly this kind of "small" extra before.
+
+**The next lever, not yet taken:** `estimate` is 60% of the build and runs once
+per element in `elements` (3 by default). The metal table already carries every
+metal's grade at the primary's block centres, so two of those three full block
+models exist mainly to let "Colour by" switch layers. Serving those from the
+metal table instead would cut the dominant phase by about two thirds. It changes
+what the viewer reads, so it needs the field-by-field model diff first.
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.

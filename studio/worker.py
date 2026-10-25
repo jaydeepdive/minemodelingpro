@@ -298,6 +298,9 @@ def do_build(job):
     # say where the time went: "why is a rebuild nine minutes" should be
     # answerable from the card, not from a profiler
     where = model.get("build_summary") or ""
+    peak = model.get("peak_mb")
+    if peak:
+        where = (where + " · " if where else "") + f"peak {peak} MB"
     return (f"built {stats['holes']} holes, {stats['intervals']} intervals, "
             f"{stats['blocks']:,} blocks" + (f" — {where}" if where else ""))
 
