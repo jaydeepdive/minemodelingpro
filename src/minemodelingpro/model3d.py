@@ -750,20 +750,61 @@ def _composite_el(per_hole, H, clen, gap_fill=True, margin=None, max_grade=None)
         mids = mids[mids < depth]
         if len(mids) == 0:
             mids = np.array([depth / 2.0])
-        gg = np.zeros(len(mids))
-        if not gap_fill:                     # only composite the reported intervals
-            keep_m = np.zeros(len(mids), bool)
-            for s in segs:
-                keep_m |= (mids >= s[0]) & (mids < s[1])
-            mids = mids[keep_m] if keep_m.any() else mids[:1]
+        # A composite is the LENGTH-WEIGHTED average of everything it spans, not
+        # a sample of whatever segment its midpoint happens to sit in. Taking the
+        # midpoint's segment loses a vein entirely when the midpoint misses it
+        # and multiplies it by clen/width when it hits: one metre of 1,000 g/t in
+        # a 5 m composite scored either 0 or 5,000 g/t-metres depending on where
+        # the vein sat in the hole. On narrow veins — 1 m assays, 5 m composites —
+        # that is the whole deposit.
+        if os.environ.get("MMP_COMPOSITE") == "midpoint":
+            # the old behaviour, kept only so the change can be A/B'd honestly
             gg = np.zeros(len(mids))
+            if not gap_fill:
+                keep_m = np.zeros(len(mids), bool)
+                for s in segs:
+                    keep_m |= (mids >= s[0]) & (mids < s[1])
+                mids = mids[keep_m] if keep_m.any() else mids[:1]
+                gg = np.zeros(len(mids))
+            for s in segs:
+                m = (mids >= s[0]) & (mids < s[1])
+                gg[m] = s[2]
+                if not m.any():
+                    mid = (s[0] + s[1]) / 2
+                    j = min(len(mids) - 1, int(mid // clen))
+                    gg[j] = max(gg[j], s[2] * (s[1] - s[0]) / clen)
+            xyz = hole_xyz(h, mids)
+            comp_p.append(xyz); comp_g.append(gg); comp_h.append(np.full(len(mids), hi))
+            pos = gg > 0
+            if pos.any():
+                cent.append(xyz[pos].mean(0))
+            continue
+        edges = np.arange(len(mids) + 1) * clen + (mids[0] - clen / 2.0)
+        acc = np.zeros(len(mids))            # grade x metres in each composite
+        cov = np.zeros(len(mids))            # metres of assay in each composite
         for s in segs:
-            m = (mids >= s[0]) & (mids < s[1])
-            gg[m] = s[2]
-            if not m.any():                  # a segment shorter than a composite
-                mid = (s[0] + s[1]) / 2
-                j = min(len(mids) - 1, int(mid // clen))
-                gg[j] = max(gg[j], s[2] * (s[1] - s[0]) / clen)
+            a, b, gv = float(s[0]), float(s[1]), float(s[2])
+            if b <= edges[0] or a >= edges[-1]:
+                continue
+            lo = max(0, int(np.searchsorted(edges, a, "right") - 1))
+            hi = min(len(mids), int(np.searchsorted(edges, b, "left")))
+            for j in range(lo, max(lo + 1, hi)):
+                if j >= len(mids):
+                    break
+                ov = min(b, edges[j + 1]) - max(a, edges[j])
+                if ov > 0:
+                    acc[j] += ov * gv
+                    cov[j] += ov
+        if gap_fill:
+            # un-assayed ground inside a composite is barren, so the divisor is
+            # the whole composite length — that is what the zero-fill means
+            gg = acc / clen
+        else:
+            keep_m = cov > 0
+            if not keep_m.any():
+                keep_m[:1] = True
+            mids = mids[keep_m]
+            gg = np.divide(acc[keep_m], np.maximum(cov[keep_m], 1e-9))
         if margin and len(mids):
             near = np.zeros(len(mids), bool)
             for s in segs:
