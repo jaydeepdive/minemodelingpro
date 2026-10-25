@@ -66,7 +66,10 @@ _VIEWER_TMPL = os.path.join(_HERE, "model3d_viewer.html")
 #      be drawn over the blocks instead of only inferred from where they stop
 #  8 — each wireframe cell carries the zone it belongs to, so the envelope can be
 #      read and isolated body by body rather than as one shape
-MODEL_VERSION = 8
+#  9 — zone membership is judged over the distance continuity is actually
+#      inferred, in the deposit's own anisotropic frame, instead of borrowing the
+#      wireframe's much tighter link reach (which split single lenses into many)
+MODEL_VERSION = 9
 # the most domain cells to send to a browser; beyond this the envelope is drawn
 # on a coarser lattice, which is a picture of the same shape
 BODY_MAX_CELLS = 120_000
@@ -1374,6 +1377,7 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
             el_reach = float(PS.get("max_gap_m") or PS.get("reach_m") or
                              reach_for_style(skey, spacing, max(blk)))
             dom_pts, dom_info, dom_zone = (None, None, None)
+            rot_d, an_d = None, None
             if PS.get("domain") is not False:
                 rot_d, an_d = anisotropy(pts, g, eopts.get("anisotropy"),
                                          trend=eopts.get("trend"))
@@ -1404,12 +1408,25 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                     # grade. Each zone gets its own surface, and the project is the
                     # union of them.
                     mz = g > max(bins[0], 1e-9)
-                    zlab, zlist = ZON.find(pts[mz], hid[mz], reach)
+                    # "May I draw a solid between these two holes?" and "are these
+                    # the same body?" are different questions and were sharing one
+                    # answer. The wireframe's reach is deliberately tight — a long
+                    # one invents rock (Blue Moon, 121x). But a step-out hole
+                    # exists precisely to prove continuity across more ground than
+                    # that, so judging zone membership by it split single lenses
+                    # into a dozen "zones" every time a step-out was longer than
+                    # the link reach, which is most of the time. Zone membership
+                    # uses the distance over which this style's own filings infer
+                    # continuity, in the deposit's frame: generous along strike and
+                    # down dip, tight across. The wireframe keeps its own bound.
+                    zreach = max(float(reach), float(el_reach))
+                    zlab, zlist = ZON.find(pts[mz], hid[mz], zreach,
+                                           rot=rot_d, aniso=an_d)
                     zone_pts, zone_lab = pts[mz], zlab
                     # which zone each composite belongs to — asked once, not once
                     # per zone, which was a KD-tree query per body on a property
                     # that can have fifty of them
-                    zof = ZON.assign(pts, zone_pts, zlab, reach)
+                    zof = ZON.assign(pts, zone_pts, zlab, zreach, rot=rot_d, aniso=an_d)
                     parts, zinfo, part_zone = [], [], []
                     for z in (zlist or []):
                         belong = zof == z["id"]
@@ -1437,7 +1454,7 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                         left = (zof == 0) & mz
                         if left.sum() >= 6:
                             near = ZON.assign(pts, pts[left], np.ones(int(left.sum()), int),
-                                              reach) > 0
+                                              zreach, rot=rot_d, aniso=an_d) > 0
                             lp, li = DOM.wireframe(
                                 pts[near], g[near], hid[near], max(bins[0], 1e-9),
                                 rot=rot_d, aniso=an_d, reach=reach,
@@ -1550,7 +1567,8 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
             bzone = None
             if zone_list and zone_pts is not None and len(zone_pts):
                 ctr = lo + (ijk.astype(np.float64) + 0.5) * np.asarray(bsz, float)
-                bzone = ZON.assign(ctr, zone_pts, zone_lab, dom_reach or el_reach)
+                bzone = ZON.assign(ctr, zone_pts, zone_lab, dom_reach or el_reach,
+                                   rot=rot_d, aniso=an_d)
                 try:
                     el_out["zones"] = ZON.summarise(
                         zone_list, bzone, gr, bt, [r[0] for r in gt][:10], el, unit, contained)

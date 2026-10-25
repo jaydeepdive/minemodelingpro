@@ -169,23 +169,21 @@ function buildBody(){
   if(row)row.style.display=B?"":"none";
   if(why){
     if(B){why.style.display="";
-      const nz=(B.zones||[]).filter(z=>z.id>0).length,un=(B.zones||[]).some(z=>z.id===0);
+      const nz=(B.zones||[]).filter(z=>z.id>0).length;
       why.innerHTML="";
-      why.textContent="The shape the model triangulated through the mineralised intercepts"
-        +(nz?" — "+nz+" named "+(nz===1?"body":"bodies")+", coloured to match the zone chips":"")
-        +(un?", plus grey ground that belongs to no named body":"")
-        +(B.reach_m?". Holes are linked up to "+B.reach_m+" m apart":"")
-        +". Blocks are only estimated inside it, so a gap here is a gap the drilling could not justify closing.";
+      why.textContent=nz+" "+(nz===1?"body":"bodies")+", coloured to match the Bodies panel."
+        +(B.reach_m?" Holes linked up to "+B.reach_m+" m apart.":"");
+      why.title="Blocks are only estimated inside this shape, so a gap in it is ground the "
+        +"drilling could not justify closing. Grey belongs to no named body.";
       // and the question that matters: how much of the drilled mineralisation
       // actually ended up inside it
       setTimeout(()=>{try{
         const R=reconcile();if(!R||!R.ore)return;
         const pc=Math.round(100*R.mod/R.ore);
         const d=document.createElement("div");
-        d.style.cssText="margin-top:5px;font-weight:700;color:"+(pc<70?"#c0392b":"#1d2530");
-        d.textContent="Of the "+fmtN(Math.round(R.ore))+" m of "+EL+" the assays report at or above "
-          +fmtG(curCut,E.unit)+", the model covers "+pc+"%"
-          +(pc<70?" — the rest is outside the shape. Open Drill data to see which holes.":".");
+        d.style.cssText="margin-top:4px;font-weight:700;color:"+(pc<70?"#c0392b":"#1d2530");
+        d.textContent="Covers "+pc+"% of the "+fmtN(Math.round(R.ore))+" m of "+EL+" the assays report.";
+        d.title="Drill data shows which holes the rest is in.";
         why.appendChild(d);}catch(e){}},0);
     } else {why.style.display="none";}
   }
@@ -417,11 +415,11 @@ let terrain=null;
 /* ---------------- zones: one project, body by body ---------------- */
 let curZone=0;
 function drawZones(){
-  const E=M.elements[EL],Z=(E&&E.zones)||[],sec=$("zonesec");
+  const E=M.elements[EL],Z=(E&&E.zones)||[],sec=$("pZones");
   if(!sec)return;
   if(!Z.length){sec.style.display="none";curZone=0;return;}
   sec.style.display="";
-  $("zone-n").textContent="· "+Z.length+" in this project";
+  $("zone-n").textContent="· "+Z.length;
   const dot=id=>`<i style="display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;vertical-align:1px;background:${zoneColor(id)}"></i>`;
   const chip=(id,label)=>`<button class="chip${curZone===id?" on":""}" data-z="${id}">${id?dot(id):""}${label}</button>`;
   $("zones").innerHTML=chip(0,"Whole project")+Z.map(z=>chip(z.id,z.name)).join("");
@@ -884,6 +882,85 @@ function drawData(){
                  (100*r.cov/r.len).toFixed(1),r.bg==null?"":r.bg.toFixed(4)]));
     download(M.slug+"-"+EL+"-unmodelled.csv",csv(rows));});
 }
+
+/* ---- the intervals themselves, in the page ----
+   A CSV is for taking the data away; this is for looking at it here. Every assay
+   interval the model was given, what the block model put at that spot, and which
+   ones it put nothing at — filtered, and narrowed to one hole by clicking it in
+   the table above. */
+let selHole=null,ivFilter="cut";
+function drawIvs(){
+  const box=$("ivtbl");if(!box)return;
+  const E=M.elements[EL],unit=E.unit,R=reconcile();
+  const cov={};R.rows.forEach(r=>{(cov[r.id]=cov[r.id]||{})[r.f+"|"+r.t]=r;});
+  const C=blockCells();
+  let rows=IV;
+  if(selHole)rows=rows.filter(x=>x.h.id===selHole);
+  if(ivFilter==="cut")rows=rows.filter(x=>x.g>=curCut);
+  else if(ivFilter==="out")rows=rows.filter(x=>{const r=(cov[x.h.id]||{})[x.f+"|"+x.t];
+    return x.g>=curCut&&r&&r.cov<r.len*0.5;});
+  const LIM=400,shown=rows.slice(0,LIM);
+  $("iv-n").textContent="· "+fmtN(rows.length)+(rows.length>LIM?" — first "+LIM+" shown":"")
+    +(selHole?" · "+selHole:"");
+  if(!shown.length){box.innerHTML=`<p class="note" style="padding:8px">No interval matches.</p>`;
+    $("ivnote").textContent="";return;}
+  box.innerHTML=`<table><colgroup><col style="width:26%"><col style="width:14%"><col style="width:14%"><col style="width:12%"><col style="width:17%"><col style="width:17%"></colgroup>`+
+    `<thead><tr><th>Hole</th><th class="n">From</th><th class="n">To</th><th class="n">Length</th>`+
+    `<th class="n">${esc(EL)}</th><th class="n" title="the grade the block model put at this interval">Block</th></tr></thead><tbody>`+
+    shown.map(x=>{const md=(x.f+x.t)/2,P=atM(x.h,md),bg=C?blockAt(P[0],P[1],P[2]):undefined;
+      const out=x.g>=curCut&&bg===undefined;
+      return `<tr data-h="${esc(x.h.id)}"${out?' class="out"':''}><td title="${esc(x.h.id)}">${esc(x.h.id)}</td>`+
+             `<td class="n">${(+x.f).toFixed(1)}</td><td class="n">${(+x.t).toFixed(1)}</td>`+
+             `<td class="n">${(x.t-x.f).toFixed(2)}</td>`+
+             `<td class="n">${fmtG(x.g,unit)}</td>`+
+             `<td class="n"${out?' style="color:#c0392b"':''}>${bg===undefined?"none":fmtG(bg,unit)}</td></tr>`;}).join("")+
+    `</tbody></table>`;
+  box.querySelectorAll("tr[data-h]").forEach(tr=>tr.onclick=()=>{
+    const h=HO.find(x=>x.id===tr.dataset.h);if(!h)return;
+    const mid=at(h,(h.depth||0)/2),L=Math.max(h.depth||100,120);
+    fly({x:mid.x,y:mid.y,z:mid.z,dist:L*1.8},600);toast("Pivoting on "+h.id);});
+  const miss=shown.filter(x=>{const r=(cov[x.h.id]||{})[x.f+"|"+x.t];return r&&r.cov<r.len*0.5;}).length;
+  $("ivnote").textContent = ivFilter==="all"
+    ? "Every interval the model was given, including the ones below the cut-off. “Block” is the grade the block model holds at that interval's own position."
+    : (miss? miss+" of these sit mostly outside the estimated blocks (shaded). Click a hole above to narrow this to that hole."
+           : "Every interval here sits inside the model. Click a hole above to narrow this to that hole.");}
+
+/* ---- does the model match the drilling? ----
+   Three comparisons that need no published resource. The one that matters for a
+   narrow vein is the third: a block is as wide as the block, not as wide as the
+   vein, so a half-metre of 1,000 g/t becomes five metres of 100 — and it is the
+   CONTAINED METAL that survives that, not the grade and not the tonnage. */
+function drawCheck(){
+  const box=$("checkbox");if(!box)return;
+  const E=M.elements[EL],C=E.check,B=E.blocks,unit=E.unit;
+  if(!C||!B){box.innerHTML="";$("checknote").textContent=
+    "This check is reported for the deposit's primary metal.";return;}
+  const bs=B.size||[0,0,0],bmin=Math.min(...bs);
+  const lens=IV.map(x=>x.t-x.f).filter(v=>v>0).sort((a,b)=>a-b);
+  const medw=lens.length?lens[lens.length>>1]:null;
+  const ratio=medw?bmin/medw:null;
+  const row=(k,v,t)=>`<div class="kv"${t?` title="${esc(t)}"`:""}><span>${k}</span><b>${v}</b></div>`;
+  box.innerHTML=
+    row("Mean assay grade", fmtG(C.assay_mean,unit), "every assay interval, unweighted")
+   +row("After compositing", fmtG(C.composite_mean,unit)
+        +(C.dilution_pct!=null?` <span style="color:var(--mut);font-weight:400">(−${C.dilution_pct}%)</span>`:""),
+        "the same metal spread over regular composite lengths, including barren ground between intercepts")
+   +row("Model vs nearest neighbour",
+        (C.bias_pct>0?"+":"")+C.bias_pct+"%",
+        "inverse distance smooths, nearest neighbour does not; a large gap means this model is smoothing rather than interpolating")
+   +(medw?row("Block vs typical intercept",
+        bmin+" m vs "+medw.toFixed(2)+" m"
+        +(ratio>1.5?` <span style="color:var(--red);font-weight:700">(${ratio.toFixed(0)}×)</span>`:""),
+        "how much wider a block is than the intercepts that fill it"):"");
+  $("checknote").innerHTML = !medw ? "" :
+    (ratio>1.5
+      ? `A block is <b>${ratio.toFixed(0)}×</b> wider than a typical intercept here, so the model cannot
+         show the body at its true width: ${medw.toFixed(2)} m of ${fmtG(C.assay_mean,unit)} is carried as
+         ${bmin} m of something far lower. <b>Contained metal is what survives that trade</b> — grade and
+         tonnage separately do not, and neither should be read as what a mine would see. Set
+         <code>true_width_m</code> and a smaller block in the model settings to narrow it.`
+      : `Blocks are about the size of the intercepts that fill them, so grade and tonnage can be
+         read more or less as they stand.`);}
 
 /* The one line that answers "does the model reflect the drilling". */
 function reconNote(R){

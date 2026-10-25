@@ -136,7 +136,21 @@ table.bd td.thin{color:var(--mut)}
 .fixnote{margin:8px 0;padding:8px 10px;border:1px solid var(--line);border-radius:7px;
   background:#fafbfc;font-size:10.5px;line-height:1.5;color:var(--mut)}
 .fixnote ul{margin:3px 0 3px 15px;padding:0}
-#holetbl{max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:8px;margin-top:6px}
+details.more>summary{cursor:pointer;list-style:none;font-size:10px;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--mut);font-weight:700;padding:5px 0;user-select:none}
+details.more>summary::-webkit-details-marker{display:none}
+details.more>summary::after{content:" ▸";font-size:9px}
+details.more[open]>summary::after{content:" ▾"}
+#holetbl,#ivtbl{max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:8px;margin-top:6px}
+#ivtbl table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:11.5px;font-variant-numeric:tabular-nums}
+#ivtbl th{position:sticky;top:0;background:#fff;text-align:left;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--mut);padding:5px 7px;border-bottom:1px solid var(--line)}
+#ivtbl td{padding:4px 7px;border-bottom:1px solid #f1f3f6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#ivtbl td.n{text-align:right}
+#ivtbl tr[data-h]{cursor:pointer}
+#ivtbl tr[data-h]:hover td{background:var(--panel)}
+#ivtbl tr.out td{background:#fff5f4}
+#holetbl tr.sel td{background:#eef3fb;font-weight:700}
 #holetbl table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:11.5px;font-variant-numeric:tabular-nums}
 #holetbl th{position:sticky;top:0;background:#fff;text-align:left;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;
   color:var(--mut);padding:5px 7px;border-bottom:1px solid var(--line)}
@@ -235,39 +249,27 @@ button.mini:hover{background:var(--chip)}
 <section id="pModel" class="panel">
   <div class="phead" data-p="pModel"><h2>Model</h2><button class="pbtn" aria-label="Minimise">–</button></div>
   <div class="pbody">
+    <!-- Toggles first. They are the control used most and were four scrolls down. -->
     <div class="sec">
-      <div class="stats">
-        <div class="stat"><b id="s-holes">–</b><span>Holes</span></div>
-        <div class="stat"><b id="s-int">–</b><span>Intervals</span></div>
-        <div class="stat"><b id="s-src">–</b><span>Sources</span></div>
-      </div>
-      <p class="lab" style="margin-top:10px">Size</p><div id="sizebox"></div>
-    </div>
-    <div class="sec" id="zonesec" style="display:none">
-      <p class="lab">Zones <small id="zone-n"></small></p>
-      <div class="chips" id="zones"></div>
-      <div id="zonebox"></div>
-      <p class="note">One project, modelled body by body. The totals above are the whole
-        project; pick a zone to see what it holds and to look at it on its own.</p>
-    </div>
-    <div class="sec" id="elsec"><p class="lab">Colour by</p><div class="chips" id="els"></div></div>
-    <div class="sec">
-      <p class="lab">Layers</p>
+      <p class="lab">Show</p>
       <label class="tg"><input type="checkbox" id="L-int" checked>Drill intervals by grade</label>
       <label class="tg"><input type="checkbox" id="L-trace" checked>Drill traces &amp; collars</label>
       <label class="tg"><input type="checkbox" id="L-blocks" checked>Block model<small id="blk-note"></small></label>
-      <label class="tg"><input type="checkbox" id="L-body">Deposit shape (wireframe)<small id="body-note"></small></label>
-      <label class="tg" id="zlab-row" style="display:none;padding-left:18px"><input type="checkbox" id="L-zlabels">Name each body on screen</label>
+      <label class="tg"><input type="checkbox" id="L-body">Deposit shape<small id="body-note"></small></label>
+      <label class="tg" id="zlab-row" style="display:none;padding-left:18px"><input type="checkbox" id="L-zlabels">Name each body</label>
       <label class="tg"><input type="checkbox" id="L-terrain">Terrain<small id="ter-note"></small></label>
       <label class="tg"><input type="checkbox" id="L-labels">Hole labels</label>
-      <div class="rng" id="ter-op-row"><div class="row"><span>Terrain opacity</span><span class="v" id="ter-op-v">45%</span></div>
-        <input type="range" id="ter-op" min="10" max="100" value="45"></div>
-      <div class="rng"><div class="row"><span>Block opacity</span><span class="v" id="blk-op-v">35%</span></div>
-        <input type="range" id="blk-op" min="10" max="100" value="35"></div>
-      <div class="rng" id="body-op-row" style="display:none"><div class="row"><span>Shape opacity</span><span class="v" id="body-op-v">18%</span></div>
-        <input type="range" id="body-op" min="4" max="60" value="18"></div>
+      <details class="more"><summary>Opacity</summary>
+        <div class="rng"><div class="row"><span>Blocks</span><span class="v" id="blk-op-v">35%</span></div>
+          <input type="range" id="blk-op" min="10" max="100" value="35"></div>
+        <div class="rng" id="body-op-row" style="display:none"><div class="row"><span>Deposit shape</span><span class="v" id="body-op-v">18%</span></div>
+          <input type="range" id="body-op" min="4" max="60" value="18"></div>
+        <div class="rng" id="ter-op-row"><div class="row"><span>Terrain</span><span class="v" id="ter-op-v">45%</span></div>
+          <input type="range" id="ter-op" min="10" max="100" value="45"></div>
+      </details>
       <p class="note" id="body-why" style="display:none"></p>
     </div>
+    <div class="sec" id="elsec"><p class="lab">Colour by</p><div class="chips" id="els"></div></div>
     <div class="sec">
       <p class="lab">View</p>
       <div class="btns">
@@ -276,11 +278,30 @@ button.mini:hover{background:var(--chip)}
       </div>
       <div class="find" style="margin-top:8px"><input id="find" list="holelist" placeholder="Go to hole…" autocomplete="off"><button class="btn" id="find-go" style="width:52px">Go</button></div>
       <datalist id="holelist"></datalist>
+    </div>
+    <details class="more sec"><summary>Size &amp; extent</summary>
+      <div class="stats" style="margin-top:6px">
+        <div class="stat"><b id="s-holes">–</b><span>Holes</span></div>
+        <div class="stat"><b id="s-int">–</b><span>Intervals</span></div>
+        <div class="stat"><b id="s-src">–</b><span>Sources</span></div>
+      </div>
+      <div id="sizebox" style="margin-top:8px"></div>
       <p class="hint" id="navhint">Drag to orbit · <b>Pan</b> button (or hold space / right-drag) to move around · scroll to zoom at the cursor · double-click anything to pivot around it · arrow keys or WASD pan, Q/E up-down.</p>
+    </details>
+  </div>
+</section>
+<!-- Zones are a reading of the model, not a display toggle: their own panel,
+     closed until asked for, so nineteen chips are never in the way. -->
+<section id="pZones" class="panel min" style="display:none">
+  <div class="phead" data-p="pZones"><h2>Bodies <small id="zone-n" style="font-weight:400;color:var(--mut)"></small></h2><button class="pbtn" aria-label="Minimise">+</button></div>
+  <div class="pbody">
+    <div class="sec">
+      <div class="chips" id="zones"></div>
+      <div id="zonebox"></div>
+      <p class="note">The totals elsewhere are the whole project. Pick one to see what it holds and look at it on its own.</p>
     </div>
   </div>
 </section>
-
 <section id="pData" class="panel min">
   <div class="phead" data-p="pData"><h2>Drill data</h2><button class="pbtn" aria-label="Minimise">–</button></div>
   <div class="pbody">
@@ -289,11 +310,23 @@ button.mini:hover{background:var(--chip)}
       <input type="search" id="hfilter" placeholder="Filter holes…" aria-label="Filter holes">
       <div id="holetbl"></div>
       <p class="note" id="reconnote" style="margin-top:7px"></p>
+      </div>
+    <div class="sec">
+      <p class="lab">Assay intervals <span id="iv-n" style="font-weight:400"></span></p>
+      <div class="btns" id="ivfilter" style="margin-bottom:5px">
+        <button class="chip on" data-f="cut">At or above cut-off</button><button class="chip" data-f="out">Not in the model</button><button class="chip" data-f="all">Every interval</button>
+      </div>
+      <div id="ivtbl"></div>
+      <p class="note" id="ivnote"></p>
       <div style="margin-top:6px">
         <button class="mini" id="dl-holes" style="margin-left:0">Holes CSV</button>
         <button class="mini" id="dl-ivs">Intervals CSV</button>
         <button class="mini" id="dl-miss">Unmodelled intervals CSV</button>
       </div></div>
+    <div class="sec">
+      <p class="lab">Does the model match the drilling?</p>
+      <div id="checkbox"></div>
+      <p class="note" id="checknote"></p></div>
     <div class="sec"><p class="lab">Data sources <span id="src-n" style="font-weight:400"></span></p><div class="src" id="srclist"></div></div>
   </div>
 </section>
@@ -331,7 +364,7 @@ button.mini:hover{background:var(--chip)}
 </section>
 
 <div id="mtools">
-  <button data-open="pModel">Model</button><button data-open="pGrade">Grade</button><button data-open="pData">Data</button><button data-open="pLegend">Legend</button>
+  <button data-open="pModel">Model</button><button data-open="pZones">Bodies</button><button data-open="pGrade">Grade</button><button data-open="pData">Data</button><button data-open="pLegend">Legend</button>
 </div>
 <div id="hud2">
   <div id="scalebar"><div class="sb"><span></span></div><b id="sb-l"></b></div>

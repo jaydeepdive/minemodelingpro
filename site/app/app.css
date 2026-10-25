@@ -76,3 +76,18 @@ footer.site{border-top:1px solid var(--line);color:var(--mut);font-size:12px;lin
 .tbl tr:last-child td{border-bottom:0}
 .note.src{color:#6b7280;font-style:italic}
 code{background:#f4f6f9;border:1px solid #e3e7ec;border-radius:4px;padding:1px 5px;font-size:12.5px}
+
+/* ---- the data browser on a project page ----
+   The client's own collars, surveys and assays, read here rather than in the 3D
+   viewer: someone checking what was imported is on this page, not orbiting a
+   block model. */
+.scrollx{max-height:420px;overflow:auto;border:1px solid var(--line);border-radius:10px}
+.scrollx table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+.scrollx th{position:sticky;top:0;background:#fff;text-align:left;font-size:11px;letter-spacing:.04em;
+  text-transform:uppercase;color:var(--mut);padding:7px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+.scrollx td{padding:6px 10px;border-bottom:1px solid #f1f3f6;white-space:nowrap}
+.scrollx td.n{text-align:right}
+.scrollx tr:hover td{background:var(--panel,#f5f7fa)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.seg button{border:0;background:#fff;padding:7px 13px;font:inherit;font-size:13px;cursor:pointer;color:var(--ink)}
+.seg button.on{background:var(--red);color:#fff;font-weight:700}

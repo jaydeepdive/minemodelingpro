@@ -76,6 +76,28 @@
     <div id="datasets"><p class="muted small">Nothing uploaded yet.</p></div>
   </div>
 
+  <!-- The data itself. Asked for repeatedly, and every earlier attempt lived
+       inside the 3D viewer, which is not where someone checking an import is. -->
+  <div class="card" style="margin-top:18px" id="browsecard">
+    <h3>Your data</h3>
+    <p class="note">Exactly what the modeller was given, straight from the parsed files.</p>
+    <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+      <div class="seg" id="dtabs">
+        <button class="on" data-t="assays">Assays</button><button data-t="collars">Collars</button><button data-t="surveys">Surveys</button>
+      </div>
+      <select id="del" style="min-width:120px"><option value="">All elements</option></select>
+      <input id="dq" placeholder="Filter by hole…" style="flex:1;min-width:150px">
+      <span class="muted small" id="dcount"></span>
+    </div>
+    <div id="dtable" class="scrollx"><p class="muted small">Loading…</p></div>
+    <div class="row" style="gap:8px;margin-top:10px;align-items:center">
+      <button class="btn ghost" id="dprev">Previous</button>
+      <button class="btn ghost" id="dnext">Next</button>
+      <span class="muted small" id="dpage"></span>
+      <a class="btn ghost" id="ddl" style="margin-left:auto" download>Download this table</a>
+    </div>
+  </div>
+
   <div class="card" style="margin-top:18px">
     <h3>Modelling parameters</h3>
     <p class="note">Blank means “work it out from the data”. Changing anything here rebuilds the model.</p>
@@ -90,7 +112,7 @@
 import { chrome, requireUser, getProject, listDatasets, uploadDataset, saveParams, setPublic,
          deleteProject, build, watchProject, paramForm, readParams, statusChip, modelUrl, defaults,
          reimportDataset,
-         $, $$, esc, fmt, fmtT, fmtC, banner } from "./app.js";
+         $, $$, esc, fmt, fmtT, fmtC, banner, api } from "./app.js";
 await chrome("dashboard");
 const user = await requireUser(); if (!user) throw new Error("redirecting");
 const id = new URLSearchParams(location.search).get("id");
@@ -151,6 +173,67 @@ function paint(p, job, worker) {
   }
 }
 paint(project, null);
+
+/* ---- the data browser ----
+   One endpoint, three tables, paged server-side so a 919,152-row assay file
+   opens as fast as a small one. */
+const D = { table: "assays", el: "", q: "", offset: 0, limit: 200, total: 0 };
+const dnum = v => v === null || v === undefined || v === "" ? ""
+  : (typeof v === "number" ? (Number.isInteger(v) ? v : +v.toFixed(4)) : v);
+
+async function loadData() {
+  const box = $("#dtable");
+  box.innerHTML = `<p class="muted small" style="padding:10px">Loading…</p>`;
+  let r;
+  try {
+    const qs = new URLSearchParams({ table: D.table, q: D.q, el: D.el,
+                                     limit: D.limit, offset: D.offset });
+    r = await api(`/projects/${project.id}/data?${qs}`);
+  } catch (e) {
+    box.innerHTML = `<p class="muted small" style="padding:10px">${esc(String(e.message || e))}</p>`;
+    $("#dcount").textContent = ""; $("#dpage").textContent = ""; return;
+  }
+  D.total = r.total || 0;
+  if (r.elements && r.elements.length && $("#del").options.length <= 1)
+    $("#del").innerHTML = `<option value="">All elements</option>` +
+      r.elements.map(e => `<option${e === D.el ? " selected" : ""}>${esc(e)}</option>`).join("");
+  $("#del").style.display = D.table === "assays" ? "" : "none";
+  $("#dcount").textContent = `${(r.total || 0).toLocaleString()} rows`;
+  if (!r.rows.length) {
+    box.innerHTML = `<p class="muted small" style="padding:10px">No rows${D.q ? ` matching “${esc(D.q)}”` : ""}.</p>`;
+  } else {
+    const isNum = i => r.rows.some(row => typeof row[i] === "number");
+    box.innerHTML = `<table><thead><tr>` +
+      r.columns.map(c => `<th>${esc(c.replace(/_/g, " "))}</th>`).join("") +
+      `</tr></thead><tbody>` +
+      r.rows.map(row => `<tr>` + row.map((v, i) =>
+        `<td${isNum(i) ? ' class="n"' : ""}>${esc(String(dnum(v)))}</td>`).join("") + `</tr>`).join("") +
+      `</tbody></table>`;
+  }
+  const from = r.total ? D.offset + 1 : 0, to = Math.min(D.offset + D.limit, r.total);
+  $("#dpage").textContent = r.total ? `${from.toLocaleString()}–${to.toLocaleString()} of ${r.total.toLocaleString()}` : "";
+  $("#dprev").disabled = D.offset <= 0;
+  $("#dnext").disabled = D.offset + D.limit >= r.total;
+  const dl = $("#ddl");
+  if (dl) { dl.href = `data:text/csv;charset=utf-8,` + encodeURIComponent(
+      [r.columns.join(",")].concat(r.rows.map(x => x.map(v =>
+        /[",\n]/.test(String(v ?? "")) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v ?? "")
+      ).join(","))).join("\n"));
+    dl.download = `${project.slug || "project"}-${D.table}.csv`;
+    dl.textContent = `Download these ${r.rows.length.toLocaleString()} rows`; }
+}
+
+document.querySelectorAll("#dtabs button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("#dtabs button").forEach(x => x.classList.toggle("on", x === b));
+  D.table = b.dataset.t; D.offset = 0; loadData();
+});
+$("#del").onchange = e => { D.el = e.target.value; D.offset = 0; loadData(); };
+let dT = null;
+$("#dq").oninput = e => { clearTimeout(dT); const v = e.target.value.trim();
+  dT = setTimeout(() => { D.q = v; D.offset = 0; loadData(); }, 250); };
+$("#dprev").onclick = () => { D.offset = Math.max(0, D.offset - D.limit); loadData(); };
+$("#dnext").onclick = () => { D.offset = D.offset + D.limit; loadData(); };
+loadData();
 // parameters start from the project's most recent technical report, else from
 // what is typical for its region and commodity; the form shows where each came from
 const auto = await defaults({ region: project.region, commodity: project.commodity, attach_to: project.attach_to });

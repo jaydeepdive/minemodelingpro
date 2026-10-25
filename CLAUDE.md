@@ -861,6 +861,73 @@ got there by desurveying once per interval instead of once per sample step (a
 surveyed path is straight to well under a block over a metre of core): 1.6 s →
 1.1 s, and it scales with the intervals above the cut-off, not all of them.
 
+## The data browser belongs on the project page (2026-10-25)
+
+Jordan asked four times to be able to see his own drill data, and I answered
+three of them by building something inside the 3D viewer. **Someone checking what
+was imported is on the project page, not orbiting a block model.** That is the
+lesson; the feature was never the hard part.
+
+`GET /api/projects/{id}/data?table=assays|collars|surveys&q=&el=&limit=&offset=`
+reads the parsed dataset straight out of storage — so it shows exactly what the
+modeller was given, not a re-derivation — and pages server-side, so a 919,152-row
+assay file opens as fast as a small one. The project page gains a **Your data**
+card: three tabs, an element filter, a hole filter, paging, and a CSV of the
+current page. `scripts/test_data_api.py` (14 tests, real Postgres) covers the
+three tables, both filters, paging, the limit bound, another account's project
+being refused, and a project with no parsed data saying so.
+
+*Caught by the test:* a stored interval's element key is **`el`**, not
+`"element"` (`ivtable.from_rows`). Collars are `e`/`n`/`z` + `hole`, surveys are
+`md`/`az`/`dip`. The endpoint accepts `x`/`y` as well, but check `from_rows`
+before assuming a key name.
+
+## Zones were being split by the wrong distance (2026-10-25)
+
+Jordan: "if mineralization is intersected at roughly the same depth theyre just
+trying to prove continuity. it doesnt mean theyre entire new fucking zones", and
+"why is no continuity being inferred anywhere".
+
+Right, and the cause was a conflation I introduced. **Two different questions had
+one answer:**
+
+1. *How far may I draw a solid between two holes?* — the wireframe's. Tight on
+   purpose and measured: a long one invents rock (Blue Moon, 121x).
+2. *Are these two intercepts the same body?* — the zone's. A step-out hole exists
+   precisely to prove continuity across more ground than (1) allows.
+
+Zone membership was using (1)'s answer — 26 m on Langis — so every step-out
+longer than that started a new "zone", giving 19 of them on one vein system, and
+because each zone gets its own wireframe, **no blocks filled the ground between
+them.** The fragmentation and the missing continuity were the same bug.
+
+Zone membership now uses `max(wireframe reach, el_reach)` — the distance this
+style's own filings infer continuity over — **in the deposit's own anisotropic
+frame** (`zones.warp`, the same transform the estimator searches in), so it is
+generous along strike and down dip and tight across. The wireframe keeps its own
+bound, unchanged. MODEL_VERSION 9.
+
+Measured: Los Ricos North 55 bodies -> 32, Pico Machay 15 -> 2, Angilak 17 -> 11,
+Adelita 2 -> 1.
+
+## The viewer panel had become a scroll (2026-10-25)
+
+Jordan: "i dont want to have to scroll for fucking ever to toggle everything on
+screen this layout is retarded", and "why is this being shown in the fucking
+toggle menu" (19 zone chips and a zone table, inside the Model panel).
+
+Fair. I had been appending each new feature to one panel. Now:
+
+- **Show (the toggles) is first** — it is the most-used control and was four
+  scrolls down. Opacity sliders are in a `<details>` under it.
+- **Bodies is its own panel** (`pZones`), minimised, with its own button in the
+  mobile tool strip. Zone chips are a reading of the model, not a display toggle.
+- **Size & extent** is a `<details>` at the bottom; the nav hint went inside it.
+- The shape note is one line with the detail on `title=`, not a paragraph.
+
+**Rule for anything added next: a new control goes in the panel whose question it
+answers, and prose goes on a tooltip.**
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.

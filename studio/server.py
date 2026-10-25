@@ -566,6 +566,76 @@ def project_model(pid: str, request: Request, u=Depends(require)):
         raise HTTPException(404, "the model file is missing — rebuild the project")
 
 
+@app.get("/api/projects/{pid}/data")
+def project_data(pid: str, request: Request, u=Depends(require),
+                 table: str = "assays", q: str = "", el: str = "",
+                 limit: int = 200, offset: int = 0, order: str = ""):
+    """The client's own drill data, as rows, from here.
+
+    Asked for four times before it existed, because every version of it I built
+    lived inside the 3D viewer — which is the wrong place: a person checking what
+    was imported is on the project page, not orbiting a block model. Reads the
+    parsed dataset straight out of storage, so it shows exactly what the modeller
+    was given, not a re-derivation of it."""
+    project_or_404(u, pid)
+    d, F = store.db(), store.files()
+    rows_in = d.all("select * from datasets where project_id = %s and status = 'ready' "
+                    "order by created_at", pid)
+    keys = [r["data_key"] for r in rows_in if r.get("data_key")]
+    if not keys:
+        raise HTTPException(404, "this project has no parsed data yet")
+    limit = max(1, min(int(limit or 200), 1000))
+    offset = max(0, int(offset or 0))
+    ql = (q or "").strip().lower()
+    out, total, cols, elements = [], 0, [], set()
+    from minemodelingpro import ivtable as IVT
+    for k in keys:
+        try:
+            raw = F.get_json(k)
+        except Exception:
+            continue
+        if table == "collars":
+            # the importer writes easting/northing as e/n; an extracted report's
+            # collars use the same names. Accept x/y too rather than assuming.
+            cols = ["hole", "easting", "northing", "elevation", "azimuth", "dip", "depth_m"]
+            for h in (raw.get("collars") or raw.get("holes") or []):
+                hid = str(h.get("hole") or h.get("id") or h.get("hole_id") or "")
+                if ql and ql not in hid.lower():
+                    continue
+                total += 1
+                if total > offset and len(out) < limit:
+                    out.append([hid, h.get("e", h.get("x")), h.get("n", h.get("y")),
+                                h.get("z"), h.get("az"), h.get("dip"), h.get("depth")])
+        elif table == "surveys":
+            cols = ["hole", "depth_m", "azimuth", "dip"]
+            for sv in (raw.get("surveys") or []):
+                hid = str(sv.get("hole") or sv.get("id") or "")
+                if ql and ql not in hid.lower():
+                    continue
+                total += 1
+                if total > offset and len(out) < limit:
+                    out.append([hid, sv.get("md", sv.get("depth")),
+                                sv.get("az"), sv.get("dip")])
+        else:
+            cols = ["hole", "from_m", "to_m", "length_m", "element", "grade", "unit"]
+            t = IVT.Intervals.coerce(raw.get("intervals") or [])
+            elements |= set(t.elements())
+            want = [el] if el else list(t.elements())
+            for e in want:
+                for r in t.rows_for(e):
+                    hid = str(r.get("hole") or "")
+                    if ql and ql not in hid.lower():
+                        continue
+                    total += 1
+                    if total > offset and len(out) < limit:
+                        fr, to = r.get("from"), r.get("to")
+                        out.append([hid, fr, to,
+                                    (round(to - fr, 2) if fr is not None and to is not None else None),
+                                    e, r.get("grade"), r.get("unit")])
+    return {"table": table, "columns": cols, "rows": out, "total": total,
+            "offset": offset, "limit": limit, "elements": sorted(elements)}
+
+
 @app.post("/api/adopt")
 async def adopt(request: Request, u=Depends(require)):
     """Open one of MMP's own public models in Studio, so its parameters can be
