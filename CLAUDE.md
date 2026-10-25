@@ -579,6 +579,59 @@ body is drawn; it may not redraw the body.
 are off by more than 10x in *both* arms, and no setting of this knob touches
 them. That bucket — not the search distance — is where the next gain is.
 
+## Why twenty of seventy-eight were ten times out (2026-10-25)
+
+They are not comparisons of the same deposit. One number separates them, and it
+is not about the model: **the tonnage the filing claims for every assayed hole
+the report published.**
+
+| filed t per assayed hole | n | median | within 2x | worse than 10x |
+|---|---|---|---|---|
+| under 30 kt | 10 | 3.42x | 1 | 3 |
+| 30 kt - 100 kt | 9 | 1.08x | 6 | 0 |
+| 100 kt - 300 kt | 9 | 1.92x | 5 | 0 |
+| 300 kt - 1 Mt | 9 | 0.86x | 6 | 1 |
+| over 1 Mt | 14 | 0.44x | 4 | 3 |
+
+The correlation between log(filed tonnes per assayed hole) and log(model/filed)
+is **-0.53** over 79 projects, and every >10x failure sits in one of the two
+tails:
+
+- **Under ~30 kt per hole — "the filing covers part of what we model."** Aguila
+  files 112 kt Indicated; MMP holds 45 holes across the property and models all
+  of it. Cajueiro files 254 kt Indicated while its own Inferred is 11 Mt. These
+  read 4.4x high as a group, and the model is not wrong — it is answering a
+  different question from the one the filing answers.
+- **Over ~1 Mt per hole — "a resource published without its drilling."**
+  Duparquet files 69 Mt behind 5 assayed holes and 7 intervals: 9.9 Mt of filed
+  rock per published interval. No estimator reaches that from that data. This is
+  the floor documented above, now measured rather than asserted.
+
+What is NOT the cause: MMP's own tonnes per assayed hole is steady across the
+groups — 240 kt where the score is within 2x, 268 kt filed on the same projects,
+and 662 kt on the over-group. The estimator is behaving consistently; the
+denominators are not.
+
+**What shipped.** `validate.py` gains `comparability()`, `mark_comparability()`
+and `comparability_bands()`, the headline gains a comparable-only line, and
+`stamp()` writes each project's own verdict into its page, so a reader can see
+whether the filing beside the model describes the same rock.
+
+      AT THEIR GRADE    n=51  median 1.006x  within 1.5x 14  2x 22
+      COMPARABLE ONLY   n=27  median 1.076x  within 1.5x 10  2x 17   >10x: 1
+        set aside: 22 resource published without its drilling
+        set aside: 19 filing covers part of what we model
+
+Quoting one blended figure over all 51 describes neither population. Where the
+filing and its drilling are in the same world, **63% of models land within 2x
+and exactly one is more than 10x out.**
+
+**The next real gain is per-zone modelling.** The 19 "filing covers part of what
+we model" projects are properties with several mineralised zones where the
+statement covers one. MMP builds one model per project by design; clustering the
+mineralised intercepts and reporting the zone that matches the filing's own
+extent would make those nineteen comparable. That is the work, not more reach.
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.

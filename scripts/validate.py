@@ -371,6 +371,52 @@ DRILL_BANDS = [("under 20 assayed holes", 0, 20),
                ("over 150 assayed holes", 150, 10 ** 9)]
 
 
+
+# How much deposit the filing claims for every assayed hole the report published.
+#
+# This, not the hole count, is what decides whether a comparison means anything.
+# Measured over 79 scored projects: the correlation between log(tonnes per hole)
+# and log(model / filed) is -0.53, and the two tails are the whole of the >10x
+# failure population. Below ~30 kt per assayed hole the filing is a zone of a
+# property MMP models whole, and MMP reads 4.4x high; above ~1 Mt per hole the
+# report has published a resource and almost none of the drilling behind it, and
+# MMP reads 0.42x low. In between — half the corpus — the median is 1.05x.
+COMPARABLE_LO, COMPARABLE_HI = 3.0e4, 1.0e6
+
+
+def tonnes_per_hole(r):
+    """Filed tonnes for each assayed hole MMP holds, or None."""
+    t = r.get("filed_tonnes") or 0
+    h = r.get("assayed_holes") or 0
+    return (float(t) / h) if (t and h) else None
+
+
+def comparability(r):
+    """Whether this filing and the drilling behind it are in the same world.
+
+    Returns (verdict, tonnes per hole). A verdict of "zone of a larger property"
+    or "resource published without its drilling" is not a judgement on the model:
+    it says the two numbers describe different things, which is worth more to a
+    reader than an accuracy figure that silently blends them."""
+    tph = tonnes_per_hole(r)
+    if tph is None:
+        return "unknown", None
+    if tph < COMPARABLE_LO:
+        return "filing covers part of what we model", tph
+    if tph > COMPARABLE_HI:
+        return "resource published without its drilling", tph
+    return "comparable", tph
+
+
+def mark_comparability(rows):
+    """Stamp every row with how far the filing and its published drilling agree."""
+    for r in rows:
+        v, tph = comparability(r)
+        r["comparability"] = v
+        r["filed_tonnes_per_hole"] = round(tph) if tph else None
+    return rows
+
+
 def accuracy_bands(rows):
     """What a model with THIS much drilling has been worth, measured.
 
@@ -398,6 +444,29 @@ def accuracy_bands(rows):
                     "q1": round(q1, 3), "q3": round(q3, 3),
                     "within_1_5x": sum(1 for x in xs if 1 / 1.5 <= x <= 1.5),
                     "within_2x": sum(1 for x in xs if 0.5 <= x <= 2.0)})
+    return out
+
+
+def comparability_bands(rows):
+    """The record by how much deposit the filing claims per assayed hole."""
+    ok = [r for r in rows if r.get("grade_matched_ratio")
+          and not r.get("suspect") and not r.get("grade_matched_clamped")
+          and tonnes_per_hole(r)]
+    out = []
+    for name, lo, hi in (("under 30 kt per assayed hole", 0, 3e4),
+                         ("30 kt to 100 kt", 3e4, 1e5),
+                         ("100 kt to 300 kt", 1e5, 3e5),
+                         ("300 kt to 1 Mt", 3e5, 1e6),
+                         ("over 1 Mt per assayed hole", 1e6, float("inf"))):
+        g = [r for r in ok if lo <= tonnes_per_hole(r) < hi]
+        if len(g) < 5:
+            continue
+        xs = sorted(r["grade_matched_ratio"] for r in g)
+        out.append({"band": name, "min_tph": lo,
+                    "max_tph": None if hi == float("inf") else hi, "n": len(g),
+                    "median": round(statistics.median(xs), 3),
+                    "within_2x": sum(1 for x in xs if 0.5 <= x <= 2.0),
+                    "worse_than_10x": sum(1 for x in xs if x > 10 or x < 0.1)})
     return out
 
 
@@ -434,6 +503,24 @@ def headline(rows):
                     "grade_matched_median": round(statistics.median(gm), 3),
                     "grade_matched_within_1_5x": within(gm, 1.5),
                     "grade_matched_within_2x": within(gm, 2.0)})
+    # The same score where the filing and the drilling behind it are in the same
+    # world. Every project MMP is more than ten times out on sits in one of the
+    # two tails of `comparability`, and blending them into one figure describes
+    # neither: it hides where the estimator is genuinely good and excuses nothing.
+    comp = [x["grade_matched_ratio"] for x in ok
+            if x.get("grade_matched_ratio") and not x.get("grade_matched_clamped")
+            and comparability(x)[0] == "comparable"]
+    verdicts = {}
+    for x in ok:
+        if x.get("grade_matched_ratio"):
+            verdicts[comparability(x)[0]] = verdicts.get(comparability(x)[0], 0) + 1
+    if comp:
+        out.update({"comparable_n": len(comp),
+                    "comparable_median": round(statistics.median(comp), 3),
+                    "comparable_within_1_5x": within(comp, 1.5),
+                    "comparable_within_2x": within(comp, 2.0),
+                    "comparable_worse_than_10x": sum(1 for x in comp if x > 10 or x < 0.1),
+                    "why_not_comparable": verdicts})
     # The same score restricted to the projects where we actually hold the deposit.
     # A filed statement rests on the company's whole drill database; a technical
     # report publishes a summary of it. Where the report's own description of the
@@ -488,7 +575,7 @@ def tier_calibration(rows):
             "projects": got}
 
 
-def stamp(site, head, cal):
+def stamp(site, head, cal, rows=()):
     """Write the measured record back into every built page.
 
     A model page claims a track record, so the claim has to be the record this
@@ -501,6 +588,9 @@ def stamp(site, head, cal):
            "covered_median": head.get("covered_median"),
            "covered_within_1_5x": head.get("covered_within_1_5x"),
            "bands": head.get("bands"),
+           "comparable_n": head.get("comparable_n"),
+           "comparable_median": head.get("comparable_median"),
+           "comparable_within_2x": head.get("comparable_within_2x"),
            "tiers": ({"n": cal["n"], "filed_mi_share": cal.get("filed_mi_share_median"),
                       "mmp_top2_share": cal.get("mmp_top2_share_median")}
                      if cal.get("n") else None)}
@@ -508,6 +598,7 @@ def stamp(site, head, cal):
     # "track_record":{...} cannot know where the object ends — the page is one long
     # line and a non-greedy match to the next "}}" runs straight past it into the
     # rest of the model. It did, on all 120 pages, before this was written properly.
+    by_slug = {r.get("slug"): r for r in (rows or ())}
     n = bad = 0
     for path in sorted(glob.glob(os.path.join(site, "models", "*.html"))):
         if os.path.basename(path).startswith("_"):
@@ -526,6 +617,14 @@ def stamp(site, head, cal):
                  or (model.get("counts") or {}).get("holes"))
         rec2["mine"] = band_for(rec.get("bands"), holes)
         rec2["mine_holes"] = holes
+        # and whether the cross-check on THIS page is comparing like with like.
+        # A reader deserves to know that the filing beside the model describes a
+        # zone of what the model covers, or rests on drilling the report never
+        # published — those are the only places the two numbers are far apart.
+        own = by_slug.get(model.get("slug"))
+        if own:
+            rec2["comparability"] = own.get("comparability")
+            rec2["filed_tonnes_per_hole"] = own.get("filed_tonnes_per_hole")
         model["track_record"] = rec2
         blob = json.dumps(model, separators=(",", ":")).replace("</", "<\\/")
         open(path, "w", encoding="utf-8").write(s[:m.start(2)] + blob + s[m.end(2):])
@@ -535,11 +634,13 @@ def stamp(site, head, cal):
 
 def main():
     site = next((a for a in sys.argv[1:] if not a.startswith("-")), "site")
-    rows = score(site)
+    rows = mark_comparability(score(site))
     head = headline(rows)
+    head.setdefault("bands", accuracy_bands(rows))
     cal = tier_calibration(rows)
     out = {"generated": __import__("datetime").datetime.utcnow().isoformat(timespec="seconds") + "Z",
-           "headline": head, "tiers": cal, "projects": rows}
+           "headline": head, "tiers": cal, "bands": accuracy_bands(rows),
+           "comparability_bands": comparability_bands(rows), "projects": rows}
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     json.dump(out, open(OUT, "w"), indent=1)
     print(f"scored {len(rows)} project(s) against a filed statement"
@@ -562,6 +663,16 @@ def main():
     if head.get("grade_matched_n"):
         print(f"  AT THEIR GRADE     n={head['grade_matched_n']}  median {head['grade_matched_median']}x"
               f"  within 1.5x {head['grade_matched_within_1_5x']}  2x {head['grade_matched_within_2x']}")
+    if head.get("comparable_n"):
+        print(f"  COMPARABLE ONLY    n={head['comparable_n']}  median {head['comparable_median']}x"
+              f"  within 1.5x {head['comparable_within_1_5x']}  2x {head['comparable_within_2x']}"
+              f"  (worse than 10x: {head['comparable_worse_than_10x']})")
+        for k, v in sorted((head.get("why_not_comparable") or {}).items(), key=lambda kv: -kv[1]):
+            if k != "comparable":
+                print(f"    set aside: {v:3d}  {k}")
+    for b in out["comparability_bands"]:
+        print("    %-30s n=%-4d median %5.2fx  within 2x %-3d  worse than 10x %d"
+              % (b["band"], b["n"], b["median"], b["within_2x"], b["worse_than_10x"]))
     if head.get("covered_n"):
         print(f"  WHERE WE HOLD IT   n={head['covered_n']}  median {head['covered_median']}x"
               f"  within 1.5x {head['covered_within_1_5x']}  2x {head['covered_within_2x']}"
@@ -583,7 +694,7 @@ def main():
     for x in rows[-10:][::-1]:
         print(line(x))
     if "--stamp" in sys.argv:
-        stamp(site, head, cal)
+        stamp(site, head, cal, rows)
     print("\nwrote", OUT)
 
 
