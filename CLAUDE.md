@@ -755,6 +755,56 @@ unified (2026-10-19) without updating it. `scripts/test_public_assets.py` walks
 every public page's scripts and stylesheets and fails if one would be refused or
 is missing from disk. **Add any new asset a public page loads to `_OPEN_EXACT`.**
 
+## Reading the drilling against the model built from it (2026-10-25)
+
+Jordan: "i need to be able to see hole data outside of the model. the drill data
+on the modeling screen is saying we have long intervals of mineralization that
+was intersected but the model is not reflecting the same type of data."
+
+That is a checkable statement, so the viewer now checks it instead of leaving it
+to the eye. Blocks sit on a regular lattice, so "is there a block at this point,
+and what grade did it get" is a hash lookup (`blockCells`, `blockAt`) rather than
+a search. `reconcile()` walks every assay interval at or above the current
+cut-off down its own hole at half a block a step and records how much of its
+length falls inside an estimated block. Entirely client-side, on data the page
+already carries — no rebuild, and it follows the cut-off slider (debounced 260 ms,
+since it is a full pass over the intervals).
+
+- The Holes table gains **Ore m** (interval length at or above the cut-off) and
+  **In model** (how much of it the blocks cover). A hole under 50% is shaded.
+- One line under the table says it for the project: "the assays report N m at or
+  above X, and the block model covers P% of it."
+- Three CSV exports: **Holes**, **Intervals** (every interval with its position,
+  whether a block exists there and that block's grade) and **Unmodelled
+  intervals** (the ones under 50%, longest first). Coordinates are labelled
+  `x_local_m`/`y_local_m` because the model is recentred on the drilling, with
+  real `latitude`/`longitude` beside them from `frame.lat0/lon0`.
+
+Measured on Angilak: 723 m of U3O8 at or above 0.05%, model covers 89% (645 m);
+156 intervals totalling 72 m sit mostly outside the blocks. The whole pass takes
+1.6 s over 3,668 intervals.
+
+## The renderer was stale for six days (2026-10-25, found while doing the above)
+
+`site/app/model.html` fetches `../models/_shell.html` and `../models/viewer.js`.
+Those are **build artifacts committed into `site/`**, refreshed only when the
+nightly gallery build runs — so every viewer improvement since 2026-10-19 (the
+zones panel, the deposit-shape toggle, this drill-data work) reached a client's
+private model a day late at best, and not at all if the build failed. The same
+staleness that made models need a button press, one layer down.
+
+`studio/server.py` now serves `/models/viewer.js` and `/models/_shell.html` from
+the **package** (`src/minemodelingpro/`), which is this deployment's own code.
+The explicit routes are registered before the `app.mount("/")` static mount, so
+they win; `scripts/test_public_assets.py` asserts both the routes and that
+ordering. The committed copies under `site/models/` are still refreshed (public
+gallery pages on GitHub Pages are served statically and have no FastAPI in front
+of them) — but Studio no longer depends on them.
+
+**Old model pages are safe with a new renderer**: every new panel lookup guards on
+a null element, so a page whose baked shell predates a control simply does not
+show it. Keep that habit.
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.

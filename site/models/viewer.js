@@ -141,10 +141,150 @@ function buildBlocks(){if(blockMesh){scene.remove(blockMesh);blockMesh.geometry.
   $("L-blocks").disabled=!B;$("blk-note").textContent=B?(fmtN(B.n_total)+" blocks"):"too few holes";
   if(!B)return;const ijk=b64(B.ijk,Uint16Array),g=b64(B.g,Float32Array),n=B.n,[bx,by,bz]=B.size,o=B.origin;
   const pos=new Float32Array(n*3);for(let i=0;i<n;i++){const p=V(o[0]+(ijk[i*3]+.5)*bx,o[1]+(ijk[i*3+1]+.5)*by,o[2]+(ijk[i*3+2]+.5)*bz);pos[i*3]=p.x;pos[i*3+1]=p.y;pos[i*3+2]=p.z;}
-  BK={n,g,pos};
+  // the grid itself is kept, not just the drawn positions: it is what lets a
+  // drill interval be asked "is there a block here, and what grade did it get"
+  BK={n,g,pos,ijk,o,size:B.size,zone:B.zone?b64(B.zone,Uint8Array):null,cell:null};
   const geo=new THREE.BoxGeometry(bx*0.97,bz*0.97,by*0.97);
   blockMesh=new THREE.InstancedMesh(geo,new THREE.MeshLambertMaterial({transparent:true,opacity:+$("blk-op").value/100,depthWrite:false}),n);
   blockMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);blockMesh.visible=$("L-blocks").checked;scene.add(blockMesh);applyCut();}
+/* ---- the body the model imagined ----
+   The wireframe decides which blocks may exist, so a hole in the block model has
+   two very different explanations: the body never reached there, or it did and
+   the estimator found nothing to put in it. Drawn over the blocks, the two are
+   told apart by eye. */
+/* One colour per body, shared by the envelope, the chips and the labels, so a
+   zone is the same thing in the picture and in the table. Zone 0 is the ground
+   that belongs to no named body — grey, and still shown. */
+const ZCOL=["#8d98a7","#2f7ed8","#d94f3d","#1f9d55","#8e5bd1","#d99a00","#0f9fb0",
+            "#c2447a","#6b8e23","#4a5bbd","#b5651d","#2aa198"];
+function zoneColor(id){return id?ZCOL[((id-1)%(ZCOL.length-1))+1]:ZCOL[0];}
+
+let bodyMesh=null,BD=null;
+function buildBody(){
+  if(bodyMesh){scene.remove(bodyMesh);bodyMesh.geometry.dispose();bodyMesh.material.dispose();bodyMesh=null;}
+  const E=M.elements[EL],B=E&&E.body;
+  const cb=$("L-body"),row=$("body-op-row"),why=$("body-why");
+  if(cb)cb.disabled=!B;
+  if($("body-note"))$("body-note").textContent=B?(fmtN(B.n)+" cells"):"not built";
+  if(row)row.style.display=B?"":"none";
+  if(why){
+    if(B){why.style.display="";
+      const nz=(B.zones||[]).filter(z=>z.id>0).length,un=(B.zones||[]).some(z=>z.id===0);
+      why.textContent="The shape the model triangulated through the mineralised intercepts"
+        +(nz?" — "+nz+" named "+(nz===1?"body":"bodies")+", coloured to match the zone chips":"")
+        +(un?", plus grey ground that belongs to no named body":"")
+        +(B.reach_m?". Holes are linked up to "+B.reach_m+" m apart":"")
+        +". Blocks are only estimated inside it, so a gap here is a gap the drilling could not justify closing.";
+    } else {why.style.display="none";}
+  }
+  BD=null;
+  if(!B)return;
+  const ijk=b64(B.ijk,Uint16Array),[bx,by,bz]=B.size,o=B.origin,n=B.n;
+  const pos=new Float32Array(n*3);
+  for(let i=0;i<n;i++){const p=V(o[0]+(ijk[i*3]+.5)*bx,o[1]+(ijk[i*3+1]+.5)*by,o[2]+(ijk[i*3+2]+.5)*bz);
+    pos[i*3]=p.x;pos[i*3+1]=p.y;pos[i*3+2]=p.z;}
+  BD={n,pos,zone:B.zone?b64(B.zone,Uint8Array):null,zones:B.zones||[]};
+  const geo=new THREE.BoxGeometry(bx,bz,by);
+  bodyMesh=new THREE.InstancedMesh(geo,new THREE.MeshLambertMaterial({
+    transparent:true,opacity:+(($("body-op")||{}).value||18)/100,
+    depthWrite:false,side:THREE.DoubleSide}),n);
+  bodyMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  bodyMesh.visible=!!(cb&&cb.checked);
+  scene.add(bodyMesh);applyBody();}
+
+/* Which of the envelope is drawn: everything, or one body when a zone is picked.
+   Same rule as the blocks, so the two always show the same deposit. */
+const _bm=new THREE.Matrix4(),_bc=new THREE.Color();
+function applyBody(){
+  if(!BD||!bodyMesh)return;let j=0;
+  for(let i=0;i<BD.n;i++){
+    const z=BD.zone?BD.zone[i]:0;
+    if(curZone&&z!==curZone)continue;
+    _bm.makeTranslation(BD.pos[i*3],BD.pos[i*3+1],BD.pos[i*3+2]);bodyMesh.setMatrixAt(j,_bm);
+    _bc.set(zoneColor(z));bodyMesh.setColorAt(j,_bc);j++;}
+  bodyMesh.count=j;bodyMesh.instanceMatrix.needsUpdate=true;
+  if(bodyMesh.instanceColor)bodyMesh.instanceColor.needsUpdate=true;}
+
+/* the body's name, written in the middle of it */
+function zoneLabels(){
+  if(!BD||!bodyMesh||!bodyMesh.visible||!BD.zones.length)return[];
+  const out=[];
+  // a property can carry fifty bodies and fifty labels is a wall of text; the
+  // list is biggest-first, so the ones worth naming are at the front
+  const cap=curZone?BD.zones.length:(MOBILE?6:14);
+  for(const z of BD.zones){
+    if(curZone&&z.id!==curZone)continue;
+    if(out.length>=cap)break;
+    if(!z.centre)continue;
+    const s=scr(V(z.centre[0],z.centre[1],z.centre[2]));
+    if(s[2]>1||s[0]<0||s[1]<0||s[0]>W()||s[1]>Hh())continue;
+    out.push(`<span class="zl" style="left:${s[0]}px;top:${s[1]}px;background:${zoneColor(z.id)}">`
+             +esc(z.name)+`</span>`);}
+  return out;}
+
+/* ---- the drilling, against the model built from it ----
+   "the drill data says we cut long intervals of mineralisation and the model is
+   not reflecting it" is a checkable statement, so it is checked here rather than
+   argued about: every assay interval at or above the cut-off is walked down the
+   hole and asked whether the block model has a block there, and what grade that
+   block carries. The blocks sit on a regular lattice, so that question is a hash
+   lookup, not a search. */
+function atM(h,m){        // position at depth m, in MODEL space (x east, y north, z elevation)
+  const p=h.p;
+  if(p&&p.length>=8){const n=p.length/4;let i=0;while(i<n-2&&p[(i+1)*4]<m)i++;
+    const m0=p[i*4],m1=p[(i+1)*4],t=m1>m0?(m-m0)/(m1-m0):0;
+    return [h.x+p[i*4+1]+(p[i*4+5]-p[i*4+1])*t, h.y+p[i*4+2]+(p[i*4+6]-p[i*4+2])*t,
+            h.z+p[i*4+3]+(p[i*4+7]-p[i*4+3])*t];}
+  return [h.x+h.d[0]*m, h.y+h.d[1]*m, h.z+h.d[2]*m];}
+
+function blockCells(){
+  if(!BK)return null;
+  if(BK.cell)return BK.cell;
+  const m=new Map();
+  for(let i=0;i<BK.n;i++){const a=BK.ijk[i*3],b=BK.ijk[i*3+1],c=BK.ijk[i*3+2];
+    m.set((a*65536+b)*65536+c,BK.g[i]);}
+  BK.cell=m;return m;}
+
+function blockAt(x,y,z){
+  const C=blockCells();if(!C)return undefined;
+  const [bx,by,bz]=BK.size,o=BK.o;
+  const i=Math.floor((x-o[0])/bx),j=Math.floor((y-o[1])/by),k=Math.floor((z-o[2])/bz);
+  if(i<0||j<0||k<0||i>65535||j>65535||k>65535)return undefined;
+  return C.get((i*65536+j)*65536+k);}
+
+/* Per interval: its length, and how much of it sits inside an estimated block.
+   Sampled at half a block, which is the finest the block model can answer. */
+let RECON=null;
+function reconcile(){
+  const E=M.elements[EL];
+  const key=EL+"|"+curCut+"|"+(BK?BK.n:0);
+  if(RECON&&RECON.key===key)return RECON;
+  if(!BK||!IV.length){RECON={key,rows:[],byHole:{},ore:0,mod:0};return RECON;}
+  const step=Math.min(...BK.size)/2,rows=[],byHole={};
+  let ore=0,mod=0;
+  for(const x of IV){
+    if(!(x.g>=curCut))continue;
+    const L=Math.max(0,(x.t||0)-(x.f||0));if(!L)continue;
+    const nsteps=Math.max(1,Math.ceil(L/step));let inside=0,gsum=0,gn=0;
+    for(let s=0;s<nsteps;s++){
+      const md=x.f+L*(s+0.5)/nsteps,P=atM(x.h,md),bg=blockAt(P[0],P[1],P[2]);
+      if(bg!==undefined){inside++;if(bg>0){gsum+=bg;gn++;}}}
+    const cov=L*inside/nsteps;
+    ore+=L;mod+=cov;
+    const r={id:x.h.id,f:x.f,t:x.t,len:L,g:x.g,cov,bg:gn?gsum/gn:null};
+    rows.push(r);
+    const b=byHole[x.h.id]||(byHole[x.h.id]={ore:0,mod:0,n:0,best:0});
+    b.ore+=L;b.mod+=cov;b.n++;b.best=Math.max(b.best,x.g);}
+  RECON={key,rows,byHole,ore,mod};return RECON;}
+
+function csv(rows){return rows.map(r=>r.map(v=>{
+  const s=v==null?"":String(v);
+  return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}).join(",")).join("\n");}
+function download(name,text){
+  const b=new Blob([text],{type:"text/csv;charset=utf-8"}),u=URL.createObjectURL(b);
+  const a=document.createElement("a");a.href=u;a.download=name;document.body.appendChild(a);
+  a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),2000);}
+
 /* ---------------- how big is it, and how deep ---------------- */
 function drawSize(){
   const box=$("sizebox");if(!box)return;
@@ -166,6 +306,7 @@ function drawSize(){
     const X=[],Y=[],Z=[];
     for(let i=0;i<BK.n;i++){
       if(BK.g[i]<curCut)continue;
+      if(curZone&&BK.zone&&BK.zone[i]!==curZone)continue;
       X.push(o[0]+ijk[i*3]*bx);Y.push(o[1]+ijk[i*3+1]*by);Z.push(o[2]+ijk[i*3+2]*bz);}
     if(X.length){
       X.sort((a,b)=>a-b);Y.sort((a,b)=>a-b);Z.sort((a,b)=>a-b);
@@ -182,7 +323,8 @@ function drawSize(){
       const fx=X[X.length-1]-X[0]+bx, fy=Y[Y.length-1]-Y[0]+by;
       if(fx>cx*1.3||fy>cy*1.3)
         rows.push(["Full footprint", `${m(fx)} E–W × ${m(fy)} N–S`]);
-      rows.push(["Blocks above cut-off", fmtN(X.length)+" of "+fmtN(B.n_total)]);
+      rows.push(["Blocks above cut-off", fmtN(X.length)+" of "+fmtN(B.n_total)
+                 +(curZone?" (this zone only)":"")]);
     }
   }
   box.innerHTML=rows.map(([k,v])=>`<div class="kv"><span>${k}</span><b>${v}</b></div>`).join("")
@@ -196,9 +338,11 @@ function medianCollar(){if(!HO.length)return NaN;const z=HO.map(h=>h.z).filter(v
 
 const _m=new THREE.Matrix4(),_c=new THREE.Color();
 function applyCut(){if(!BK||!blockMesh)return;const E=M.elements[EL];let j=0;
-  for(let i=0;i<BK.n;i++){if(BK.g[i]<curCut)continue;_m.makeTranslation(BK.pos[i*3],BK.pos[i*3+1],BK.pos[i*3+2]);blockMesh.setMatrixAt(j,_m);
+  for(let i=0;i<BK.n;i++){if(BK.g[i]<curCut)continue;
+    if(curZone&&BK.zone&&BK.zone[i]!==curZone)continue;_m.makeTranslation(BK.pos[i*3],BK.pos[i*3+1],BK.pos[i*3+2]);blockMesh.setMatrixAt(j,_m);
     _c.set(E.colors[Math.max(0,binIdx(E,BK.g[i]))]);blockMesh.setColorAt(j,_c);j++;}
-  blockMesh.count=j;blockMesh.instanceMatrix.needsUpdate=true;if(blockMesh.instanceColor)blockMesh.instanceColor.needsUpdate=true;drawSize();}
+  blockMesh.count=j;blockMesh.instanceMatrix.needsUpdate=true;if(blockMesh.instanceColor)blockMesh.instanceColor.needsUpdate=true;drawSize();
+  if(typeof drawZoneBox==="function")drawZoneBox();}
 
 /* ---- terrain ---- */
 let terrain=null;
@@ -228,13 +372,49 @@ let terrain=null;
   $("ter-note").textContent=Math.round(rel)+" m relief · "+ci+" m contours";})();
 
 /* ---------------- element chips, legend, grade panel ---------------- */
+/* ---------------- zones: one project, body by body ---------------- */
+let curZone=0;
+function drawZones(){
+  const E=M.elements[EL],Z=(E&&E.zones)||[],sec=$("zonesec");
+  if(!sec)return;
+  if(!Z.length){sec.style.display="none";curZone=0;return;}
+  sec.style.display="";
+  $("zone-n").textContent="· "+Z.length+" in this project";
+  const dot=id=>`<i style="display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;vertical-align:1px;background:${zoneColor(id)}"></i>`;
+  const chip=(id,label)=>`<button class="chip${curZone===id?" on":""}" data-z="${id}">${id?dot(id):""}${label}</button>`;
+  $("zones").innerHTML=chip(0,"Whole project")+Z.map(z=>chip(z.id,z.name)).join("");
+  [...$("zones").querySelectorAll("button")].forEach(b=>b.onclick=()=>{
+    const id=+b.dataset.z;curZone=(curZone===id?0:id);drawZones();applyCut();applyBody();drawZoneBox();
+    if(curZone)flyToZone(Z.find(z=>z.id===curZone));});
+  drawZoneBox();
+}
+function drawZoneBox(){
+  const E=M.elements[EL],Z=(E&&E.zones)||[],box=$("zonebox");if(!box)return;
+  const rows=[];
+  const at=z=>{const s=(z.series||[]).find(r=>r.cutoff>=curCut)||(z.series||[])[0]||{};return s;};
+  for(const z of Z){
+    const s=at(z);
+    const on=curZone===z.id;
+    rows.push(`<div class="kv"${on?' style="font-weight:700"':''}><span><i style="display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;background:${zoneColor(z.id)}"></i>${z.name}
+      <small>${z.holes} holes · ${m(z.span_m[0])} × ${m(z.span_m[1])}</small></span>
+      <b>${s.tonnes?fmtT(s.tonnes):"–"}${s.grade!=null?" @ "+fmtG(s.grade,E.unit):""}</b></div>`);
+  }
+  box.innerHTML=rows.join("");
+}
+function flyToZone(z){
+  if(!z||!z.bbox)return;
+  const [lo,hi]=z.bbox,cx=(lo[0]+hi[0])/2,cy=(lo[1]+hi[1])/2,cz=(lo[2]+hi[2])/2;
+  const span=Math.max(hi[0]-lo[0],hi[1]-lo[1],hi[2]-lo[2],60);
+  const p=V(cx,cy,cz);
+  fly({x:p.x,y:p.y,z:p.z,dist:span*2.2},600);
+}
 function drawEls(){const box=$("els");box.innerHTML="";if(ELS.length<2){$("elsec").style.display="none";}
   ELS.forEach(e=>{const b=document.createElement("button");b.className="chip"+(e===EL?" on":"");b.textContent=e;b.onclick=()=>setEl(e);box.appendChild(b);});}
 function drawLegend(){const E=M.elements[EL];$("lg-h").textContent=EL+" grade ("+E.unit+")";const L=$("legend");L.innerHTML="";
   for(let k=E.bins.length-1;k>=0;k--){const d=document.createElement("div");const hi=k<E.bins.length-1?E.bins[k+1]:null;
     d.innerHTML=`<i style="background:${E.colors[k]}"></i>${hi==null?"≥ "+E.bins[k]:E.bins[k]+" – "+hi} ${esc(E.unit)}`;L.appendChild(d);}
   const d=document.createElement("div");d.innerHTML=`<i class="lo"></i>&lt; ${E.bins[0]} ${esc(E.unit)} · <span style="color:var(--mut)">grey = no reported intercept</span>`;L.appendChild(d);}
-function setEl(e){EL=e;store.set("el:"+M.slug,e);drawEls();buildIntervals();drawLegend();setupGT();buildBlocks();drawData();}
+function setEl(e){EL=e;store.set("el:"+M.slug,e);curZone=0;drawEls();buildIntervals();drawLegend();setupGT();buildBlocks();buildBody();drawData();drawZones();}
 
 function setupGT(){const E=M.elements[EL];const cut=$("cut");
   if(!E.gt){$("gtsec").hidden=true;$("nogt").hidden=false;
@@ -246,7 +426,14 @@ function setupGT(){const E=M.elements[EL];const cut=$("cut");
 function updCut(){const E=M.elements[EL];if(!E.gt)return;const r=E.gt[+$("cut").value];curCut=r[0];store.set("cut:"+M.slug+":"+EL,+$("cut").value);
   $("cut-v").textContent="≥ "+fmtG(r[0],E.unit);$("g-t").textContent=fmtT(r[1]);$("g-g").textContent=r[1]?fmtG(r[2],E.unit):"–";
   $("g-c").textContent=fmtC(r[3],E.contained_unit);$("g-cu").textContent="Contained "+({oz:"oz",lb:"lb",t:"t"}[E.contained_unit]||"");
-  applyCut();drawChart(r);drawCmp(r);drawBreakdown();}
+  applyCut();drawChart(r);drawCmp(r);drawBreakdown();reconLater();}
+
+/* The reconciliation walks every reported interval, so it follows the cut-off
+   slider at rest rather than on every tick of it. */
+let _reconT=null;
+function reconLater(){clearTimeout(_reconT);_reconT=setTimeout(()=>{
+  const f=$("hfilter");if(typeof drawData==="function")drawData();
+  if(f&&f.value)f.dispatchEvent(new Event("input"));},260);}
 function pubFor(el){el=el||EL;const E=M.elements[el];const cu=E.contained_unit;
   // the statement's grade unit comes from its own arithmetic (tonnes x grade =
   // contained), so a per-cent statement can never be read against a g/t model
@@ -592,12 +779,23 @@ function drawData(){
   const draw=(q)=>{const list=HO.filter(h=>!q||h.id.toLowerCase().includes(q));
     $("hole-n").textContent="· "+fmtN(HO.length)+(q?" · "+fmtN(list.length)+" shown":"");
     const unit=M.elements[EL].unit;
-    $("holetbl").innerHTML=`<table><colgroup><col style="width:38%"><col style="width:20%"><col style="width:18%"><col style="width:24%"></colgroup>`+
-      `<thead><tr><th>Hole</th><th class="n">Depth</th><th class="n">Intervals</th><th class="n">Best ${esc(EL)}</th></tr></thead><tbody>`+
+    const R=reconcile();
+    $("holetbl").innerHTML=`<table><colgroup><col style="width:30%"><col style="width:14%"><col style="width:13%"><col style="width:19%"><col style="width:12%"><col style="width:12%"></colgroup>`+
+      `<thead><tr><th>Hole</th><th class="n">Depth</th><th class="n">Ivs</th><th class="n">Best ${esc(EL)}</th>`+
+      `<th class="n" title="metres of assay interval at or above the current cut-off">Ore m</th>`+
+      `<th class="n" title="how much of that length the block model actually covers">In model</th></tr></thead><tbody>`+
       list.map(h=>{const iv=byHole[h.id]||[];const best=iv.length?Math.max(...iv.map(x=>x.g)):null;
-        return `<tr data-h="${esc(h.id)}"><td title="${esc(h.id)}">${esc(h.id)}</td><td class="n">${h.depth?Math.round(h.depth)+" m":"–"}</td>`+
-               `<td class="n">${iv.length||"–"}</td><td class="n">${best!=null?fmtG(best,unit):"–"}</td></tr>`;}).join("")+
+        const b=R.byHole[h.id];
+        const pc=b&&b.ore>0?b.mod/b.ore:null;
+        // a hole that cut ore and has no model around it is the thing worth seeing
+        const bad=b&&b.ore>0&&pc<0.5;
+        return `<tr data-h="${esc(h.id)}"${bad?' style="background:#fff5f4"':''}><td title="${esc(h.id)}">${esc(h.id)}</td>`+
+               `<td class="n">${h.depth?Math.round(h.depth)+" m":"–"}</td>`+
+               `<td class="n">${iv.length||"–"}</td><td class="n">${best!=null?fmtG(best,unit):"–"}</td>`+
+               `<td class="n">${b&&b.ore?b.ore.toFixed(1):"–"}</td>`+
+               `<td class="n"${bad?' style="color:#c0392b;font-weight:700"':''}>${pc==null?"–":Math.round(pc*100)+"%"}</td></tr>`;}).join("")+
       `</tbody></table>`+(list.length?"":`<p class="note" style="padding:6px 8px">No hole matches “${esc(q)}”.</p>`);
+    reconNote(R);
     $("holetbl").querySelectorAll("tr[data-h]").forEach(tr=>tr.onclick=()=>{
       const h=HO.find(x=>x.id===tr.dataset.h);if(!h)return;
       const mid=at(h,(h.depth||0)/2),L=Math.max(h.depth||100,120);
@@ -605,7 +803,62 @@ function drawData(){
       if(MOBILE)document.querySelectorAll(".panel").forEach(x=>x.classList.remove("open"));});};
   draw("");
   const f=$("hfilter");if(f)f.oninput=e=>draw(e.target.value.trim().toLowerCase());
+
+  const unit=M.elements[EL].unit;
+  const dl=(id,fn)=>{const b=$(id);if(b)b.onclick=fn;};
+  dl("dl-holes",()=>{const R=reconcile();
+    const rows=[["hole","x_local_m","y_local_m","elevation_m","latitude","longitude",
+                 "azimuth","dip","depth_m",
+                 "intervals","best_"+EL+"_"+unit,"ore_m_at_cutoff","modelled_m","modelled_pc"]];
+    HO.forEach(h=>{const iv=byHole[h.id]||[],b=R.byHole[h.id];const [la,lo]=ll(h.x,h.y);
+      rows.push([h.id,h.x,h.y,h.z,la,lo,h.az,h.dip,h.depth,iv.length,
+                 iv.length?Math.max(...iv.map(x=>x.g)):"",
+                 b?b.ore.toFixed(2):"",b?b.mod.toFixed(2):"",
+                 b&&b.ore>0?(100*b.mod/b.ore).toFixed(1):""]);});
+    download(M.slug+"-holes.csv",csv(rows));});
+  // the model works in metres recentred on the drilling, so a bare x/y would read
+  // like an easting and not be one. Local metres are labelled as such, and where
+  // the model is georeferenced the real latitude and longitude go beside them.
+  const F=M.frame||{},geo=F.lat0!=null&&F.lon0!=null;
+  const ll=(x,y)=>{if(!geo)return["",""];
+    const la=F.lat0+y/111320,lo=F.lon0+x/(111320*Math.cos(F.lat0*Math.PI/180)||1);
+    return [la.toFixed(6),lo.toFixed(6)];};
+  dl("dl-ivs",()=>{
+    const rows=[["hole","from_m","to_m","length_m","element","grade","unit",
+                 "x_local_m","y_local_m","elevation_m","latitude","longitude",
+                 "in_model","block_grade"]];
+    const C=blockCells();
+    IV.forEach(x=>{const md=(x.f+x.t)/2,P=atM(x.h,md),bg=C?blockAt(P[0],P[1],P[2]):undefined;
+      const [la,lo]=ll(P[0],P[1]);
+      rows.push([x.h.id,x.f,x.t,(x.t-x.f).toFixed(2),EL,x.g,unit,
+                 P[0].toFixed(2),P[1].toFixed(2),P[2].toFixed(2),la,lo,
+                 bg===undefined?"no":"yes",bg===undefined?"":(+bg).toFixed(4)]);});
+    download(M.slug+"-"+EL+"-intervals.csv",csv(rows));});
+  dl("dl-miss",()=>{const R=reconcile();
+    const rows=[["hole","from_m","to_m","length_m","element","grade","unit",
+                 "modelled_m","modelled_pc","mean_block_grade"]];
+    R.rows.filter(r=>r.len>0&&r.cov<r.len*0.5).sort((a,b)=>b.len-a.len).forEach(r=>
+      rows.push([r.id,r.f,r.t,r.len.toFixed(2),EL,r.g,unit,r.cov.toFixed(2),
+                 (100*r.cov/r.len).toFixed(1),r.bg==null?"":r.bg.toFixed(4)]));
+    download(M.slug+"-"+EL+"-unmodelled.csv",csv(rows));});
 }
+
+/* The one line that answers "does the model reflect the drilling". */
+function reconNote(R){
+  const box=$("reconnote");if(!box)return;
+  const E=M.elements[EL],unit=E.unit;
+  if(!R||!R.ore){box.textContent="";return;}
+  const pc=100*R.mod/R.ore;
+  const miss=R.rows.filter(r=>r.cov<r.len*0.5);
+  const missM=miss.reduce((a,r)=>a+(r.len-r.cov),0);
+  box.innerHTML=`At the current cut-off the assays report <b>${fmtN(Math.round(R.ore))} m</b> of `
+    +`${esc(EL)} at or above ${fmtG(curCut,unit)}, and the block model covers `
+    +`<b>${Math.round(pc)}%</b> of it (${fmtN(Math.round(R.mod))} m). `
+    +(miss.length
+       ? `<b>${fmtN(miss.length)}</b> interval${miss.length===1?"":"s"} — ${fmtN(Math.round(missM))} m — `
+         +`sit mostly outside the estimated blocks; those holes are shaded, and the CSV below lists them longest first. `
+         +`An interval outside the model is usually an isolated intercept the wireframe could not link to another hole.`
+       : `Every reported interval sits inside the model.`);}
 $("cut").addEventListener("input",updCut);
 
 /* ---------------- camera + controls ---------------- */
@@ -803,10 +1056,20 @@ $("L-terrain").onchange=e=>{if(terrain)terrain.visible=e.target.checked;store.se
 $("ter-op").oninput=e=>{const v=+e.target.value;$("ter-op-v").textContent=v+"%";if(terrain){terrain.material.uniforms.uOp.value=v/100;terrain.material.depthWrite=v>=100;}store.set("terop",v);};
 $("blk-op").oninput=e=>{const v=+e.target.value;$("blk-op-v").textContent=v+"%";if(blockMesh){blockMesh.material.opacity=v/100;blockMesh.material.transparent=v<100;blockMesh.material.depthWrite=v>=100;blockMesh.material.needsUpdate=true;}store.set("blkop",v);};
 {const v=store.get("blkop",35);$("blk-op").value=v;$("blk-op-v").textContent=v+"%";$("L-blocks").checked=store.get("blocks",true);}
+$("L-body").onchange=e=>{if(bodyMesh)bodyMesh.visible=e.target.checked;store.set("body",e.target.checked);drawLabels();};
+$("body-op").oninput=e=>{const v=+e.target.value;$("body-op-v").textContent=v+"%";
+  if(bodyMesh){bodyMesh.material.opacity=v/100;bodyMesh.material.needsUpdate=true;}store.set("bodyop",v);};
+{const v=store.get("bodyop",18);$("body-op").value=v;$("body-op-v").textContent=v+"%";
+ $("L-body").checked=store.get("body",false);}
 /* hole labels (nearest ~80 to screen centre) */
-const LBL=$("labels");let lblOn=false;$("L-labels").onchange=e=>{lblOn=e.target.checked;if(!lblOn)LBL.innerHTML="";};
-function drawLabels(){if(!lblOn)return;const cands=[];for(const h of HO){const s=scr(at(h,0));if(s[2]>1||s[0]<0||s[1]<0||s[0]>W()||s[1]>Hh())continue;cands.push([Math.hypot(s[0]-W()/2,s[1]-Hh()/2),h,s]);}
-  cands.sort((a,b)=>a[0]-b[0]);LBL.innerHTML=cands.slice(0,MOBILE?40:90).map(c=>`<span style="left:${c[2][0]}px;top:${c[2][1]}px">${esc(c[1].id)}</span>`).join("");}
+const LBL=$("labels");let lblOn=false;$("L-labels").onchange=e=>{lblOn=e.target.checked;LBL.innerHTML="";drawLabels();};
+function drawLabels(){
+  const parts=[];
+  if(lblOn){const cands=[];for(const h of HO){const s=scr(at(h,0));if(s[2]>1||s[0]<0||s[1]<0||s[0]>W()||s[1]>Hh())continue;cands.push([Math.hypot(s[0]-W()/2,s[1]-Hh()/2),h,s]);}
+    cands.sort((a,b)=>a[0]-b[0]);
+    parts.push(...cands.slice(0,MOBILE?40:90).map(c=>`<span style="left:${c[2][0]}px;top:${c[2][1]}px">${esc(c[1].id)}</span>`));}
+  parts.push(...zoneLabels());
+  LBL.innerHTML=parts.join("");}
 
 /* scale bar + compass */
 function niceNum(x){const p=Math.pow(10,Math.floor(Math.log10(x)));const f=x/p;return(f<1.5?1:f<3.5?2:f<7.5?5:10)*p;}
@@ -815,7 +1078,7 @@ function updHud(){const mpp=2*dist*Math.tan(camera.fov*Math.PI/360)/Hh();const n
   $("needle").setAttribute("transform",`rotate(${(-yaw*180/Math.PI+180).toFixed(1)})`);}
 
 /* ---------------- start ---------------- */
-drawEls();buildIntervals();drawLegend();drawSources();buildBlocks();setupGT();drawData();drawBreakdown();drawSize();
+drawEls();buildIntervals();drawLegend();drawSources();buildBlocks();buildBody();setupGT();drawData();drawBreakdown();drawSize();drawZones();
 {const ib=$("intbox");if(ib)ib.innerHTML=integrity();
  const mb=$("metbox");if(mb)mb.innerHTML=metallurgy();}
 resize();F=framing();view("3d",0);

@@ -286,7 +286,13 @@ button.mini:hover{background:var(--chip)}
     <div class="sec"><div id="datasum"></div></div>
     <div class="sec"><p class="lab">Holes <span id="hole-n" style="font-weight:400"></span></p>
       <input type="search" id="hfilter" placeholder="Filter holes…" aria-label="Filter holes">
-      <div id="holetbl"></div></div>
+      <div id="holetbl"></div>
+      <p class="note" id="reconnote" style="margin-top:7px"></p>
+      <div style="margin-top:6px">
+        <button class="mini" id="dl-holes" style="margin-left:0">Holes CSV</button>
+        <button class="mini" id="dl-ivs">Intervals CSV</button>
+        <button class="mini" id="dl-miss">Unmodelled intervals CSV</button>
+      </div></div>
     <div class="sec"><p class="lab">Data sources <span id="src-n" style="font-weight:400"></span></p><div class="src" id="srclist"></div></div>
   </div>
 </section>

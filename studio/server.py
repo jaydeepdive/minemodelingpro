@@ -703,6 +703,38 @@ async def gate(request: Request, call_next):
     return RedirectResponse("/app/index.html?next=" + urllib.parse.quote(nxt, safe=""), status_code=302)
 
 
+# --------------------------------------------------- the renderer, never stale
+# Studio's private viewer fetches ../models/viewer.js and ../models/_shell.html.
+# Those are build artifacts committed into site/, refreshed only by the nightly
+# gallery build — so a renderer improvement reached a client's private model a
+# day late, or not at all if the build failed. The same staleness that made
+# models need a button press, one layer down. Served from the package instead,
+# which is this deployment's own code.
+def _pkg_file(name):
+    from minemodelingpro import model3d as _m3
+    return os.path.join(os.path.dirname(os.path.abspath(_m3.__file__)), name)
+
+
+@app.get("/models/viewer.js")
+def viewer_js():
+    p = _pkg_file("viewer.js")
+    if not os.path.exists(p):
+        raise HTTPException(404, "viewer.js is not in this deployment")
+    return FileResponse(p, media_type="application/javascript",
+                        headers={"Cache-Control": "no-cache, must-revalidate"})
+
+
+@app.get("/models/_shell.html")
+def viewer_shell():
+    """The viewer's markup, placeholders and all — which is exactly what
+    write_viewer copies to site/models/_shell.html, and what model.html fills in."""
+    p = _pkg_file("model3d_viewer.html")
+    if not os.path.exists(p):
+        raise HTTPException(404, "the viewer shell is not in this deployment")
+    return FileResponse(p, media_type="text/html",
+                        headers={"Cache-Control": "no-cache, must-revalidate"})
+
+
 # ------------------------------------------------------------------ the site
 class SiteFiles(StaticFiles):
     """The static gallery, with index.html for directories and no caching of HTML."""

@@ -141,7 +141,9 @@ function buildBlocks(){if(blockMesh){scene.remove(blockMesh);blockMesh.geometry.
   $("L-blocks").disabled=!B;$("blk-note").textContent=B?(fmtN(B.n_total)+" blocks"):"too few holes";
   if(!B)return;const ijk=b64(B.ijk,Uint16Array),g=b64(B.g,Float32Array),n=B.n,[bx,by,bz]=B.size,o=B.origin;
   const pos=new Float32Array(n*3);for(let i=0;i<n;i++){const p=V(o[0]+(ijk[i*3]+.5)*bx,o[1]+(ijk[i*3+1]+.5)*by,o[2]+(ijk[i*3+2]+.5)*bz);pos[i*3]=p.x;pos[i*3+1]=p.y;pos[i*3+2]=p.z;}
-  BK={n,g,pos,zone:B.zone?b64(B.zone,Uint8Array):null};
+  // the grid itself is kept, not just the drawn positions: it is what lets a
+  // drill interval be asked "is there a block here, and what grade did it get"
+  BK={n,g,pos,ijk,o,size:B.size,zone:B.zone?b64(B.zone,Uint8Array):null,cell:null};
   const geo=new THREE.BoxGeometry(bx*0.97,bz*0.97,by*0.97);
   blockMesh=new THREE.InstancedMesh(geo,new THREE.MeshLambertMaterial({transparent:true,opacity:+$("blk-op").value/100,depthWrite:false}),n);
   blockMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);blockMesh.visible=$("L-blocks").checked;scene.add(blockMesh);applyCut();}
@@ -219,6 +221,69 @@ function zoneLabels(){
     out.push(`<span class="zl" style="left:${s[0]}px;top:${s[1]}px;background:${zoneColor(z.id)}">`
              +esc(z.name)+`</span>`);}
   return out;}
+
+/* ---- the drilling, against the model built from it ----
+   "the drill data says we cut long intervals of mineralisation and the model is
+   not reflecting it" is a checkable statement, so it is checked here rather than
+   argued about: every assay interval at or above the cut-off is walked down the
+   hole and asked whether the block model has a block there, and what grade that
+   block carries. The blocks sit on a regular lattice, so that question is a hash
+   lookup, not a search. */
+function atM(h,m){        // position at depth m, in MODEL space (x east, y north, z elevation)
+  const p=h.p;
+  if(p&&p.length>=8){const n=p.length/4;let i=0;while(i<n-2&&p[(i+1)*4]<m)i++;
+    const m0=p[i*4],m1=p[(i+1)*4],t=m1>m0?(m-m0)/(m1-m0):0;
+    return [h.x+p[i*4+1]+(p[i*4+5]-p[i*4+1])*t, h.y+p[i*4+2]+(p[i*4+6]-p[i*4+2])*t,
+            h.z+p[i*4+3]+(p[i*4+7]-p[i*4+3])*t];}
+  return [h.x+h.d[0]*m, h.y+h.d[1]*m, h.z+h.d[2]*m];}
+
+function blockCells(){
+  if(!BK)return null;
+  if(BK.cell)return BK.cell;
+  const m=new Map();
+  for(let i=0;i<BK.n;i++){const a=BK.ijk[i*3],b=BK.ijk[i*3+1],c=BK.ijk[i*3+2];
+    m.set((a*65536+b)*65536+c,BK.g[i]);}
+  BK.cell=m;return m;}
+
+function blockAt(x,y,z){
+  const C=blockCells();if(!C)return undefined;
+  const [bx,by,bz]=BK.size,o=BK.o;
+  const i=Math.floor((x-o[0])/bx),j=Math.floor((y-o[1])/by),k=Math.floor((z-o[2])/bz);
+  if(i<0||j<0||k<0||i>65535||j>65535||k>65535)return undefined;
+  return C.get((i*65536+j)*65536+k);}
+
+/* Per interval: its length, and how much of it sits inside an estimated block.
+   Sampled at half a block, which is the finest the block model can answer. */
+let RECON=null;
+function reconcile(){
+  const E=M.elements[EL];
+  const key=EL+"|"+curCut+"|"+(BK?BK.n:0);
+  if(RECON&&RECON.key===key)return RECON;
+  if(!BK||!IV.length){RECON={key,rows:[],byHole:{},ore:0,mod:0};return RECON;}
+  const step=Math.min(...BK.size)/2,rows=[],byHole={};
+  let ore=0,mod=0;
+  for(const x of IV){
+    if(!(x.g>=curCut))continue;
+    const L=Math.max(0,(x.t||0)-(x.f||0));if(!L)continue;
+    const nsteps=Math.max(1,Math.ceil(L/step));let inside=0,gsum=0,gn=0;
+    for(let s=0;s<nsteps;s++){
+      const md=x.f+L*(s+0.5)/nsteps,P=atM(x.h,md),bg=blockAt(P[0],P[1],P[2]);
+      if(bg!==undefined){inside++;if(bg>0){gsum+=bg;gn++;}}}
+    const cov=L*inside/nsteps;
+    ore+=L;mod+=cov;
+    const r={id:x.h.id,f:x.f,t:x.t,len:L,g:x.g,cov,bg:gn?gsum/gn:null};
+    rows.push(r);
+    const b=byHole[x.h.id]||(byHole[x.h.id]={ore:0,mod:0,n:0,best:0});
+    b.ore+=L;b.mod+=cov;b.n++;b.best=Math.max(b.best,x.g);}
+  RECON={key,rows,byHole,ore,mod};return RECON;}
+
+function csv(rows){return rows.map(r=>r.map(v=>{
+  const s=v==null?"":String(v);
+  return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}).join(",")).join("\n");}
+function download(name,text){
+  const b=new Blob([text],{type:"text/csv;charset=utf-8"}),u=URL.createObjectURL(b);
+  const a=document.createElement("a");a.href=u;a.download=name;document.body.appendChild(a);
+  a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),2000);}
 
 /* ---------------- how big is it, and how deep ---------------- */
 function drawSize(){
@@ -361,7 +426,14 @@ function setupGT(){const E=M.elements[EL];const cut=$("cut");
 function updCut(){const E=M.elements[EL];if(!E.gt)return;const r=E.gt[+$("cut").value];curCut=r[0];store.set("cut:"+M.slug+":"+EL,+$("cut").value);
   $("cut-v").textContent="≥ "+fmtG(r[0],E.unit);$("g-t").textContent=fmtT(r[1]);$("g-g").textContent=r[1]?fmtG(r[2],E.unit):"–";
   $("g-c").textContent=fmtC(r[3],E.contained_unit);$("g-cu").textContent="Contained "+({oz:"oz",lb:"lb",t:"t"}[E.contained_unit]||"");
-  applyCut();drawChart(r);drawCmp(r);drawBreakdown();}
+  applyCut();drawChart(r);drawCmp(r);drawBreakdown();reconLater();}
+
+/* The reconciliation walks every reported interval, so it follows the cut-off
+   slider at rest rather than on every tick of it. */
+let _reconT=null;
+function reconLater(){clearTimeout(_reconT);_reconT=setTimeout(()=>{
+  const f=$("hfilter");if(typeof drawData==="function")drawData();
+  if(f&&f.value)f.dispatchEvent(new Event("input"));},260);}
 function pubFor(el){el=el||EL;const E=M.elements[el];const cu=E.contained_unit;
   // the statement's grade unit comes from its own arithmetic (tonnes x grade =
   // contained), so a per-cent statement can never be read against a g/t model
@@ -707,12 +779,23 @@ function drawData(){
   const draw=(q)=>{const list=HO.filter(h=>!q||h.id.toLowerCase().includes(q));
     $("hole-n").textContent="· "+fmtN(HO.length)+(q?" · "+fmtN(list.length)+" shown":"");
     const unit=M.elements[EL].unit;
-    $("holetbl").innerHTML=`<table><colgroup><col style="width:38%"><col style="width:20%"><col style="width:18%"><col style="width:24%"></colgroup>`+
-      `<thead><tr><th>Hole</th><th class="n">Depth</th><th class="n">Intervals</th><th class="n">Best ${esc(EL)}</th></tr></thead><tbody>`+
+    const R=reconcile();
+    $("holetbl").innerHTML=`<table><colgroup><col style="width:30%"><col style="width:14%"><col style="width:13%"><col style="width:19%"><col style="width:12%"><col style="width:12%"></colgroup>`+
+      `<thead><tr><th>Hole</th><th class="n">Depth</th><th class="n">Ivs</th><th class="n">Best ${esc(EL)}</th>`+
+      `<th class="n" title="metres of assay interval at or above the current cut-off">Ore m</th>`+
+      `<th class="n" title="how much of that length the block model actually covers">In model</th></tr></thead><tbody>`+
       list.map(h=>{const iv=byHole[h.id]||[];const best=iv.length?Math.max(...iv.map(x=>x.g)):null;
-        return `<tr data-h="${esc(h.id)}"><td title="${esc(h.id)}">${esc(h.id)}</td><td class="n">${h.depth?Math.round(h.depth)+" m":"–"}</td>`+
-               `<td class="n">${iv.length||"–"}</td><td class="n">${best!=null?fmtG(best,unit):"–"}</td></tr>`;}).join("")+
+        const b=R.byHole[h.id];
+        const pc=b&&b.ore>0?b.mod/b.ore:null;
+        // a hole that cut ore and has no model around it is the thing worth seeing
+        const bad=b&&b.ore>0&&pc<0.5;
+        return `<tr data-h="${esc(h.id)}"${bad?' style="background:#fff5f4"':''}><td title="${esc(h.id)}">${esc(h.id)}</td>`+
+               `<td class="n">${h.depth?Math.round(h.depth)+" m":"–"}</td>`+
+               `<td class="n">${iv.length||"–"}</td><td class="n">${best!=null?fmtG(best,unit):"–"}</td>`+
+               `<td class="n">${b&&b.ore?b.ore.toFixed(1):"–"}</td>`+
+               `<td class="n"${bad?' style="color:#c0392b;font-weight:700"':''}>${pc==null?"–":Math.round(pc*100)+"%"}</td></tr>`;}).join("")+
       `</tbody></table>`+(list.length?"":`<p class="note" style="padding:6px 8px">No hole matches “${esc(q)}”.</p>`);
+    reconNote(R);
     $("holetbl").querySelectorAll("tr[data-h]").forEach(tr=>tr.onclick=()=>{
       const h=HO.find(x=>x.id===tr.dataset.h);if(!h)return;
       const mid=at(h,(h.depth||0)/2),L=Math.max(h.depth||100,120);
@@ -720,7 +803,62 @@ function drawData(){
       if(MOBILE)document.querySelectorAll(".panel").forEach(x=>x.classList.remove("open"));});};
   draw("");
   const f=$("hfilter");if(f)f.oninput=e=>draw(e.target.value.trim().toLowerCase());
+
+  const unit=M.elements[EL].unit;
+  const dl=(id,fn)=>{const b=$(id);if(b)b.onclick=fn;};
+  dl("dl-holes",()=>{const R=reconcile();
+    const rows=[["hole","x_local_m","y_local_m","elevation_m","latitude","longitude",
+                 "azimuth","dip","depth_m",
+                 "intervals","best_"+EL+"_"+unit,"ore_m_at_cutoff","modelled_m","modelled_pc"]];
+    HO.forEach(h=>{const iv=byHole[h.id]||[],b=R.byHole[h.id];const [la,lo]=ll(h.x,h.y);
+      rows.push([h.id,h.x,h.y,h.z,la,lo,h.az,h.dip,h.depth,iv.length,
+                 iv.length?Math.max(...iv.map(x=>x.g)):"",
+                 b?b.ore.toFixed(2):"",b?b.mod.toFixed(2):"",
+                 b&&b.ore>0?(100*b.mod/b.ore).toFixed(1):""]);});
+    download(M.slug+"-holes.csv",csv(rows));});
+  // the model works in metres recentred on the drilling, so a bare x/y would read
+  // like an easting and not be one. Local metres are labelled as such, and where
+  // the model is georeferenced the real latitude and longitude go beside them.
+  const F=M.frame||{},geo=F.lat0!=null&&F.lon0!=null;
+  const ll=(x,y)=>{if(!geo)return["",""];
+    const la=F.lat0+y/111320,lo=F.lon0+x/(111320*Math.cos(F.lat0*Math.PI/180)||1);
+    return [la.toFixed(6),lo.toFixed(6)];};
+  dl("dl-ivs",()=>{
+    const rows=[["hole","from_m","to_m","length_m","element","grade","unit",
+                 "x_local_m","y_local_m","elevation_m","latitude","longitude",
+                 "in_model","block_grade"]];
+    const C=blockCells();
+    IV.forEach(x=>{const md=(x.f+x.t)/2,P=atM(x.h,md),bg=C?blockAt(P[0],P[1],P[2]):undefined;
+      const [la,lo]=ll(P[0],P[1]);
+      rows.push([x.h.id,x.f,x.t,(x.t-x.f).toFixed(2),EL,x.g,unit,
+                 P[0].toFixed(2),P[1].toFixed(2),P[2].toFixed(2),la,lo,
+                 bg===undefined?"no":"yes",bg===undefined?"":(+bg).toFixed(4)]);});
+    download(M.slug+"-"+EL+"-intervals.csv",csv(rows));});
+  dl("dl-miss",()=>{const R=reconcile();
+    const rows=[["hole","from_m","to_m","length_m","element","grade","unit",
+                 "modelled_m","modelled_pc","mean_block_grade"]];
+    R.rows.filter(r=>r.len>0&&r.cov<r.len*0.5).sort((a,b)=>b.len-a.len).forEach(r=>
+      rows.push([r.id,r.f,r.t,r.len.toFixed(2),EL,r.g,unit,r.cov.toFixed(2),
+                 (100*r.cov/r.len).toFixed(1),r.bg==null?"":r.bg.toFixed(4)]));
+    download(M.slug+"-"+EL+"-unmodelled.csv",csv(rows));});
 }
+
+/* The one line that answers "does the model reflect the drilling". */
+function reconNote(R){
+  const box=$("reconnote");if(!box)return;
+  const E=M.elements[EL],unit=E.unit;
+  if(!R||!R.ore){box.textContent="";return;}
+  const pc=100*R.mod/R.ore;
+  const miss=R.rows.filter(r=>r.cov<r.len*0.5);
+  const missM=miss.reduce((a,r)=>a+(r.len-r.cov),0);
+  box.innerHTML=`At the current cut-off the assays report <b>${fmtN(Math.round(R.ore))} m</b> of `
+    +`${esc(EL)} at or above ${fmtG(curCut,unit)}, and the block model covers `
+    +`<b>${Math.round(pc)}%</b> of it (${fmtN(Math.round(R.mod))} m). `
+    +(miss.length
+       ? `<b>${fmtN(miss.length)}</b> interval${miss.length===1?"":"s"} — ${fmtN(Math.round(missM))} m — `
+         +`sit mostly outside the estimated blocks; those holes are shaded, and the CSV below lists them longest first. `
+         +`An interval outside the model is usually an isolated intercept the wireframe could not link to another hole.`
+       : `Every reported interval sits inside the model.`);}
 $("cut").addEventListener("input",updCut);
 
 /* ---------------- camera + controls ---------------- */

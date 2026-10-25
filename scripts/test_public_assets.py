@@ -68,5 +68,23 @@ for rel, url in PUBLIC_PAGES:
 for p in ("/", "/index.html", "/app/index.html"):
     check("%s is public" % p, S._is_open(p))
 
+# The renderer Studio's private viewer fetches must be THIS deployment's code,
+# not the copy committed into site/ by whichever nightly build last ran. That
+# copy went stale for six days and every viewer improvement stopped at it.
+import importlib                                                 # noqa: E402
+_m3 = importlib.import_module("minemodelingpro.model3d")
+_pkg = os.path.dirname(os.path.abspath(_m3.__file__))
+routes = {getattr(r, "path", None) for r in S.app.routes}
+for want in ("/models/viewer.js", "/models/_shell.html"):
+    check("%s is served from the package" % want, want in routes,
+          "no explicit route: the static mount would serve the committed copy")
+for name in ("viewer.js", "model3d_viewer.html"):
+    check("%s is in the package" % name, os.path.exists(os.path.join(_pkg, name)))
+# the mount must not shadow them: explicit routes have to be registered first
+_paths = [getattr(r, "path", "") for r in S.app.routes]
+if "/models/viewer.js" in _paths:
+    check("the renderer route is registered before the static mount",
+          _paths.index("/models/viewer.js") < (_paths.index("/") if "/" in _paths else 10**9))
+
 print("\n%d passed, %d failed" % (len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)
