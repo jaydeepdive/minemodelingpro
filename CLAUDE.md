@@ -996,6 +996,50 @@ models exist mainly to let "Colour by" switch layers. Serving those from the
 metal table instead would cut the dominant phase by about two thirds. It changes
 what the viewer reads, so it needs the field-by-field model diff first.
 
+## Compositing used the midpoint, not the interval (2026-10-25)
+
+Jordan: "are we not using the full length of an interval to properly assess metal
+content and modeling". **We were not.**
+
+A composite took the grade of whichever segment its **midpoint** landed in. So a
+metre of 1,000 g/t inside a 5 m composite scored **0 g/t-metres** when the
+midpoint missed the vein and **5,000** when it hit — the same metre of core worth
+nothing or five times itself depending on where it sat in the hole. The error is
+the composite length over the sample length, which on narrow veins (1 m assays,
+5 m composites) is the deposit. Both cases are in the commit; metal was not
+conserved in either.
+
+A composite is now the **length-weighted average of everything it spans**:
+`sum(overlap x grade) / composite length` with the zero-fill on, `/ assayed
+length` with it off. Metal is conserved exactly. `MMP_COMPOSITE=midpoint`
+restores the old rule so this stays A/B-able.
+
+**Measured, 52 projects with a filed statement AND at least 60 assayed holes —
+the population where the comparison means anything** (`/tmp/claude-0/ab.py`,
+resumable because each pair takes longer than a tool call):
+
+| | median ratio | med abs log err | within 2x | >10x |
+|---|---|---|---|---|
+| midpoint | 0.441 | 1.324 | 17 | 17 |
+| **length-weighted** | **0.520** | **1.222** | 16 | **16** |
+
+Paired: length is closer to the filing on 28 projects, midpoint on 23, one tied.
+**That is a weak edge, and it must be read with the mechanism, not instead of
+it.** Sampling a spike at the midpoint *inflated* composite grades; removing that
+inflation lowers them, so at grade-match a lower cut-off is needed and more
+tonnage comes with it — tonnage rose on 41 of 52. Most MMP models are short, so
+that helps (Cahuilla 0.131x -> 0.896x); the ones already over get worse
+(Cajueiro 13.7x -> 93.9x, Herbert 0.67x -> 3.22x). Cajueiro is a known "filing
+covers part of what we model" case, so its ratio was never a measure of the
+estimator.
+
+**Shipped on the mechanism, not the median.** A rule that turns one metre of
+1,000 g/t into either nothing or five times itself is indefensible whatever it
+scores in aggregate, and the corpus is at worst neutral on it. An early sample
+sorted smallest-project-first showed the opposite and was noise: those are the
+"resource published without its drilling" projects where every ratio is 0.1x.
+**Sample the population where the comparison is valid, or measure nothing.**
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.
