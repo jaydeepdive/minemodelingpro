@@ -608,39 +608,7 @@ def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None,
     return lo, (bx, by, bz), ijk, gr, params, cl
 
 
-class _LRU(dict):
-    """A dict that forgets the oldest entry past `cap`. A cached search plan is
-    tens of megabytes; two of them is a cache, twenty is the memory bug this
-    whole modeller spent a week escaping."""
-
-    def __init__(self, cap=2):
-        super().__init__()
-        self.cap = int(cap)
-
-    def __setitem__(self, k, v):
-        super().__setitem__(k, v)
-        while len(self) > self.cap:
-            super().pop(next(iter(self)))
-
-
-def _geom_key(pts, hid, o):
-    """Identity of the SEARCH, not of the grades.
-
-    A modern lab package assays every element on the same intervals, so every
-    metal composites to the same positions and the neighbour search is the same
-    search twenty-four times over. Hashing the geometry is ~20 ms against the
-    ~400 ms the query costs, so it pays from the second metal on."""
-    import hashlib
-    h = hashlib.blake2b(digest_size=16)
-    h.update(np.ascontiguousarray(pts, np.float64).tobytes())
-    h.update(np.ascontiguousarray(hid).tobytes())
-    h.update(repr([round(float(o.get(k) or 0), 6) for k in
-                   ("radius_m", "max_gap_m", "min_holes", "min_samples", "power")]).encode())
-    h.update(str(o.get("method") or "idw").encode())
-    return h.digest()
-
-
-def grade_at(pts, g, hid, centres, opts=None, params=None, cache=None):
+def grade_at(pts, g, hid, centres, opts=None, params=None):
     """Estimate a grade at given block centres, with the same rules the block model
     used. This is what lets every metal be reported on ONE tonnage: the deposit is a
     single body, so the rock does not change between metals — only the grade in it
@@ -660,23 +628,6 @@ def grade_at(pts, g, hid, centres, opts=None, params=None, cache=None):
     out = np.full(len(centres), np.nan, np.float32)
     if not len(pts):
         return out
-    # The plan is the geometry: which samples each block uses and with what
-    # weight. It does not depend on the grade, so every metal assayed on the same
-    # intervals reuses it instead of rebuilding a tree and re-running the query.
-    plan = None
-    key = None
-    if cache is not None:
-        key = _geom_key(pts, hid, o)
-        plan = cache.get(key)
-    if plan is not None:
-        for s, idx, iis, w in plan:
-            if method == "nn":
-                est = g[iis[:, 0]]
-            else:
-                est = (w * g[iis]).sum(1) / w.sum(1)
-            out[s + idx] = est.astype(np.float32)
-        return out
-    steps = []
     tree = cKDTree(pts)
     CH = 200_000
     for s in range(0, len(centres), CH):
@@ -707,14 +658,6 @@ def grade_at(pts, g, hid, centres, opts=None, params=None, cache=None):
             w = np.where(nearm, 1.0 / np.maximum(dd_, 0.5) ** power, 0.0)
             est = (w * g[iis]).sum(1) / w.sum(1)
         out[s + idx] = est.astype(np.float32)
-        steps.append((s, idx.astype(np.int32), iis.astype(np.int32), w))
-    # A plan is ~12 bytes per block per neighbour. Worth tens of megabytes on a
-    # big deposit, which is free on a 2 GB box and is not on a 1 GB one — and the
-    # modeller has been killed by exactly this kind of "small" extra before.
-    if cache is not None and key is not None:
-        want = sum(x[2].nbytes + x[3].nbytes for x in steps) / 1e6
-        if want < max(40.0, mem_budget_mb() * 0.06):
-            cache[key] = steps
     return out
 
 
@@ -966,12 +909,6 @@ def _by_metal(primary, grids, by_el, units, key2i, H, PS, margin=None, style=Non
         cuts = sorted({round(c, 4) for c in cuts + q})
     cuts = cuts[:10]
 
-    # Every metal is estimated at the SAME block centres, and a lab package assays
-    # every element on the same intervals — so the neighbour search is one search
-    # repeated once per metal. The plan (which samples, at what weight) is cached
-    # on the geometry; only the grade vector changes. Bounded, because a plan is
-    # ~16 numbers per block and the point is speed, not hoarding.
-    plan_cache = _LRU(2)
 
     # blocks sorted by primary grade: a cut-off is then a prefix, so every metal's
     # grade and coverage at every cut-off comes out of one cumulative sum
@@ -1044,7 +981,7 @@ def _by_metal(primary, grids, by_el, units, key2i, H, PS, margin=None, style=Non
             # figure and every dollar of NSR.
             o = dict(gp.get("opts") or {})
             o.update({"min_holes": 1, "min_samples": 2})
-            est = grade_at(pts, g, hid, centres, params=o, cache=plan_cache)
+            est = grade_at(pts, g, hid, centres, params=o)
             vals_unsorted = est.astype(np.float64)
             vals = est[order].astype(np.float64)
             ok = np.isfinite(vals)

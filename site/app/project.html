@@ -225,7 +225,12 @@ function rowsFromModel(m) {
 }
 
 function renderTable(cols, rows) {
-  if (!rows.length) return `<p class="muted small" style="padding:10px">No rows.</p>`;
+  // Every one of these has been undefined at least once today. A table that
+  // cannot render is not worth a thrown exception the reader has to decode.
+  cols = Array.isArray(cols) ? cols : [];
+  rows = Array.isArray(rows) ? rows : [];
+  if (!cols.length || !rows.length)
+    return `<p class="muted small" style="padding:10px">No rows.</p>`;
   const isNum = i => rows.some(r => typeof r[i] === "number");
   return `<table><thead><tr>` + cols.map(c => `<th>${esc(c)}</th>`).join("") +
     `</tr></thead><tbody>` + rows.map(r => `<tr>` + r.map((v, i) =>
@@ -255,15 +260,21 @@ async function loadData() {
     if (D.src === "raw") {
       const qs = new URLSearchParams({ table: D.table, q: D.q, el: D.el,
                                        limit: D.limit, offset: D.offset });
-      const r = await api(`/projects/${project.id}/data?${qs}`);
+      const r = (await api(`/projects/${project.id}/data?${qs}`)) || {};
       box.innerHTML = renderTable(r.columns, r.rows);
       $("#dcount").textContent = `${(r.total || 0).toLocaleString()} rows · raw uploaded file`;
       paging(r.total || 0); return;
     }
     const m = await getModel();
-    if ($("#del").options.length <= 1) {
+    if (!m || typeof m !== "object" || !m.elements) {
+      // the model has not been written yet, or came back as something else —
+      // fall through to the raw parse rather than failing
+      D.src = "raw"; return loadData();
+    }
+    const dsel = $("#del");
+    if (dsel && dsel.options.length <= 1) {
       const els = Object.keys(m.elements || {});
-      $("#del").innerHTML = `<option value="">All elements</option>` +
+      dsel.innerHTML = `<option value="">All elements</option>` +
         els.map(e => `<option>${esc(e)}</option>`).join("");
     }
     const cols = COLS[D.table], all = rowsFromModel(m);
@@ -274,7 +285,8 @@ async function loadData() {
     paging(sel.length, sel, cols);
   } catch (e) {
     box.innerHTML = `<p class="muted small" style="padding:10px">Could not read the data`
-      + ` <span class="muted">(${esc(String(e.message || e))})</span>.`
+      + ` <span class="muted">(${esc(String(e.message || e))}${
+            e.stack ? " — " + esc(String(e.stack).split("\n")[1] || "").trim() : ""})</span>.`
       + ` If this project is still building, its model is not written yet.</p>`;
     $("#dcount").textContent = ""; $("#dpage").textContent = "";
   }
