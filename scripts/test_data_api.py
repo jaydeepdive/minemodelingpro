@@ -170,5 +170,45 @@ check("the element filter works at scale",
 print("    (peak RSS %d MB -> %d MB across the page requests)"
       % (m0 // 1024, resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024))
 
+# --- THE SHAPE THE WORKER ACTUALLY WRITES.
+# do_import stores IVT.to_store(dataset), whose "intervals" is a dict of deflated
+# base64 buffers, not a list of rows. Every fixture above is a list, so the
+# endpoint shipped reading rows it never gets and 500'd on the real file. A test
+# that does not use the production writer is not testing production.
+from minemodelingpro import ivtable as IVT                       # noqa: E402
+
+stored = IVT.to_store({
+    "collars": [{"hole": "SM-001", "e": 1.0, "n": 2.0, "z": 3.0,
+                 "az": 10.0, "dip": -50.0, "depth": 90.0}],
+    "surveys": [{"hole": "SM-001", "md": 0.0, "az": 10.0, "dip": -50.0}],
+    "intervals": [
+        {"hole": "SM-001", "from": 1.0, "to": 2.0, "el": "Ag", "grade": 310.0, "unit": "g/t"},
+        {"hole": "SM-001", "from": 2.0, "to": 3.5, "el": "Ag", "grade": 42.0, "unit": "g/t"},
+        {"hole": "SM-001", "from": 2.0, "to": 3.5, "el": "Co", "grade": 0.4, "unit": "%"},
+    ],
+})
+check("to_store really produces columns, not rows",
+      isinstance(stored["intervals"], dict), type(stored["intervals"]).__name__)
+
+sp = d.one("insert into projects (owner, slug, name) values (%s,%s,%s) returning *",
+           uid, "stored-" + uuid.uuid4().hex[:6], "Stored shape")
+sk = f"{uid}/{sp['id']}/data.json"
+F.put_json(sk, stored)
+d.run("insert into datasets (project_id, owner, status, data_key) values (%s,%s,'ready',%s)",
+      sp["id"], uid, sk)
+
+sb = f"/api/projects/{sp['id']}/data"
+r = c.get(sb + "?table=assays")
+check("the stored column shape does not 500", r.status_code == 200, r.text[:300])
+j = r.json() if r.status_code == 200 else {}
+check("its rows read back correctly", j.get("total") == 3, j)
+check("its grades survive the round trip",
+      any(abs((row[5] or 0) - 310.0) < 1e-9 for row in (j.get("rows") or [])), j.get("rows"))
+check("its elements are listed", j.get("elements") == ["Ag", "Co"], j.get("elements"))
+check("filters work on the stored shape",
+      c.get(sb + "?table=assays&el=Co").json()["total"] == 1)
+check("collars read from the stored shape",
+      c.get(sb + "?table=collars").json()["total"] == 1)
+
 print("\n%d passed, %d failed" % (len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

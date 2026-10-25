@@ -893,6 +893,16 @@ a page at offset 700,000, both filters, and that peak RSS does not move across
 them — 510 MB before and after. **Any endpoint over a client's data gets a test
 at a client's scale; a four-row fixture proves nothing about this.**
 
+**And it 500'd a second time, for a different reason the tests also missed.**
+`do_import` stores `IVT.to_store(dataset)`, whose `intervals` is a **dict of
+deflated base64 buffers**, not a list of rows — and `Intervals.coerce()` reads a
+list or a table, so on a dict it iterated the keys as though each string were a
+row. Every fixture I had written was a list, so the endpoint was only ever tested
+against a shape production does not store. `test_data_api.py` now builds its
+fixture with **`IVT.to_store`** — the production writer — and asserts the dict
+shape, the round trip and the filters on it. **Write the fixture with the code
+that writes production data, or the test is checking a shape nobody stores.**
+
 The page layout followed the same lesson as the viewer panel: **Your data** sits
 *above* the import log, and the log's prose ("using 32 of 338 columns…", which
 column became what) is folded into `<details>`. A wall of text between the person

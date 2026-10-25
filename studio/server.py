@@ -597,10 +597,12 @@ def project_data(pid: str, request: Request, u=Depends(require),
             if offset < total <= offset + limit:
                 out.append(make(item))
 
+    problems = []
     for k in keys:
         try:
             raw = F.get_json(k)
-        except Exception:
+        except Exception as e:
+            problems.append("could not read a stored file: %s" % str(e)[:120])
             continue
         if table == "collars":
             cols = ["hole", "easting", "northing", "elevation", "azimuth", "dip", "depth_m"]
@@ -617,9 +619,16 @@ def project_data(pid: str, request: Request, u=Depends(require),
                                   v.get("md", v.get("depth")), v.get("az"), v.get("dip")])
         else:
             import numpy as np
-            from minemodelingpro import ivtable as IVT
+            from minemodelingpro import ivtable as IVT  # noqa: F811
             cols = ["hole", "from_m", "to_m", "length_m", "element", "grade", "unit"]
-            t = IVT.Intervals.coerce(raw.get("intervals") or [])
+            # A stored dataset's intervals are COLUMNS (to_store -> to_json:
+            # deflated base64 buffers), not a list of rows. coerce() reads a list
+            # or a table and would iterate a dict's keys as if they were rows —
+            # which is the 500 this endpoint shipped with, invisible to a test
+            # whose fixture was a plain list.
+            iv = raw.get("intervals")
+            t = (IVT.Intervals.from_json(iv) if isinstance(iv, dict)
+                 else IVT.Intervals.coerce(iv or []))
             idx = t.index()
             elements |= set(idx)
             want = [el] if el else sorted(idx)
@@ -641,8 +650,11 @@ def project_data(pid: str, request: Request, u=Depends(require),
                 out.append([t.holes[t.hole_i[j]] or "", fr, to,
                             (round(to - fr, 2) if fr is not None and to is not None else None),
                             t.els[t.el_i[j]] or "", gr, t.units[t.unit_i[j]] or ""])
+    if problems and not out and not total:
+        raise HTTPException(500, "; ".join(problems[:3]))
     return {"table": table, "columns": cols, "rows": out, "total": total,
-            "offset": offset, "limit": limit, "elements": sorted(e for e in elements if e)}
+            "offset": offset, "limit": limit, "elements": sorted(e for e in elements if e),
+            "problems": problems or None}
 
 
 @app.post("/api/adopt")
