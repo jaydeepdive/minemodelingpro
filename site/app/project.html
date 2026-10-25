@@ -75,7 +75,7 @@
        inside the 3D viewer, which is not where someone checking an import is. -->
   <div class="card" style="margin-top:18px" id="browsecard">
     <h3>Your data</h3>
-    <p class="note">Exactly what the modeller was given, straight from the parsed files.</p>
+    <p class="note">Every interval <b>as the model used it</b> — hole, from, to, and the length between them.</p>
     <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
       <div class="seg" id="dtabs">
         <button class="on" data-t="assays">Assays</button><button data-t="collars">Collars</button><button data-t="surveys">Surveys</button>
@@ -89,6 +89,7 @@
       <button class="btn ghost" id="dprev">Previous</button>
       <button class="btn ghost" id="dnext">Next</button>
       <span class="muted small" id="dpage"></span>
+      <button class="btn ghost" id="draw">Show the raw uploaded file</button>
       <a class="btn ghost" id="ddl" style="margin-left:auto" download>Download this table</a>
     </div>
   </div>
@@ -176,67 +177,127 @@ function paint(p, job, worker) {
 paint(project, null);
 
 /* ---- the data browser ----
-   One endpoint, three tables, paged server-side so a 919,152-row assay file
-   opens as fast as a small one. */
-const D = { table: "assays", el: "", q: "", offset: 0, limit: 200, total: 0 };
-const dnum = v => v === null || v === undefined || v === "" ? ""
-  : (typeof v === "number" ? (Number.isInteger(v) ? v : +v.toFixed(4)) : v);
+   Reads the MODEL, not the stored dataset. Two reasons: the model is what
+   already loads reliably in this browser — the 3D viewer renders from it — and
+   it is what the modeller actually used, so "are you using the full length of my
+   intervals" is answerable here instead of taken on trust. Every row shows from,
+   to, and the length between them. The raw parse (every assayed element,
+   including the ones not estimated) is behind the "raw uploaded file" toggle. */
+const D = { table: "assays", el: "", q: "", offset: 0, limit: 200, src: "model" };
+let MODEL = null, ROWS = null, ROWKEY = "";
+const dnum = v => v === null || v === undefined || v === ""
+  ? "" : (typeof v === "number" ? (Number.isInteger(v) ? v : +v.toFixed(4)) : v);
+
+const COLS = {
+  assays: ["hole", "from (m)", "to (m)", "length (m)", "element", "grade", "unit"],
+  collars: ["hole", "x", "y", "elevation", "azimuth", "dip", "depth (m)"],
+  surveys: ["hole", "depth (m)", "azimuth", "dip"],
+};
+
+async function getModel() {
+  if (!MODEL) MODEL = await api(`/projects/${project.id}/model.json`);
+  return MODEL;
+}
+
+function rowsFromModel(m) {
+  const key = D.table + "|" + D.el;
+  if (ROWS && ROWKEY === key) return ROWS;
+  const H = m.holes || [];
+  const rows = [];
+  if (D.table === "collars") {
+    H.forEach(h => rows.push([h[0], h[1], h[2], h[3], h[4], h[5], h[6]]));
+  } else if (D.table === "surveys") {
+    H.forEach(h => {
+      const p = h[7];
+      if (Array.isArray(p)) { for (let i = 0; i < p.length; i += 4) rows.push([h[0], p[i], null, null]); }
+      else rows.push([h[0], 0, h[4], h[5]]);
+    });
+  } else {
+    for (const e of Object.keys(m.elements || {})) {
+      if (D.el && e !== D.el) continue;
+      const E = m.elements[e];
+      for (const sg of (E.segments || []))
+        rows.push([(H[sg[0]] || [])[0] || "", sg[1], sg[2],
+                   +(sg[2] - sg[1]).toFixed(2), e, sg[3], E.unit]);
+    }
+  }
+  ROWS = rows; ROWKEY = key; return rows;
+}
+
+function renderTable(cols, rows) {
+  if (!rows.length) return `<p class="muted small" style="padding:10px">No rows.</p>`;
+  const isNum = i => rows.some(r => typeof r[i] === "number");
+  return `<table><thead><tr>` + cols.map(c => `<th>${esc(c)}</th>`).join("") +
+    `</tr></thead><tbody>` + rows.map(r => `<tr>` + r.map((v, i) =>
+      `<td${isNum(i) ? ' class="n"' : ""}>${esc(String(dnum(v)))}</td>`).join("") +
+      `</tr>`).join("") + `</tbody></table>`;
+}
+
+function paging(total, sel, cols) {
+  const from = total ? D.offset + 1 : 0, to = Math.min(D.offset + D.limit, total);
+  $("#dpage").textContent = total
+    ? `${from.toLocaleString()}–${to.toLocaleString()} of ${total.toLocaleString()}` : "";
+  $("#dprev").disabled = D.offset <= 0;
+  $("#dnext").disabled = D.offset + D.limit >= total;
+  const dl = $("#ddl"); if (!dl || !sel) return;
+  const body = [cols.join(",")].concat(sel.map(x => x.map(v =>
+    /[",\n]/.test(String(v ?? "")) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v ?? "")
+  ).join(","))).join("\n");
+  dl.href = "data:text/csv;charset=utf-8," + encodeURIComponent(body);
+  dl.download = `${project.slug || "project"}-${D.table}.csv`;
+  dl.textContent = `Download all ${sel.length.toLocaleString()} rows`;
+}
 
 async function loadData() {
   const box = $("#dtable");
   box.innerHTML = `<p class="muted small" style="padding:10px">Loading…</p>`;
-  let r;
   try {
-    const qs = new URLSearchParams({ table: D.table, q: D.q, el: D.el,
-                                     limit: D.limit, offset: D.offset });
-    r = await api(`/projects/${project.id}/data?${qs}`);
+    if (D.src === "raw") {
+      const qs = new URLSearchParams({ table: D.table, q: D.q, el: D.el,
+                                       limit: D.limit, offset: D.offset });
+      const r = await api(`/projects/${project.id}/data?${qs}`);
+      box.innerHTML = renderTable(r.columns, r.rows);
+      $("#dcount").textContent = `${(r.total || 0).toLocaleString()} rows · raw uploaded file`;
+      paging(r.total || 0); return;
+    }
+    const m = await getModel();
+    if ($("#del").options.length <= 1) {
+      const els = Object.keys(m.elements || {});
+      $("#del").innerHTML = `<option value="">All elements</option>` +
+        els.map(e => `<option>${esc(e)}</option>`).join("");
+    }
+    const cols = COLS[D.table], all = rowsFromModel(m);
+    const ql = D.q.toLowerCase();
+    const sel = ql ? all.filter(r => String(r[0]).toLowerCase().includes(ql)) : all;
+    $("#dcount").textContent = `${sel.length.toLocaleString()} rows · as the model used them`;
+    box.innerHTML = renderTable(cols, sel.slice(D.offset, D.offset + D.limit));
+    paging(sel.length, sel, cols);
   } catch (e) {
-    // "500" on its own told the reader nothing at all
     box.innerHTML = `<p class="muted small" style="padding:10px">Could not read the data`
       + ` <span class="muted">(${esc(String(e.message || e))})</span>.`
-      + ` If this project has just been uploaded, the parse may still be running.</p>`;
-    $("#dcount").textContent = ""; $("#dpage").textContent = ""; return;
+      + ` If this project is still building, its model is not written yet.</p>`;
+    $("#dcount").textContent = ""; $("#dpage").textContent = "";
   }
-  D.total = r.total || 0;
-  if (r.elements && r.elements.length && $("#del").options.length <= 1)
-    $("#del").innerHTML = `<option value="">All elements</option>` +
-      r.elements.map(e => `<option${e === D.el ? " selected" : ""}>${esc(e)}</option>`).join("");
-  $("#del").style.display = D.table === "assays" ? "" : "none";
-  $("#dcount").textContent = `${(r.total || 0).toLocaleString()} rows`;
-  if (!r.rows.length) {
-    box.innerHTML = `<p class="muted small" style="padding:10px">No rows${D.q ? ` matching “${esc(D.q)}”` : ""}.</p>`;
-  } else {
-    const isNum = i => r.rows.some(row => typeof row[i] === "number");
-    box.innerHTML = `<table><thead><tr>` +
-      r.columns.map(c => `<th>${esc(c.replace(/_/g, " "))}</th>`).join("") +
-      `</tr></thead><tbody>` +
-      r.rows.map(row => `<tr>` + row.map((v, i) =>
-        `<td${isNum(i) ? ' class="n"' : ""}>${esc(String(dnum(v)))}</td>`).join("") + `</tr>`).join("") +
-      `</tbody></table>`;
-  }
-  const from = r.total ? D.offset + 1 : 0, to = Math.min(D.offset + D.limit, r.total);
-  $("#dpage").textContent = r.total ? `${from.toLocaleString()}–${to.toLocaleString()} of ${r.total.toLocaleString()}` : "";
-  $("#dprev").disabled = D.offset <= 0;
-  $("#dnext").disabled = D.offset + D.limit >= r.total;
-  const dl = $("#ddl");
-  if (dl) { dl.href = `data:text/csv;charset=utf-8,` + encodeURIComponent(
-      [r.columns.join(",")].concat(r.rows.map(x => x.map(v =>
-        /[",\n]/.test(String(v ?? "")) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v ?? "")
-      ).join(","))).join("\n"));
-    dl.download = `${project.slug || "project"}-${D.table}.csv`;
-    dl.textContent = `Download these ${r.rows.length.toLocaleString()} rows`; }
 }
 
 document.querySelectorAll("#dtabs button").forEach(b => b.onclick = () => {
   document.querySelectorAll("#dtabs button").forEach(x => x.classList.toggle("on", x === b));
-  D.table = b.dataset.t; D.offset = 0; loadData();
+  D.table = b.dataset.t; D.offset = 0; ROWS = null; loadData();
 });
-$("#del").onchange = e => { D.el = e.target.value; D.offset = 0; loadData(); };
+$("#del").onchange = e => { D.el = e.target.value; D.offset = 0; ROWS = null; loadData(); };
 let dT = null;
 $("#dq").oninput = e => { clearTimeout(dT); const v = e.target.value.trim();
-  dT = setTimeout(() => { D.q = v; D.offset = 0; loadData(); }, 250); };
+  dT = setTimeout(() => { D.q = v; D.offset = 0; loadData(); }, 200); };
 $("#dprev").onclick = () => { D.offset = Math.max(0, D.offset - D.limit); loadData(); };
-$("#dnext").onclick = () => { D.offset = D.offset + D.limit; loadData(); };
+$("#dnext").onclick = () => { D.offset += D.limit; loadData(); };
+{
+  const b = $("#draw");
+  if (b) b.onclick = () => {
+    D.src = D.src === "model" ? "raw" : "model"; D.offset = 0; ROWS = null;
+    b.textContent = D.src === "model" ? "Show the raw uploaded file" : "Show what the model used";
+    loadData();
+  };
+}
 loadData();
 // parameters start from the project's most recent technical report, else from
 // what is typical for its region and commodity; the form shows where each came from
