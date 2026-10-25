@@ -64,7 +64,9 @@ _VIEWER_TMPL = os.path.join(_HERE, "model3d_viewer.html")
 #      reporting phosphorus was making vein properties sedimentary phosphate)
 #  7 — the wireframe is carried to the viewer, so the body the model imagined can
 #      be drawn over the blocks instead of only inferred from where they stop
-MODEL_VERSION = 7
+#  8 — each wireframe cell carries the zone it belongs to, so the envelope can be
+#      read and isolated body by body rather than as one shape
+MODEL_VERSION = 8
 # the most domain cells to send to a browser; beyond this the envelope is drawn
 # on a coarser lattice, which is a picture of the same shape
 BODY_MAX_CELLS = 120_000
@@ -1371,7 +1373,7 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
             # how far this deposit's own kind of filing carries grade between holes
             el_reach = float(PS.get("max_gap_m") or PS.get("reach_m") or
                              reach_for_style(skey, spacing, max(blk)))
-            dom_pts, dom_info = (None, None)
+            dom_pts, dom_info, dom_zone = (None, None, None)
             if PS.get("domain") is not False:
                 rot_d, an_d = anisotropy(pts, g, eopts.get("anisotropy"),
                                          trend=eopts.get("trend"))
@@ -1404,9 +1406,13 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                     mz = g > max(bins[0], 1e-9)
                     zlab, zlist = ZON.find(pts[mz], hid[mz], reach)
                     zone_pts, zone_lab = pts[mz], zlab
-                    parts, zinfo = [], []
+                    # which zone each composite belongs to — asked once, not once
+                    # per zone, which was a KD-tree query per body on a property
+                    # that can have fifty of them
+                    zof = ZON.assign(pts, zone_pts, zlab, reach)
+                    parts, zinfo, part_zone = [], [], []
                     for z in (zlist or []):
-                        belong = ZON.assign(pts, zone_pts, zlab, reach) == z["id"]
+                        belong = zof == z["id"]
                         if belong.sum() < 6:
                             continue
                         zp, zi = DOM.wireframe(
@@ -1416,6 +1422,10 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                             thickness=PS.get("true_width_m") or med_w)
                         if zp is not None and len(zp):
                             parts.append(zp)
+                            # every point of this body remembers whose body it is,
+                            # so the envelope can be read zone by zone instead of
+                            # as one undifferentiated shape
+                            part_zone.append(np.full(len(zp), int(z["id"]), np.int32))
                             zinfo.append({**{k: v for k, v in z.items() if k != "idx"},
                                           "points": int(len(zp))})
                             zone_list.append({k: v for k, v in z.items() if k != "idx"})
@@ -1424,7 +1434,6 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                     # models that were already short — the zones must take rock away
                     # from the bridges between them, never from the drilling itself.
                     if parts:
-                        zof = ZON.assign(pts, zone_pts, zlab, reach)
                         left = (zof == 0) & mz
                         if left.sum() >= 6:
                             near = ZON.assign(pts, pts[left], np.ones(int(left.sum()), int),
@@ -1436,11 +1445,16 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                                 thickness=PS.get("true_width_m") or med_w)
                             if lp is not None and len(lp):
                                 parts.append(lp)
+                                # zone 0: real mineralisation that belongs to no
+                                # named body. Shown, labelled as such, never hidden
+                                part_zone.append(np.zeros(len(lp), np.int32))
                     if parts:
                         dom_pts = np.concatenate(parts)
+                        dom_zone = np.concatenate(part_zone) if part_zone else None
                         dom_info = {"from": "mineralised intercepts, zone by zone",
                                     "intercepts": int(mz.sum()), "zones": zinfo,
-                                    "bodies": len(parts)}
+                                    "bodies": len(parts),
+                                    "unzoned": int(sum(1 for a in part_zone if a.size and a[0] == 0))}
                     else:
                         dom_pts, dom_info = DOM.wireframe(
                             pts, g, hid, max(bins[0], 1e-9), rot=rot_d, aniso=an_d,
@@ -1560,19 +1574,43 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
             # the envelope over the blocks and the two can be compared.
             if dom_pts is not None and len(dom_pts):
                 dijk = np.floor((np.asarray(dom_pts, float) - lo) / bsz).astype(np.int64)
+                dz = (np.asarray(dom_zone, np.int32) if dom_zone is not None
+                      and len(dom_zone) == len(dijk) else np.zeros(len(dijk), np.int32))
                 # NOT clipped to where blocks were estimated: a body that reaches
                 # past the last block is the thing worth seeing
-                dijk = dijk[(dijk >= 0).all(1) & (dijk < 65535).all(1)]
+                ok = (dijk >= 0).all(1) & (dijk < 65535).all(1)
+                dijk, dz = dijk[ok], dz[ok]
                 if len(dijk):
-                    dijk = np.unique(dijk, axis=0)
+                    # where two bodies share a cell the named one wins the label,
+                    # so a zone is never shown as unzoned ground
+                    ordr = np.argsort(dz == 0, kind="stable")
+                    dijk, dz = dijk[ordr], dz[ordr]
+                    _u, first = np.unique(dijk, axis=0, return_index=True)
+                    dijk, dz = dijk[first], dz[first]
                     if len(dijk) > BODY_MAX_CELLS:       # thin on a coarser lattice
                         k = int(np.ceil((len(dijk) / BODY_MAX_CELLS) ** (1 / 3)))
-                        dijk = np.unique(dijk // k, axis=0) * k
+                        coarse = dijk // k
+                        ordr = np.argsort(dz == 0, kind="stable")
+                        coarse, dz2 = coarse[ordr], dz[ordr]
+                        _u, first = np.unique(coarse, axis=0, return_index=True)
+                        dijk, dz = coarse[first] * k, dz2[first]
+                    zc = {}
+                    for zid in np.unique(dz):
+                        w = dz == zid
+                        c = lo + (dijk[w].mean(0) + 0.5) * bsz
+                        zc[int(zid)] = {"id": int(zid),
+                                        "name": ("unzoned" if zid == 0 else "Zone %d" % zid),
+                                        "cells": int(w.sum()),
+                                        "centre": [round(float(v), 1) for v in c]}
                     el_out["body"] = {
                         "origin": [round(float(v), 2) for v in lo], "size": list(bsz),
                         "ijk": _b64(dijk.astype(np.uint16)), "n": int(len(dijk)),
+                        # one zone id per cell, so the envelope reads body by body
+                        "zone": _b64(np.clip(dz, 0, 255).astype(np.uint8)),
+                        "zones": [zc[k] for k in sorted(zc, key=lambda i: (i == 0, i))],
                         "from": (dom_info or {}).get("from"),
                         "bodies": (dom_info or {}).get("bodies"),
+                        "unzoned": (dom_info or {}).get("unzoned"),
                         "reach_m": round(float(reach), 1) if dom_pts is not None else None,
                     }
             el_out["gt"] = gt

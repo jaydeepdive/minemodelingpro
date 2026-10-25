@@ -150,7 +150,14 @@ function buildBlocks(){if(blockMesh){scene.remove(blockMesh);blockMesh.geometry.
    two very different explanations: the body never reached there, or it did and
    the estimator found nothing to put in it. Drawn over the blocks, the two are
    told apart by eye. */
-let bodyMesh=null;
+/* One colour per body, shared by the envelope, the chips and the labels, so a
+   zone is the same thing in the picture and in the table. Zone 0 is the ground
+   that belongs to no named body — grey, and still shown. */
+const ZCOL=["#8d98a7","#2f7ed8","#d94f3d","#1f9d55","#8e5bd1","#d99a00","#0f9fb0",
+            "#c2447a","#6b8e23","#4a5bbd","#b5651d","#2aa198"];
+function zoneColor(id){return id?ZCOL[((id-1)%(ZCOL.length-1))+1]:ZCOL[0];}
+
+let bodyMesh=null,BD=null;
 function buildBody(){
   if(bodyMesh){scene.remove(bodyMesh);bodyMesh.geometry.dispose();bodyMesh.material.dispose();bodyMesh=null;}
   const E=M.elements[EL],B=E&&E.body;
@@ -160,24 +167,58 @@ function buildBody(){
   if(row)row.style.display=B?"":"none";
   if(why){
     if(B){why.style.display="";
+      const nz=(B.zones||[]).filter(z=>z.id>0).length,un=(B.zones||[]).some(z=>z.id===0);
       why.textContent="The shape the model triangulated through the mineralised intercepts"
-        +(B.bodies?" — "+B.bodies+" separate "+(B.bodies===1?"body":"bodies"):"")
-        +(B.reach_m?", linking holes up to "+B.reach_m+" m apart":"")
+        +(nz?" — "+nz+" named "+(nz===1?"body":"bodies")+", coloured to match the zone chips":"")
+        +(un?", plus grey ground that belongs to no named body":"")
+        +(B.reach_m?". Holes are linked up to "+B.reach_m+" m apart":"")
         +". Blocks are only estimated inside it, so a gap here is a gap the drilling could not justify closing.";
     } else {why.style.display="none";}
   }
+  BD=null;
   if(!B)return;
   const ijk=b64(B.ijk,Uint16Array),[bx,by,bz]=B.size,o=B.origin,n=B.n;
+  const pos=new Float32Array(n*3);
+  for(let i=0;i<n;i++){const p=V(o[0]+(ijk[i*3]+.5)*bx,o[1]+(ijk[i*3+1]+.5)*by,o[2]+(ijk[i*3+2]+.5)*bz);
+    pos[i*3]=p.x;pos[i*3+1]=p.y;pos[i*3+2]=p.z;}
+  BD={n,pos,zone:B.zone?b64(B.zone,Uint8Array):null,zones:B.zones||[]};
   const geo=new THREE.BoxGeometry(bx,bz,by);
   bodyMesh=new THREE.InstancedMesh(geo,new THREE.MeshLambertMaterial({
-    color:0x6f7bdc,transparent:true,opacity:+(($("body-op")||{}).value||18)/100,
+    transparent:true,opacity:+(($("body-op")||{}).value||18)/100,
     depthWrite:false,side:THREE.DoubleSide}),n);
-  const m=new THREE.Matrix4();
-  for(let i=0;i<n;i++){const p=V(o[0]+(ijk[i*3]+.5)*bx,o[1]+(ijk[i*3+1]+.5)*by,o[2]+(ijk[i*3+2]+.5)*bz);
-    m.makeTranslation(p.x,p.y,p.z);bodyMesh.setMatrixAt(i,m);}
-  bodyMesh.instanceMatrix.needsUpdate=true;
+  bodyMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   bodyMesh.visible=!!(cb&&cb.checked);
-  scene.add(bodyMesh);}
+  scene.add(bodyMesh);applyBody();}
+
+/* Which of the envelope is drawn: everything, or one body when a zone is picked.
+   Same rule as the blocks, so the two always show the same deposit. */
+const _bm=new THREE.Matrix4(),_bc=new THREE.Color();
+function applyBody(){
+  if(!BD||!bodyMesh)return;let j=0;
+  for(let i=0;i<BD.n;i++){
+    const z=BD.zone?BD.zone[i]:0;
+    if(curZone&&z!==curZone)continue;
+    _bm.makeTranslation(BD.pos[i*3],BD.pos[i*3+1],BD.pos[i*3+2]);bodyMesh.setMatrixAt(j,_bm);
+    _bc.set(zoneColor(z));bodyMesh.setColorAt(j,_bc);j++;}
+  bodyMesh.count=j;bodyMesh.instanceMatrix.needsUpdate=true;
+  if(bodyMesh.instanceColor)bodyMesh.instanceColor.needsUpdate=true;}
+
+/* the body's name, written in the middle of it */
+function zoneLabels(){
+  if(!BD||!bodyMesh||!bodyMesh.visible||!BD.zones.length)return[];
+  const out=[];
+  // a property can carry fifty bodies and fifty labels is a wall of text; the
+  // list is biggest-first, so the ones worth naming are at the front
+  const cap=curZone?BD.zones.length:(MOBILE?6:14);
+  for(const z of BD.zones){
+    if(curZone&&z.id!==curZone)continue;
+    if(out.length>=cap)break;
+    if(!z.centre)continue;
+    const s=scr(V(z.centre[0],z.centre[1],z.centre[2]));
+    if(s[2]>1||s[0]<0||s[1]<0||s[0]>W()||s[1]>Hh())continue;
+    out.push(`<span class="zl" style="left:${s[0]}px;top:${s[1]}px;background:${zoneColor(z.id)}">`
+             +esc(z.name)+`</span>`);}
+  return out;}
 
 /* ---------------- how big is it, and how deep ---------------- */
 function drawSize(){
@@ -274,10 +315,11 @@ function drawZones(){
   if(!Z.length){sec.style.display="none";curZone=0;return;}
   sec.style.display="";
   $("zone-n").textContent="· "+Z.length+" in this project";
-  const chip=(id,label)=>`<button class="chip${curZone===id?" on":""}" data-z="${id}">${label}</button>`;
+  const dot=id=>`<i style="display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;vertical-align:1px;background:${zoneColor(id)}"></i>`;
+  const chip=(id,label)=>`<button class="chip${curZone===id?" on":""}" data-z="${id}">${id?dot(id):""}${label}</button>`;
   $("zones").innerHTML=chip(0,"Whole project")+Z.map(z=>chip(z.id,z.name)).join("");
   [...$("zones").querySelectorAll("button")].forEach(b=>b.onclick=()=>{
-    const id=+b.dataset.z;curZone=(curZone===id?0:id);drawZones();applyCut();drawZoneBox();
+    const id=+b.dataset.z;curZone=(curZone===id?0:id);drawZones();applyCut();applyBody();drawZoneBox();
     if(curZone)flyToZone(Z.find(z=>z.id===curZone));});
   drawZoneBox();
 }
@@ -288,7 +330,7 @@ function drawZoneBox(){
   for(const z of Z){
     const s=at(z);
     const on=curZone===z.id;
-    rows.push(`<div class="kv"${on?' style="font-weight:700"':''}><span>${z.name}
+    rows.push(`<div class="kv"${on?' style="font-weight:700"':''}><span><i style="display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;background:${zoneColor(z.id)}"></i>${z.name}
       <small>${z.holes} holes · ${m(z.span_m[0])} × ${m(z.span_m[1])}</small></span>
       <b>${s.tonnes?fmtT(s.tonnes):"–"}${s.grade!=null?" @ "+fmtG(s.grade,E.unit):""}</b></div>`);
   }
@@ -876,15 +918,20 @@ $("L-terrain").onchange=e=>{if(terrain)terrain.visible=e.target.checked;store.se
 $("ter-op").oninput=e=>{const v=+e.target.value;$("ter-op-v").textContent=v+"%";if(terrain){terrain.material.uniforms.uOp.value=v/100;terrain.material.depthWrite=v>=100;}store.set("terop",v);};
 $("blk-op").oninput=e=>{const v=+e.target.value;$("blk-op-v").textContent=v+"%";if(blockMesh){blockMesh.material.opacity=v/100;blockMesh.material.transparent=v<100;blockMesh.material.depthWrite=v>=100;blockMesh.material.needsUpdate=true;}store.set("blkop",v);};
 {const v=store.get("blkop",35);$("blk-op").value=v;$("blk-op-v").textContent=v+"%";$("L-blocks").checked=store.get("blocks",true);}
-$("L-body").onchange=e=>{if(bodyMesh)bodyMesh.visible=e.target.checked;store.set("body",e.target.checked);};
+$("L-body").onchange=e=>{if(bodyMesh)bodyMesh.visible=e.target.checked;store.set("body",e.target.checked);drawLabels();};
 $("body-op").oninput=e=>{const v=+e.target.value;$("body-op-v").textContent=v+"%";
   if(bodyMesh){bodyMesh.material.opacity=v/100;bodyMesh.material.needsUpdate=true;}store.set("bodyop",v);};
 {const v=store.get("bodyop",18);$("body-op").value=v;$("body-op-v").textContent=v+"%";
  $("L-body").checked=store.get("body",false);}
 /* hole labels (nearest ~80 to screen centre) */
-const LBL=$("labels");let lblOn=false;$("L-labels").onchange=e=>{lblOn=e.target.checked;if(!lblOn)LBL.innerHTML="";};
-function drawLabels(){if(!lblOn)return;const cands=[];for(const h of HO){const s=scr(at(h,0));if(s[2]>1||s[0]<0||s[1]<0||s[0]>W()||s[1]>Hh())continue;cands.push([Math.hypot(s[0]-W()/2,s[1]-Hh()/2),h,s]);}
-  cands.sort((a,b)=>a[0]-b[0]);LBL.innerHTML=cands.slice(0,MOBILE?40:90).map(c=>`<span style="left:${c[2][0]}px;top:${c[2][1]}px">${esc(c[1].id)}</span>`).join("");}
+const LBL=$("labels");let lblOn=false;$("L-labels").onchange=e=>{lblOn=e.target.checked;LBL.innerHTML="";drawLabels();};
+function drawLabels(){
+  const parts=[];
+  if(lblOn){const cands=[];for(const h of HO){const s=scr(at(h,0));if(s[2]>1||s[0]<0||s[1]<0||s[0]>W()||s[1]>Hh())continue;cands.push([Math.hypot(s[0]-W()/2,s[1]-Hh()/2),h,s]);}
+    cands.sort((a,b)=>a[0]-b[0]);
+    parts.push(...cands.slice(0,MOBILE?40:90).map(c=>`<span style="left:${c[2][0]}px;top:${c[2][1]}px">${esc(c[1].id)}</span>`));}
+  parts.push(...zoneLabels());
+  LBL.innerHTML=parts.join("");}
 
 /* scale bar + compass */
 function niceNum(x){const p=Math.pow(10,Math.floor(Math.log10(x)));const f=x/p;return(f<1.5?1:f<3.5?2:f<7.5?5:10)*p;}

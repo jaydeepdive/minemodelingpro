@@ -668,6 +668,93 @@ Splitting without keeping the leftovers is the trap: it helps the over-estimates
 (Auld Creek 112x -> 92x) by shrinking everything, and pushes the already-short
 further down (Aurora 0.40x -> 0.11x).
 
+## Improvements reach models on their own (2026-10-25)
+
+Jordan: "do i need to have the model itself rebuilt every time we improve our
+modeling processes? if so that is counter intuitive." Correct, and it was true.
+
+A model is a stored artifact, not a live calculation. The public gallery hid
+this — CI rebuilds it nightly from current code — but a client's private model
+sat at whatever the code was the day they pressed the button, with nothing
+telling them a newer one existed.
+
+`model3d.MODEL_VERSION` is stamped into every model and into the project's
+`stats`. `worker.refresh_stale_models()` finds ready projects whose stamp is
+behind and queues a build: `REFRESH_BATCH` (3) at a time, newest first, only when
+the queue is otherwise empty so a client's own upload always goes first, never
+for a project that already has a build queued. `MMP_AUTO_REFRESH=0` switches it
+off. A resumed gallery run (`resume_after`) also refuses to skip a page whose
+stamp is behind — "built recently" and "built by this code" are different things.
+
+**Bump MODEL_VERSION when a change alters what a model CONTAINS** — estimator,
+wireframe, reach, primary metal, deposit style, block sizing. Not for a viewer or
+page change: those re-render anyway and a bump costs every client's data a trip
+through the estimator for nothing.
+
+## Presence is not grade (2026-10-25)
+
+Two faults, one mistake, found in one screenshot: a silver-cobalt property
+modelled as a **primary gallium** deposit of **sedimentary phosphate** type.
+
+- `ore.FLOOR` wrote every floor as a bare number under a comment saying which
+  unit was meant. Gallium is assayed in g/t and was floored at 0.01 as though
+  that were per cent, so 17 g/t of plain crustal background scored
+  `log10(16.3/0.01)` = 3.2, clipped to the maximum 1.0 — it outranked silver at
+  300 g/t (0.708) on every package that assayed it. Floors now carry their own
+  unit, `ore.floor(el, unit)` converts, `Intervals.ore_fraction` passes the
+  table's actual unit, and the by-product metals get the grade they are mined at
+  (Ga 50 g/t, Ge 50, In 20, Te 5). `drill_tables._DEFAULT_UNIT` and `ore.FLOOR`
+  are checked against each other in `test_imports.py` — keep them in step.
+- `deposit_style.from_geometry` had `if "P2O5" in com: return "phosphate"` with no
+  grade and no width test, so any lab package reporting phosphorus made the
+  property a bedded phosphate horizon — which then set the block size, density,
+  search reach and anisotropy. `model3d` now filters the suite to elements that
+  reach ore grade before passing it as evidence, and the phosphate rule needs a
+  bedded width as well.
+
+The general rule, and it has now cost three visible wrongs: **a modern ICP
+package reports thirty elements on every sample, so "is it present" discriminates
+nothing. Only grade does.**
+
+## Seeing the body, zone by zone (2026-10-25)
+
+Jordan, on gaps between nearby holes: "i need to be able to toggle the wireframe
+that is being used so i can get a better sense of what the model has imagined
+exists in terms of deposit shape, not just the block model."
+
+The wireframe decided which blocks may exist and was then discarded, so a hole in
+a block model had two unreadable explanations: the body never reached there, or
+it did and the estimator found nothing. `el["body"]` now carries the domain on the
+block grid — deduped cells, capped at `BODY_MAX_CELLS` (120,000) and thinned onto
+a coarser lattice beyond that — **with a zone id per cell**. The viewer draws it
+as a translucent envelope under "Deposit shape (wireframe)", coloured by zone
+(`ZCOL`, shared with the zone chips and the per-zone rows so a body is the same
+thing in the picture and in the table), labelled in place, and isolated to one
+body when a zone chip is picked. Zone 0 is real mineralisation belonging to no
+named body: grey, labelled as such, never hidden.
+
+Browser-verified on Angilak (17 bodies): 100,473 cells, Zone 2 isolates to 12,847
+cells and 13,137 blocks, back to all restores 100,473. Los Ricos North (55
+bodies): 36,309 cells, Zone 1 isolates to 2,516. No page errors.
+
+**Measured while checking the gap complaint.** Share of mineralised intervals with
+no estimated block within one block diagonal, on the four most heavily drilled
+public projects: Adelita 2.3%, Angilak 4.6%, Pico Machay 4.0%, Los Ricos North
+4.2% — median 4.1%. The estimator is not systematically refusing ground the
+drilling tested. What to watch instead is body fragmentation (55 bodies on one
+property), and modelling the wrong metal: a diffuse background element fragments
+into many small zones and looks exactly like a gappy deposit.
+
+## The landing page had no menu bar (2026-10-25)
+
+`/nav.js` was not in `_OPEN_EXACT` in `studio/server.py`, so a signed-out visitor
+got `401 {"detail":"sign in first"}`, `MMPNav` was never defined, and the empty
+`<div class="topbar">` rendered as nothing — a page returning 200 with no way to
+sign in. The open list is hand-maintained and nav.js was added when the bar was
+unified (2026-10-19) without updating it. `scripts/test_public_assets.py` walks
+every public page's scripts and stylesheets and fails if one would be refused or
+is missing from disk. **Add any new asset a public page loads to `_OPEN_EXACT`.**
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.
