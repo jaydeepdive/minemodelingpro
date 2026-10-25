@@ -913,5 +913,20 @@
   "size_kb": 19691,
   "collected": "2026-10-24T00:43:30Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_PNPN-2026-10-23-technical-report-ni-43-101-english-10c6.pdf"
+ },
+ {
+  "file": "ceo_MCI-2026-10-25-technical-report-ni-43-101-english-485a.pdf",
+  "filing_ref": "MCI-2026-10-25-technical-report-ni-43-101-english-485a.pdf",
+  "company": "MCI",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-10-25",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/MCI-2026-10-25-technical-report-ni-43-101-english-485a.pdf",
+  "source": "ceo.ca",
+  "size_kb": 6664,
+  "collected": "2026-10-25T16:17:10Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_MCI-2026-10-25-technical-report-ni-43-101-english-485a.pdf"
  }
 ]
