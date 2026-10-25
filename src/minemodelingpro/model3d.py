@@ -70,7 +70,9 @@ _VIEWER_TMPL = os.path.join(_HERE, "model3d_viewer.html")
 #  9 — zone membership is judged over the distance continuity is actually
 #      inferred, in the deposit's own anisotropic frame, instead of borrowing the
 #      wireframe's much tighter link reach (which split single lenses into many)
-MODEL_VERSION = 9
+# 10 — a composite is the length-weighted average of everything it spans, not the
+#      grade of whichever segment its midpoint happened to land in
+MODEL_VERSION = 10
 # the most domain cells to send to a browser; beyond this the envelope is drawn
 # on a coarser lattice, which is a picture of the same shape
 BODY_MAX_CELLS = 120_000
