@@ -50,8 +50,12 @@ _EL = {"au": "Au", "gold": "Au", "ag": "Ag", "silver": "Ag", "cu": "Cu", "copper
        "graphite": "Cg", "cg": "Cg", "tgc": "Cg", "ta2o5": "Ta2O5", "nb2o5": "Nb2O5", "bi": "Bi",
        "te": "Te", "ga": "Ga", "ge": "Ge", "in": "In", "3e": "3E", "pgm": "PGM", "pge": "PGE",
        "2pge": "PGE", "tpm": "PGE", "cr2o3": "Cr2O3", "tio2": "TiO2", "k2o": "K2O"}
+# Which metals a grade is quoted in grams a tonne for; everything else is per
+# cent. Keep this in step with the units ore.FLOOR declares — a metal read in one
+# unit and floored in the other is how background gallium outranked silver.
 _DEFAULT_UNIT = {"Au": "g/t", "Ag": "g/t", "Pt": "g/t", "Pd": "g/t", "AuEq": "g/t", "AgEq": "g/t",
-                 "3E": "g/t", "PGM": "g/t", "PGE": "g/t", "Te": "g/t", "Ga": "g/t", "Ge": "g/t", "In": "g/t"}
+                 "3E": "g/t", "PGM": "g/t", "PGE": "g/t", "Te": "g/t", "Ga": "g/t", "Ge": "g/t",
+                 "In": "g/t", "Rh": "g/t", "Re": "g/t", "Se": "g/t", "Cd": "g/t"}
 
 _NUMRX = re.compile(r"^[<>~≤≥]?\s*[-−–]?\(?\d[\d,  ]*(?:\.\d+)?\)?$")
 

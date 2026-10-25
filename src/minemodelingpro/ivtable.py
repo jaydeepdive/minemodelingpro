@@ -219,9 +219,13 @@ class Intervals:
         return {self.keys[i] for i in np.unique(self.key_i[w])}
 
     def ore_fraction(self, el):
-        """The share of this element's assays that reach a grade worth mining."""
+        """The share of this element's assays that reach a grade worth mining.
+
+        The table's own unit for the element is passed, not assumed: a floor in
+        per cent compared against a g/t grade makes background gallium look like
+        the best metal on the property."""
         from minemodelingpro import ore
-        return ore.significance(el, self.grades(el))
+        return ore.significance(el, self.grades(el), self.unit_of(el))
 
     def mean(self, el):
         g = self.grades(el)

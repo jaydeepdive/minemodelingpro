@@ -667,7 +667,12 @@ def regional_table():
 # What anyone may fetch without signing in: the landing page and what it needs, the
 # sign-in page itself, and the auth endpoints. Everything else — the gallery, the
 # model viewers, the model JSON — needs a session, unless PUBLIC_GALLERY is on.
+# Every asset the landing page loads has to be here, or the page renders without
+# it and says nothing: nav.js was added when the menu bar was unified and was not,
+# so minemodelingpro.com served a signed-out visitor a page with no way to sign in.
+# scripts/test_public_assets.py walks the public pages and fails if one is missing.
 _OPEN_EXACT = {"/", "/index.html", "/favicon.ico", "/robots.txt",
+               "/nav.js",                        # the menu bar, on every page
                # the landing page shows one real model, built from public filings
                "/hero.json", "/hero.js", "/models/three.min.js",
                "/app/", "/app/index.html", "/app/app.js", "/app/app.css", "/app/config.js"}

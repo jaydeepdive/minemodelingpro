@@ -201,5 +201,23 @@ check("a gold deposit still reads as gold",
 check("an element with no floor cannot outrank one that is ore",
       ore.significance("Hf", [1, 2, 3]) < ore.significance("Ag", [50, 400, 900] * 40))
 
+# the floors are declared in mixed units and the grades arrive in mixed units;
+# comparing the two without converting is how a silver property came to be
+# modelled as a gallium property — Ga is assayed in g/t and was floored at 0.01
+# as though that were per cent, so 17 g/t of crustal background scored 1.0
+check("background gallium is not ore",
+      ore.significance("Ga", [8, 12, 16, 20, 14] * 30, "g/t") == 0.0)
+check("silver in a vein outranks gallium assayed beside it",
+      ore.significance("Ag", [40, 120, 600, 1400] * 30, "g/t") >
+      ore.significance("Ga", [8, 12, 16, 20] * 30, "g/t"))
+check("gallium at a grade that is actually mined does register",
+      ore.significance("Ga", [40, 90, 160, 220] * 30, "g/t") > 0.0)
+check("every floor converts between the units a grade can arrive in",
+      ore.floor("Cu", "g/t") == 300.0 and ore.floor("Au", "ppb") == 80.0 and
+      ore.floor("Ga", "%") == 0.005)
+from minemodelingpro.drill_tables import _DEFAULT_UNIT as _DU               # noqa: E402
+check("the importer and the ore floors agree on every element's unit",
+      not [e for e, (_v, u) in ore.FLOOR.items() if _DU.get(e, "%") != u])
+
 print("\n%d passed, %d failed" % (len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)
