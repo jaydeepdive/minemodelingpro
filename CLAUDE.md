@@ -1530,6 +1530,50 @@ source has. *An earlier version of that test asserted the opposite for the
 third* — it confused "the same hole" with "the same hole, already assayed". The
 rule is about whether the CLIENT has grades there, not about whose hole it is.
 
+## The rock's orientation, not the drill pattern's (2026-10-26)
+
+Jordan: "i want the GEOLOGY to be modeled. i want the system to be able to
+visualize veins and orebodies."
+
+The first thing a vein needs is its attitude, and MMP had the parameters without
+ever filling them. `dip`, `dip_direction` and `plunge` orient the wireframe and
+stretch the search along strike and down dip (`model3d.frame_from_trend`) — and
+nothing ever set them from a report, so a vein was oriented by the principal axes
+of the **drill pattern**, which is the orientation of the drilling, not the rock.
+
+`extent.attitude(pages_text)` reads it out of the words: "dipping 75° to the
+north", "dips at approximately 62 degrees", "dip direction of 085". Compass words
+become azimuths; a qualitative statement stands in when no number is given
+("steeply dipping" -> 70, "flat-lying" -> 10) and is **flagged as a word, not a
+measurement** — those do NOT become parameters, only the numbers do.
+`drill_tables` stores it as `attitude` and `_with_attitude` carries a numeric dip
+into `model_params`, where `_report_params` already picks it up. EXTRACTOR dt20.
+
+**The trap, and it is a sharp one.** `extent.stated`'s "dip" is the down-dip
+EXTENT in metres, bounds 20–2,500 m — a different quantity wearing the same word.
+Conflating them reads "7,710 ft down dip and 2,707 ft along strike" as a
+7,710-degree dip. (I briefly believed `stated` was broken for exactly this reason
+and nearly "fixed" a module that was right; reading it settled it.) Four checks in
+`scripts/test_attitude.py` pin that a down-dip length never yields an angle, and
+one pins that a sentence carrying both gives the angle to `attitude` and the
+length to `stated`.
+
+Measured on the prose snippets stored in the corpus's own extent blocks (3,427
+reports, a keyhole — only the few sentences around each dimension, because the
+full report text cache is not in this container): **271 dips** (median 70°, every
+one inside 0–90) and **119 dip directions**. Against full report text it will be
+far higher; Item 7 of nearly every report states an attitude.
+
+### What this does NOT do yet
+
+Geophysics is not read at all. Reports state IP chargeability, magnetics and EM
+conductors mostly as FIGURES — raster maps and sections — which no table
+extractor reaches. The buildable path, in order: (1) accept a geophysical survey
+as an uploaded table (x, y, z or depth, value, method) and render it as its own
+layer beside the block model; (2) read anomaly and conductor TABLES out of
+reports where they exist as tables; (3) only then consider using it as a soft
+constraint on the domain. Do not promise inversion of a published map image.
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.

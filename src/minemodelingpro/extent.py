@@ -87,6 +87,114 @@ _MINERALISED = re.compile(r"minerali[sz]|deposit|vein|lens|zone|orebody|ore body
                           r"shoot|horizon|lode|reef|stockwork|breccia", re.I)
 
 
+# ---------------------------------------------------------------- attitude
+# The body's ORIENTATION, which is a different question from its size. MMP has
+# `dip`, `dip_direction` and `plunge` as parameters -- they orient the wireframe
+# and stretch the search along strike and down dip -- and until now NOTHING ever
+# filled them from a report. They were manual-only, so a model of a vein system
+# took its orientation from the principal axes of the drill pattern, which is
+# the orientation of the DRILLING, not of the rock.
+#
+# Note the collision with `stated()` above: there, "dip" is the down-dip EXTENT
+# in metres (bounds 20-2,500 m). Here it is an angle in degrees. Two different
+# quantities, same word, and conflating them is how a 2,042 m down-dip extent
+# reads as a 2,042-degree dip.
+_DEG = r"(\d{1,2}(?:\.\d)?)\s*(?:°|&deg;|deg\.?|degrees?)"
+_COMPASS = {"n": 0, "north": 0, "nne": 22, "ne": 45, "northeast": 45, "north-east": 45,
+            "ene": 67, "e": 90, "east": 90, "ese": 112, "se": 135, "southeast": 135,
+            "south-east": 135, "sse": 157, "s": 180, "south": 180, "ssw": 202,
+            "sw": 225, "southwest": 225, "south-west": 225, "wsw": 247,
+            "w": 270, "west": 270, "wnw": 292, "nw": 315, "northwest": 315,
+            "north-west": 315, "nnw": 337}
+_DIP_ANGLE = [
+    re.compile(r"dipp?(?:ing|s)?\s+(?:steeply\s+|shallowly\s+|moderately\s+)?"
+               r"(?:at\s+)?(?:approximately\s+|about\s+|~)?" + _DEG, re.I),
+    re.compile(r"dips?\s+of\s+(?:approximately\s+|about\s+|~)?" + _DEG, re.I),
+    re.compile(_DEG + r"\s+dip(?:ping)?\b", re.I),
+]
+# "dips steeply towards the west" — an adverb may sit between the verb and the
+# direction, as may the angle itself ("dipping 75° to the north")
+_DIP_DIRN = re.compile(
+    r"dipp?(?:ing|s)?\s+"
+    r"(?:(?:steeply|shallowly|moderately|gently|sub[- ]?vertically|"
+    r"sub[- ]?horizontally)\s+)?"
+    r"(?:[\d.]+\s*(?:°|deg\.?|degrees?)?\s*)?"
+    r"(?:to|towards?)\s+(?:the\s+)?"
+    r"(north[- ]?east|north[- ]?west|south[- ]?east|south[- ]?west|"
+    r"north|south|east|west|nne|ene|ese|sse|ssw|wsw|wnw|nnw|ne|nw|se|sw|n|s|e|w)\b", re.I)
+_DIP_AZ = re.compile(r"dip\s+(?:direction|azimuth)\s+(?:of\s+)?(?:approximately\s+)?"
+                     r"(\d{1,3})\s*(?:°|deg\.?|degrees?)?", re.I)
+_STRIKE_DIRN = re.compile(
+    r"strik(?:es?|ing)\s+(?:approximately\s+|about\s+)?"
+    r"(north[- ]?east|north[- ]?west|south[- ]?east|south[- ]?west|"
+    r"north|south|east|west|ne|nw|se|sw|n|s|e|w)\b", re.I)
+_STRIKE_AZ = re.compile(r"strik(?:es?|ing)\s+(?:at\s+)?(?:approximately\s+)?"
+                        r"(\d{1,3})\s*(?:°|deg\.?|degrees?)", re.I)
+# a qualitative statement is worth something when no number is given
+_QUAL = [(re.compile(r"sub[- ]?vertical", re.I), 85.0),
+         (re.compile(r"steeply\s+dipping|steep\s+dip", re.I), 70.0),
+         (re.compile(r"moderately\s+dipping", re.I), 45.0),
+         (re.compile(r"shallowly\s+dipping|shallow\s+dip", re.I), 25.0),
+         (re.compile(r"sub[- ]?horizontal|flat[- ]?lying", re.I), 10.0)]
+
+
+def attitude(pages_text, max_pages=None):
+    """The body's orientation as the report states it, in degrees.
+
+    Returns {"dip": {...}, "dip_direction": {...}} where each carries the median,
+    the count, and the sentence it came from — the same shape `stated` uses, so a
+    reader can check the number against the words. A dip must be 0-90 and a
+    direction 0-360; anything else is a different quantity wearing the same word.
+    """
+    pages = list(pages_text or [])
+    if max_pages:
+        pages = pages[:max_pages]
+    dips, dirs, qual = [], [], []
+    for pno, txt in enumerate(pages):
+        t = str(txt or "")
+        if not t or not _MINERALISED.search(t):
+            continue
+        for rx in _DIP_ANGLE:
+            for m in rx.finditer(t):
+                try:
+                    v = float(m.group(1))
+                except (TypeError, ValueError):
+                    continue
+                if 0.0 < v <= 90.0:
+                    dips.append((v, pno, _snippet(t, m.start())))
+        for m in _DIP_AZ.finditer(t):
+            v = float(m.group(1))
+            if 0.0 <= v <= 360.0:
+                dirs.append((v % 360.0, pno, _snippet(t, m.start())))
+        for m in _DIP_DIRN.finditer(t):
+            v = _COMPASS.get(m.group(1).replace(" ", "").replace("-", "").lower())
+            if v is not None:
+                dirs.append((float(v), pno, _snippet(t, m.start())))
+        if not dips:
+            for rx, v in _QUAL:
+                m = rx.search(t)
+                if m:
+                    qual.append((v, pno, _snippet(t, m.start())))
+                    break
+    out = {}
+    if not dips and qual:
+        dips = qual
+        out["dip_is_qualitative"] = True
+    for name, rows in (("dip", dips), ("dip_direction", dirs)):
+        if not rows:
+            continue
+        vals = sorted(r[0] for r in rows)
+        out[name] = {"n": len(rows), "median": vals[len(vals) // 2],
+                     "min": vals[0], "max": vals[-1],
+                     "page": rows[0][1], "text": rows[0][2]}
+    return out
+
+
+def _snippet(t, at, span=100):
+    a = max(0, at - span // 3)
+    return " ".join(t[a:a + span].split())
+
+
 def stated(pages_text, max_pages=None):
     """Every stated dimension of the mineralised body, in metres.
 

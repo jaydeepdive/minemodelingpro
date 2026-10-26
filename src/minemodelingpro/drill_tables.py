@@ -38,7 +38,7 @@ from minemodelingpro import holeid
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 OUT_DIR = os.path.join(_ROOT, "data", "keep", "mmp_reports")
-EXTRACTOR = "dt19"
+EXTRACTOR = "dt20"   # dt20: the body's attitude (dip angle, dip direction) from prose
 
 # ------------------------------------------------------------------ elements
 _EL = {"au": "Au", "gold": "Au", "ag": "Ag", "silver": "Ag", "cu": "Cu", "copper": "Cu",
@@ -2134,6 +2134,31 @@ def extract_report(pdf_path, meta=None):
     return _extract(doc, pages_text, meta, pages_n=len(doc))
 
 
+def _with_attitude(mp, att):
+    """Carry a stated dip into the modelling parameters.
+
+    `dip` and `dip_direction` already orient the wireframe and stretch the search
+    along strike and down dip (`model3d.frame_from_trend`) — they were simply
+    never filled from a report, so a vein took its orientation from the principal
+    axes of the DRILL PATTERN rather than from the rock. A qualitative reading
+    ("steeply dipping" -> 70) is carried too, flagged as such, because an
+    approximate attitude from the geologist beats one measured off the drilling.
+    """
+    mp = dict(mp or {})
+    if not att:
+        return mp
+    d = (att.get("dip") or {}).get("median")
+    if d is not None and 0.0 < float(d) <= 90.0:
+        # only a NUMBER goes into the parameters; "steeply dipping" is kept on
+        # `attitude` where a reader can see it was a word, not a measurement
+        if not att.get("dip_is_qualitative"):
+            mp.setdefault("dip", float(d))
+    dd = (att.get("dip_direction") or {}).get("median")
+    if dd is not None and 0.0 <= float(dd) <= 360.0:
+        mp.setdefault("dip_direction", float(dd))
+    return mp
+
+
 def _extract(doc, pages_text, meta=None, pages_n=None):
     meta = dict(meta or {})
     surveys = []
@@ -2152,8 +2177,11 @@ def _extract(doc, pages_text, meta=None, pages_n=None):
     try:
         from minemodelingpro import extent as EXT
         ext = EXT.stated(pages_text) or None
+        # the body's ORIENTATION, which `stated` does not answer: its "dip" is a
+        # down-dip extent in metres, and a dip angle is a different quantity
+        att = EXT.attitude(pages_text) or None
     except Exception:
-        ext = None
+        ext = att = None
     eff = effective_date(pages_text)
     # link collars <-> intervals via normalised hole ids
     ckeys = {holeid.key(c["hole"]) for c in collars}
@@ -2171,8 +2199,8 @@ def _extract(doc, pages_text, meta=None, pages_n=None):
         "crs": crs, "center": center or tcenter, "text_center": tcenter,
         "block_size": block, "density": density,
         "sensitivity": (extract_sensitivity(doc, pages_text) or [None])[0],
-        "extent": ext,
-        "model_params": mp or None, "effective_date": eff,
+        "extent": ext, "attitude": att,
+        "model_params": _with_attitude(mp, att) or None, "effective_date": eff,
         "resource": head, "resource_rows": res_rows[:80],
         "counts": {"collars": len(collars), "intervals": len(intervals), "surveyed_holes": len({x["hole"] for x in surveys}),
                    "holes_with_intervals": len(ikeys), "linked": len(ckeys & ikeys)},
