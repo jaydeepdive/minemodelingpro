@@ -202,20 +202,33 @@ class _UF:
 
 
 # ---------------------------------------------------------------- loaders
-def load_news():
-    """News drill bank -> list of hole dicts (lat/lon required) + intervals by hole."""
+def load_news(release_ids=None):
+    """News drill bank -> list of hole dicts (lat/lon required) + intervals by hole.
+
+    `release_ids` loads only those releases. The whole bank costs 643 MB to read
+    — more than the modeler has in total — so anything that wants ONE project's
+    drilling has to say so in the SQL rather than filter afterwards."""
     if not os.path.exists(DRILLBANK):
         return [], {}
     import pandas as pd
+    where, args = "", []
+    if release_ids is not None:
+        ids = sorted({str(x) for x in release_ids if x})
+        if not ids:
+            return [], {}
+        where = " WHERE h.release_id IN (%s)" % ",".join("?" * len(ids))
+        args = ids
     con = sqlite3.connect(DRILLBANK)
     try:
         h = pd.read_sql_query(
             "SELECT h.release_id, h.hole_id, h.project, h.lat, h.lon, h.elev_m, h.azimuth, h.dip, "
             "h.easting, h.northing, h.utm_zone, h.utm_hemi, "
             "h.depth_m, r.company, r.country, r.published, r.url, r.title FROM holes h "
-            "JOIN releases r ON h.release_id=r.id", con)
-        iv = pd.read_sql_query("SELECT release_id, hole_id, from_m, to_m, element, grade, unit, "
-                               "is_subinterval FROM intervals", con)
+            "JOIN releases r ON h.release_id=r.id" + where, con, params=args or None)
+        iv = pd.read_sql_query(
+            "SELECT release_id, hole_id, from_m, to_m, element, grade, unit, is_subinterval "
+            "FROM intervals" + (where.replace("h.release_id", "release_id") if where else ""),
+            con, params=args or None)
     finally:
         con.close()
     h = _place_unzoned(h)
@@ -413,15 +426,100 @@ def _s(v):
     return v or None
 
 
-def load_reports():
+def load_reports(only=None):
+    """Every extracted report, or only the ones named.
+
+    4,944 reports carry 599,838 intervals as dictionaries and cost ~516 MB to
+    hold. A caller after one project reads the handful it needs."""
     import glob
+    want = None
+    if only is not None:
+        # a report file is its id with the colon doubled into underscores
+        # (mtp:0017c13e854726f4 -> mtp__0017c13e854726f4.json). Matching on the
+        # bare hex alone found NOTHING, so every scoped load came back empty and
+        # a report-built project could not be attached to at all.
+        want = set()
+        for x in only:
+            if not x:
+                continue
+            x = str(x)
+            want.add(x.replace(":", "__"))
+            want.add(x.split(":", 1)[-1])
+        if not want:
+            return []
     out = []
     for f in sorted(glob.glob(os.path.join(REPORT_DIR, "*.json"))):
+        stem = os.path.splitext(os.path.basename(f))[0]
+        if want is not None and stem not in want and stem.split("__", 1)[-1] not in want:
+            continue
         try:
             out.append(json.load(open(f)))
         except Exception:
             pass
     return out
+
+
+def published_sources(slug, site_dir="site"):
+    """What a PUBLISHED public model was built from, read off its own page.
+
+    The nightly build bakes the model JSON into `site/models/<slug>.html`, and
+    that JSON lists every source with its id (`news:<release_id>`,
+    `ni43101:<report>`). So the question "which drilling is this project" is
+    already answered on disk, and does not need the registry rebuilt to ask."""
+    import re as _re
+    f = os.path.join(site_dir, "models", "%s.html" % slug)
+    if not os.path.exists(f):
+        return None
+    try:
+        with open(f, encoding="utf-8") as fh:
+            txt = fh.read()
+        m = _re.search(r'<script id="model" type="application/json">(.*?)</script>', txt, _re.S)
+        if not m:
+            return None
+        M = json.loads(m.group(1))
+    except Exception:
+        return None
+    ids = [s.get("id") for s in (M.get("sources") or []) if s.get("id")]
+    return {"slug": slug, "project": M.get("project"), "company": M.get("company"),
+            "region": M.get("region"), "ids": ids,
+            # a report id carries whichever prefix its catalogue uses — `mtp:`
+            # for the partner catalogue, `ni43101:` for the SEDAR archive — so
+            # the split is "news, or not", never a list of known prefixes.
+            # Matching on `ni43101:` alone dropped every report source silently.
+            "news": [i.split(":", 1)[1] for i in ids if str(i).startswith("news:")],
+            "reports": [i for i in ids if not str(i).startswith("news:")],
+            "frame": M.get("frame") or {}, "sources": M.get("sources") or []}
+
+
+def assemble_slug(slug, site_dir="site", min_holes=3, min_intervals=8, verbose=False):
+    """One public project's dataset, without building the other seven hundred.
+
+    `assemble()` reads the whole drill bank (643 MB) and every extracted report
+    (516 MB) and materialises 758 projects — 1,298 MB peak, on a modeler that has
+    1,048 MB in total. Attaching a client's project to a public one therefore
+    could not work at all. This reads the published page's own source list and
+    loads only those releases and reports, which is the same answer for a few
+    tens of megabytes."""
+    info = published_sources(slug, site_dir)
+    if not info:
+        return None
+    news = load_news(release_ids=info["news"]) if info["news"] else ([], {})
+    reps = load_reports(only=info["reports"]) if info["reports"] else []
+    if not news[0] and not reps:
+        return None
+    out = assemble(min_holes=min_holes, min_intervals=min_intervals, verbose=verbose,
+                   include_imports=False, news=news, reports=reps)
+    if not out:
+        return None
+    # the slug is derived from the name, and a scoped run can number it
+    # differently from the full build, so match on the stem and otherwise take
+    # the biggest thing those sources describe
+    stem = slug.rsplit("-", 1)[0] if slug.rsplit("-", 1)[-1].isdigit() else slug
+    for d in out:
+        if d["slug"] in (slug, stem):
+            return d
+    out.sort(key=lambda d: -len(d.get("intervals") or []))
+    return out[0]
 
 
 def _overrides():
@@ -435,14 +533,18 @@ def _overrides():
 _UPPER = re.compile(r"[^A-Z]")
 
 
-def assemble(min_holes=3, min_intervals=8, verbose=False, include_imports=True):
+def assemble(min_holes=3, min_intervals=8, verbose=False, include_imports=True,
+             news=None, reports=None):
     """Datasets for every project. Imported datasets (minemodelingpro.imports) are
     treated as another source alongside technical reports — attached to the project
     named by their `attach_to` slug, or standing on their own."""
-    news_holes, news_ivs = load_news()
+    # a caller that already knows which sources it wants supplies them, rather
+    # than reading the whole bank and the whole report corpus to find one project
+    news_holes, news_ivs = news if news is not None else load_news()
     # Imported datasets marked private live in data/private/ and are never part of
     # the public build — the Studio worker feeds those straight to build_project.
-    reports = load_reports() + (IMP.load_all(include_private=False) if include_imports else [])
+    reports = ((load_reports() if reports is None else list(reports))
+               + (IMP.load_all(include_private=False) if include_imports else []))
     ov = _overrides()
 
     # ---- 1. spatial clusters of news holes

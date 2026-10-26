@@ -508,5 +508,48 @@ if jb5:
     except Exception as e:
         check("the import keeps the link", False, "%s: %s" % (type(e).__name__, e))
 
+# --- CONNECTING A PUBLIC MODEL AFTER THE PROJECT EXISTS
+# Jordan: "i still cant connect another model to it" / "i need to be able to add
+# a project after the initial one has been created." attach_to could only be set
+# when the project was created, and the page merely printed it.
+print("\nconnecting a public model to a project that already exists")
+
+ab = f"/api/projects/{proj['id']}"
+r = c.get("/api/public/attachable")
+check("the attachable models are listable", r.status_code == 200, r.text[:200])
+AM = (r.json() or {}).get("models") or []
+check("each one carries a slug and a name",
+      all(m.get("slug") for m in AM[:20]), AM[:1])
+
+# a slug with no published page must be refused, not silently stored: the build
+# would then use only this account's own data and look like it worked
+bad = c.patch(ab, json={"attach_to": "not-a-real-public-model"})
+check("an unknown model is refused", bad.status_code == 400, bad.status_code)
+check("and the refusal says what to do",
+      "no published model" in (bad.json().get("detail") or ""), bad.json())
+check("the project is unchanged by a refused attach",
+      d.one("select attach_to from projects where id = %s", proj["id"])["attach_to"] is None)
+
+if AM:
+    slug = AM[0]["slug"]
+    r2 = c.patch(ab, json={"attach_to": slug, "rebuild": True})
+    check("a real public model can be connected after creation",
+          r2.status_code == 200, r2.text[:200])
+    check("it is stored on the project",
+          d.one("select attach_to from projects where id = %s", proj["id"])["attach_to"] == slug)
+    check("and a rebuild is queued",
+          bool(d.one("select id from jobs where project_id = %s and kind = 'build' "
+                     "and status = 'queued'", proj["id"])) or r2.json().get("queued") is False)
+    # disconnecting is the same route with an empty value
+    r3 = c.patch(ab, json={"attach_to": ""})
+    check("it can be disconnected again", r3.status_code == 200
+          and d.one("select attach_to from projects where id = %s",
+                    proj["id"])["attach_to"] is None)
+else:
+    check("there is a public gallery to attach to", False, "models_index.json empty here")
+
+check("another account cannot attach on your behalf",
+      pc.patch(f"/api/projects/{op['id']}", json={"attach_to": "x"}).status_code in (400, 403, 404))
+
 print("\n%d passed, %d failed" % (len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

@@ -422,7 +422,12 @@ async def patch_project(pid: str, request: Request, u=Depends(require)):
         sets.append("name = %s"); args.append(b["name"].strip())
     for k in ("company", "attach_to", "commodity"):
         if k in b:
-            sets.append(f"{k} = %s"); args.append((b[k] or "").strip() or None)
+            v = (b[k] or "").strip() or None
+            # a slug with no published page attaches to nothing, silently: the
+            # build then uses only the client's own data and looks like it worked
+            if k == "attach_to" and v:
+                _attachable_or_400(v)
+            sets.append(f"{k} = %s"); args.append(v)
     if "params" in b:
         clean, errors = PARAMS.validate(b["params"] or {})
         sets.append("params = %s"); args.append(json.dumps(clean))
@@ -435,6 +440,48 @@ async def patch_project(pid: str, request: Request, u=Depends(require)):
     if rebuild:
         queue("build", row["owner"], row["id"])
     return {"project": jsonable(row), "errors": errors, "queued": rebuild}
+
+
+@app.get("/api/public/attachable")
+def attachable(q: str = "", limit: int = 400, u=Depends(require)):
+    """Public models a project can be built on top of.
+
+    Read from the published gallery index, and each one checked for a page whose
+    model JSON names its sources — because that page is what the attach actually
+    reads. A model in the index with no page is not attachable, and saying so
+    here is better than a build that quietly uses none of it."""
+    out, ql = [], (q or "").strip().lower()
+    try:
+        idx = json.load(open(os.path.join(LIVE["dir"], "models_index.json")))
+    except Exception:
+        return {"models": [], "note": "the gallery index is not readable here"}
+    for m in (idx.get("models") or []):
+        slug = m.get("slug")
+        if not slug:
+            continue
+        label = " ".join(str(x) for x in (m.get("project"), m.get("company"),
+                                          m.get("region")) if x)
+        if ql and ql not in label.lower() and ql not in slug.lower():
+            continue
+        out.append({"slug": slug, "project": m.get("project"), "company": m.get("company"),
+                    "region": m.get("region"), "holes": m.get("holes")})
+        if len(out) >= max(1, min(int(limit or 400), 2000)):
+            break
+    out.sort(key=lambda x: (str(x.get("project") or "").lower(), x["slug"]))
+    return {"models": out, "total": len(out)}
+
+
+def _attachable_or_400(slug):
+    """A slug only counts if its published page can be read for its sources."""
+    from minemodelingpro import projects as _P
+    for d in (LIVE["dir"], SITE_DIR):
+        try:
+            if _P.published_sources(slug, site_dir=d):
+                return True
+        except Exception:
+            pass
+    raise HTTPException(400, "there is no published model called '%s' to build on — "
+                             "pick one from the list" % slug)
 
 
 @app.post("/api/projects/{pid}/build")

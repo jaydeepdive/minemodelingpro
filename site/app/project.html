@@ -98,6 +98,22 @@
     </div>
   </div>
 
+  <!-- A public MMP model is drilling too: a property MMP already holds from
+       technical reports and news releases, modelled WITH this project's own. -->
+  <div class="card" style="margin-top:18px" id="attachcard">
+    <h3>Build on a public model</h3>
+    <p class="note">MMP already holds drilling for many properties, from technical
+      reports and news releases. Connect one and its holes are modelled
+      <b>with</b> yours — merged on hole id, so a hole you both have is one hole.</p>
+    <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
+      <input id="atq" placeholder="Search public models…" style="flex:1;min-width:190px">
+      <select id="atsel" style="flex:2;min-width:240px"><option value="">Loading…</option></select>
+      <button class="btn" id="atsave">Connect</button>
+      <button class="btn ghost" id="atclear" style="display:none">Disconnect</button>
+    </div>
+    <div id="atnote" class="small" style="margin-top:8px"></div>
+  </div>
+
   <!-- A drill database is not the only way drilling arrives. A news release
        states its results in a table nobody exports as a file. -->
   <div class="card" style="margin-top:18px" id="srccard">
@@ -504,6 +520,66 @@ $("#dnext").onclick = () => { D.offset += D.limit; loadData(); };
   };
 }
 loadData();
+
+/* ---- build on a public model ------------------------------------------
+   `attach_to` existed but could only be set when the project was CREATED, and
+   the project page merely printed it. So a project that turned out to have a
+   public counterpart could never be connected to it. */
+let ATM = [];
+async function loadAttachable() {
+  const sel = $("#atsel"), note = $("#atnote");
+  try {
+    const r = await api(`/public/attachable`);
+    ATM = r.models || [];
+    if (r.note) note.textContent = r.note;
+    drawAttach();
+  } catch (e) {
+    sel.innerHTML = `<option value="">could not list public models</option>`;
+    note.textContent = String(e.message || e);
+  }
+}
+function drawAttach() {
+  const sel = $("#atsel"), q = ($("#atq").value || "").trim().toLowerCase();
+  const list = q ? ATM.filter(m => (`${m.project || ""} ${m.company || ""} ${m.slug}`)
+                                     .toLowerCase().includes(q)) : ATM;
+  sel.innerHTML = `<option value="">— none —</option>` + list.slice(0, 500).map(m =>
+    `<option value="${esc(m.slug)}"${m.slug === project.attach_to ? " selected" : ""}>`
+    + `${esc(m.project || m.slug)}${m.company ? " — " + esc(m.company) : ""}`
+    + `${m.holes ? " · " + fmt(m.holes) + " holes" : ""}</option>`).join("");
+  $("#atclear").style.display = project.attach_to ? "" : "none";
+  if (project.attach_to && !$("#atnote").textContent)
+    $("#atnote").textContent = `Currently built on ${project.attach_to}.`;
+}
+$("#atq").oninput = drawAttach;
+$("#atsave").onclick = async () => {
+  const slug = $("#atsel").value, b = $("#atsave");
+  const note = $("#atnote");
+  if (!slug) { note.textContent = "Pick a model first."; return; }
+  b.disabled = true; b.textContent = "Connecting…";
+  try {
+    const r = await api(`/projects/${project.id}`, { method: "PATCH",
+      body: { attach_to: slug, rebuild: true } });
+    project = r.project;
+    note.innerHTML = `Connected to <b>${esc(slug)}</b>`
+      + (r.queued ? " — rebuilding now with both sets of drilling."
+                  : " — press Rebuild model to use it.");
+    drawAttach();
+  } catch (e) {
+    note.innerHTML = `<span style="color:#c0392b">${esc(String(e.message || e))}</span>`;
+  } finally { b.disabled = false; b.textContent = "Connect"; }
+};
+$("#atclear").onclick = async () => {
+  try {
+    const r = await api(`/projects/${project.id}`, { method: "PATCH",
+      body: { attach_to: "", rebuild: true } });
+    project = r.project;
+    $("#atnote").textContent = "Disconnected — rebuilding on your own data alone.";
+    drawAttach();
+  } catch (e) {
+    $("#atnote").innerHTML = `<span style="color:#c0392b">${esc(String(e.message || e))}</span>`;
+  }
+};
+loadAttachable();
 
 /* ---- a source pasted, not uploaded ------------------------------------
    The counts that matter are not the row counts. They are whether this

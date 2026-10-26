@@ -344,12 +344,18 @@ def assemble_user_project(datasets, proj):
     if proj.get("attach_to"):
         _ensure_public_data()
         try:
-            for d in PROJ.assemble():
-                if d["slug"] == proj["attach_to"]:
-                    base = d
-                    break
+            # Read the published model's own source list and load only those
+            # releases and reports. Rebuilding the whole registry to find one
+            # project costs 1,298 MB — more than this modeler has — so attaching
+            # could never have worked that way.
+            base = PROJ.assemble_slug(proj["attach_to"],
+                                      site_dir=os.path.join(_ROOT, "site"))
+            if base is None:
+                print(f"[worker] attach_to {proj['attach_to']}: no published model "
+                      f"page to read its sources from", flush=True)
         except Exception as e:
-            print(f"[worker] attach_to {proj['attach_to']} unavailable: {str(e)[:100]}")
+            print(f"[worker] attach_to {proj['attach_to']} unavailable: "
+                  f"{type(e).__name__}: {str(e)[:120]}", flush=True)
     p = {"news": [], "reports": reports,
          "company": proj.get("company") or (base or {}).get("company"),
          "companies": {proj.get("company")} - {None}, "project": proj["name"],

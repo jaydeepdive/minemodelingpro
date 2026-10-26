@@ -1427,6 +1427,55 @@ returns **403** to an automated request, and that is where these releases live.
 The card says so — the link is the attribution, not the input.
 `_clean_url` accepts http(s) only (`javascript:` and `ftp:` are refused, tested).
 
+## Connecting a public model to a project that already exists (2026-10-26)
+
+Jordan: "i still cant connect another model to it" / "i need to be able to add a
+project after the initial one has been created."
+
+Two separate reasons it could not work.
+
+**1. There was no control.** `attach_to` could only be set on the dashboard when
+the project was CREATED; the project page merely printed "built on X". A project
+that turned out to have a public counterpart could never be joined to it.
+
+**2. And it would have died if there had been one.** Finding one public project
+meant `PROJ.assemble()`: the whole drill bank (**643 MB**) plus every extracted
+report (**516 MB**, 599,838 intervals as dicts), 758 projects materialised —
+**1,298 MB peak, 127 s**, on a modeler that has **1,048 MB**. The kernel would
+have stopped the build, which from the page looks like nothing happening.
+
+`projects.published_sources(slug)` reads the published page's own model JSON,
+which already lists every source with its id, and `assemble_slug(slug)` loads
+**only those releases and reports** — `load_news(release_ids=...)` filters in the
+SQL, `load_reports(only=...)` reads a handful of files. Same answer:
+
+      assemble() + find the slug     1,298 MB    127 s
+      assemble_slug(slug)               35 MB      0.0 s
+
+End to end on a real project: 220 holes of the client's own upload + the 125
+public Langis holes = **345 holes, 39,828 intervals, 6,023 blocks, 3 s, 177 MB
+peak**. Merged on normalised hole id, so a hole both sides have is one hole.
+
+**A slug with no published page is refused** (`_attachable_or_400`). Stored
+silently it would attach to nothing, the build would use only the client's own
+data, and it would look like it had worked. `GET /api/public/attachable` lists
+what can be picked; the project page has a search box, a picker, Connect and
+Disconnect, and either queues the rebuild or says to press Rebuild model.
+
+*Two bugs worth keeping in mind, both found by the tests:*
+
+- **A report id carries whichever catalogue's prefix it came from** — `mtp:` for
+  the partner catalogue, `ni43101:` for the SEDAR archive. Filtering on
+  `ni43101:` dropped every report source silently, so a report-built project
+  attached to nothing. The split is "news, or not". And the FILE is the id with
+  the colon doubled into underscores (`mtp:0017c…` -> `mtp__0017c….json`), so
+  matching on the bare hex finds nothing at all.
+- **`ru_maxrss` is a high-water mark that a forked child INHERITS.** Measuring a
+  subprocess's memory from a parent that had already read the drill bank reported
+  1,160 MB for a call that uses 35. Measure in a fresh process, spawned *before*
+  anything in the test balloons — `scripts/test_attach.py` does the probe first,
+  on purpose, and says why.
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.
