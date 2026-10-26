@@ -1064,6 +1064,48 @@ theorising about the server.** I blamed deploys, object storage, memory and row
 counts in turn, shipped four changes against those theories, and the browser had
 been naming the line all along.
 
+## A detection limit is not a grade (2026-10-25)
+
+Jordan, reading his own assay table: "several metals appear to have 'filler'
+values in them. for instance on the gallium which says 10 across the board for
+some holes or 5 or whatever." He is right, and it is why Langis reported
+**12.9 g/t Ga over 91% of its tonnage and 7.40 Moz of contained gallium**.
+
+A laboratory reports a sample under its detection limit as `<10`. An export turns
+that into the number `10` — or `5`, half the limit. Those are not measurements of
+anything; they say *we looked and found none*. Carried as grades they make a
+metal look pervasive at a constant low value, which inflates its mean, its
+contained metal, and its `ore.significance` — the same background-metal failure
+as the gallium floor, arriving by a different road.
+
+`sanity.detection_fill` finds the signature: one exact value repeated across at
+least a quarter of the positive assays (minimum 40), sitting at the very bottom
+of the distribution (nothing meaningfully below it), and not the entire
+population. Those samples become **zero**, not half the limit — MMP's question is
+whether a metal is ore here, and DL/2 answers it with a number nobody measured.
+`strip_detection_fill` runs first in `fix_table`, so every later step — ore
+significance, the primary metal, the estimate, the metal table — sees non-detects
+as non-detections. Reported in "Repaired on the way in", never silent.
+
+**Measured against the corpus before shipping:** over 1,385 element populations
+in the extracted reports it fires on **23 (1.66%)**, and every one is a textbook
+limit — Zn 0.003%, Mo 0.001%, Bi 0.0005%, Ni 1e-05%, Cu 0.01%, Ag 1 g/t. Five
+tests in `test_imports.py` cover the catch and the four ways it must decline:
+a real lognormal population, an element that is one value everywhere, too few
+samples, and a spike that is not at the bottom.
+
+**Still open from the same screenshot, not yet done:**
+
+1. **Terrain is lost when the grid is local.** Langis could not be georeferenced,
+   so there is no DEM and the collars are drawn against a flat datum — which
+   misplaces every intercept in depth. The collars carry real elevations, so a
+   surface can be interpolated from the collar z themselves and labelled as that
+   rather than as a DEM. Always possible, needs no map position.
+2. **The wireframe does not track the veins.** "The estimate fills 31% of this
+   shape (3,647 of 11,920 cells)" on a narrow-vein system: the shape is three
+   times the rock. Suspect the anisotropy and `true_width_m` for a vein style,
+   and whether the inferred style is right at all.
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.

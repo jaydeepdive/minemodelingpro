@@ -219,5 +219,21 @@ from minemodelingpro.drill_tables import _DEFAULT_UNIT as _DU               # no
 check("the importer and the ore floors agree on every element's unit",
       not [e for e, (_v, u) in ore.FLOOR.items() if _DU.get(e, "%") != u])
 
+# --- a detection limit is not a grade
+from minemodelingpro.sanity import detection_fill                # noqa: E402
+import numpy as _np                                              # noqa: E402
+_rng = _np.random.default_rng(0)
+
+check("a metal reported at its detection limit is caught",
+      detection_fill([10.0] * 600 + list(_rng.uniform(10.5, 60, 400)))[0] == 10.0)
+check("a real grade population is left alone",
+      detection_fill(list(_rng.lognormal(3, 1.2, 1000)))[0] is None)
+check("an element that is one value everywhere is left alone",
+      detection_fill([5.0] * 500)[0] is None)
+check("too few samples to judge is left alone",
+      detection_fill([10.0] * 10)[0] is None)
+check("a spike that is not at the bottom is left alone",
+      detection_fill(list(_rng.uniform(0.1, 5, 300)) + [9.0] * 400)[0] is None)
+
 print("\n%d passed, %d failed" % (len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

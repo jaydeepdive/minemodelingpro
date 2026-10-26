@@ -163,6 +163,75 @@ def fix_intervals(by_el, verbose=False):
     return flags, dropped
 
 
+# A laboratory reports a sample below its detection limit as "<10", and an export
+# turns that into the number 10 — or 5, half the limit. Those are not measurements
+# of anything; they say "we looked and found none". Left as grades they make a
+# metal look pervasive at a constant low value, which is how a silver property
+# came to report 12.9 g/t gallium over 91% of its tonnage and 7.4 Moz of contained
+# metal that does not exist.
+DL_SHARE = 0.25          # a quarter of the assays sharing one exact value
+DL_MIN_N = 40            # and enough of them for that to mean something
+
+
+def detection_fill(values):
+    """The value a non-detect was written as, if one is obvious.
+
+    The signature is a single number repeated across a large share of the
+    samples AND sitting at the very bottom of the distribution. A real grade
+    population is continuous; a detection limit is a spike at the floor. Returns
+    (value, count) or (None, 0) — deliberately conservative, because zeroing a
+    real population would be worse than leaving a fake one.
+    """
+    import collections
+    v = [float(x) for x in values if x is not None and x == x and float(x) > 0]
+    if len(v) < DL_MIN_N:
+        return None, 0
+    counts = collections.Counter(v)
+    val, n = counts.most_common(1)[0]
+    if n < DL_SHARE * len(v):
+        return None, 0
+    # it must be at the bottom: nothing meaningfully below it
+    below = sum(1 for x in v if x < val * 0.999)
+    if below > 0.02 * len(v):
+        return None, 0
+    # and it must not BE the population — an element that is genuinely one value
+    # everywhere tells us nothing either way, so leave it alone
+    if n >= 0.98 * len(v):
+        return None, 0
+    return val, n
+
+
+def strip_detection_fill(table, verbose=False):
+    """Turn non-detects back into non-detections, and say so.
+
+    They become zero rather than half the limit: MMP's question is whether a
+    metal is ore here, and half a detection limit answers it with a number the
+    laboratory never measured."""
+    flags = []
+    for el in list(table.elements()):
+        g = table.grades(el)
+        val, n = detection_fill(g)
+        if not val:
+            continue
+        import numpy as _np
+        arr = _np.asarray(g, float)
+        hit = _np.isfinite(arr) & (_np.abs(arr - val) < val * 1e-9)
+        if not hit.any():
+            continue
+        arr[hit] = 0.0
+        table.set_grades(el, [None if x != x else float(x) for x in arr])
+        share = 100.0 * int(hit.sum()) / max(1, int(_np.isfinite(_np.asarray(g, float)).sum()))
+        msg = ("%s: %d of %d assays (%.0f%%) are exactly %g — a detection limit, "
+               "not a measurement. Read as not detected, so they no longer carry "
+               "grade into the estimate." % (el, int(hit.sum()),
+                                             int(_np.isfinite(_np.asarray(g, float)).sum()),
+                                             share, val))
+        flags.append({"level": "repaired", "element": el, "message": msg})
+        if verbose:
+            print("  [sanity] " + msg, flush=True)
+    return flags
+
+
 def fix_table(table, verbose=False):
     """`fix_intervals` over a column table — the same test, element by element.
 
@@ -170,6 +239,7 @@ def fix_table(table, verbose=False):
     the reading and writing of the grades differs, because here they are already
     a numpy column."""
     flags, dropped = [], []
+    flags.extend(strip_detection_fill(table, verbose=verbose))
     for el in list(table.elements()):
         g = table.grades(el)
         vals = [None if v != v else float(v) for v in g]

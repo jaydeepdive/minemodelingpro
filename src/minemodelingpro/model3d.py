@@ -72,7 +72,9 @@ _VIEWER_TMPL = os.path.join(_HERE, "model3d_viewer.html")
 #      wireframe's much tighter link reach (which split single lenses into many)
 # 10 — a composite is the length-weighted average of everything it spans, not the
 #      grade of whichever segment its midpoint happened to land in
-MODEL_VERSION = 10
+# 11 — detection-limit fill is read as not-detected instead of as grade (a metal
+#      reported at "<10" and exported as 10 was being modelled as 10 g/t ore)
+MODEL_VERSION = 11
 # the most domain cells to send to a browser; beyond this the envelope is drawn
 # on a coarser lattice, which is a picture of the same shape
 BODY_MAX_CELLS = 120_000
