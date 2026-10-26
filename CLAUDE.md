@@ -334,7 +334,8 @@ to it.
 A drill database arrives as separate tables and the importer takes them that way:
 collars, downhole surveys, assays and logged geology, in any mix of files or
 sheets, recognised by their columns and **joined on the normalised hole id**
-(`holeid.key`, so `DDH-26-001` and `ddh26001` are one hole). What each file was
+(`holeid.key`; and see "Two sources spell a hole two ways" below — `key` ALONE
+does not join `DDH-26-001` to `ddh26001`, which this line claimed for six days). What each file was
 read as, which column filled which role, and how many hole ids matched across
 them is written into the dataset's notes and shown on the project page — check
 that table before trusting a model. `scripts/test_imports.py` holds the cases.
@@ -1475,6 +1476,59 @@ Disconnect, and either queues the rebuild or says to press Rebuild model.
   1,160 MB for a call that uses 35. Measure in a fresh process, spawned *before*
   anything in the test balloons — `scripts/test_attach.py` does the probe first,
   on purpose, and says why.
+
+## Two sources spell a hole two ways (2026-10-26)
+
+**Correct the record.** This file said `holeid.key` joins `DDH-26-001` and
+`ddh26001`. It does not, and never did:
+
+      key("DDH-26-001") -> "DDH-26-1"        key("ddh26001") -> "DDH-26001"
+
+`key` tokenises letters and digit runs, so a punctuated id is three tokens and an
+unpunctuated one is two. They can never meet. Every cross-source join that
+depended on that line was silently missing the holes written the other way.
+
+`holeid.loose` strips separators (`LM-26-003` and `LM26003` both -> `LM26003`)
+and `holeid.keyset` carries BOTH rules, because neither does both: `key` joins
+across leading zeros, `loose` joins across missing separators. Two holes are the
+same when their keysets intersect (`holeid.same`). The cost, stated rather than
+hidden and pinned in a test: `LM-1-23` and `LM-12-3` both loosen to `LM123` and
+collide. Both spellings have to be wrong in the same way for it to bite.
+
+## Merging a public model into a client's project, on the client's terms (2026-10-26)
+
+Jordan: "data uploaded from the private source should take precedence. but if
+there is collar details but not assay details, then we need to defer to data
+from the other sources."
+
+      collar      the client's, always
+      assays      per hole: the client's if the client assayed that hole at all;
+                  otherwise the other source's, for that hole only
+      a hole only the public source has: both
+
+`worker._fold_public` is that rule. What it replaced simply appended **every**
+public interval, which **double-counts every hole both sides assayed** — the same
+metre of core twice, from two sources, in one estimate — and compared hole ids
+RAW, so `LM-26-101` and `LM26101` came in as two holes standing in the same place.
+
+The gap it exists to fill is real and large on a client database: a collar table
+of ~603 holes with assays on ~456 of them leaves ~147 holes positioned and
+ungraded, and those are exactly the holes a public release or a filed report can
+supply.
+
+**The build log says what the merge did**, because a merge that silently adds
+nothing — no hole ids matched — looks exactly like one that worked:
+
+      from langis-brixton-metals: 1 collar(s) this project did not have;
+      2 hole(s) had a collar here and no assays, and took grades from it
+      (LM-26-002, LM26003…); 1 hole(s) are assayed in both — your own assays
+      were used and the public ones ignored; 4 interval(s) added
+
+`scripts/test_merge.py` holds 23 checks on a fixture with one hole assayed both
+sides, one collar-only, one spelled without separators, and one only the public
+source has. *An earlier version of that test asserted the opposite for the
+third* — it confused "the same hole" with "the same hole, already assayed". The
+rule is about whether the CLIENT has grades there, not about whose hole it is.
 
 ## Reasonable backlog / ideas
 

@@ -30,6 +30,35 @@ def key(hole_id):
     return "-".join(out)
 
 
+def loose(hole_id):
+    """The id with every separator removed: LM-26-003 and LM26003 both -> LM26003.
+
+    `key` tokenises letters and digits, so `LM-26-003` is three tokens and
+    `LM26003` is two — they can never meet, however the documentation read. This
+    is the other half of the join, and it is deliberately a SEPARATE rule rather
+    than a replacement: `key` joins LM-26-3 to LM-26-003 (leading zeros) and
+    `loose` joins LM-26-003 to LM26003 (missing separators). Neither does both."""
+    return re.sub(r"[^A-Za-z0-9]", "", str(hole_id or "")).upper()
+
+
+def keyset(hole_id):
+    """Every spelling of this id that should be taken as the same hole.
+
+    Two holes are the same when their keysets intersect. Used where two SOURCES
+    have to be joined — one company's collar table against a news release — not
+    inside a single source, which is already self-consistent."""
+    s = str(hole_id or "").strip()
+    if not s:
+        return frozenset()
+    return frozenset(x for x in (key(s), loose(s)) if x)
+
+
+def same(a, b):
+    """Are these two ids the same hole, written two ways?"""
+    ka, kb = keyset(a), keyset(b)
+    return bool(ka and kb and (ka & kb))
+
+
 def looks_like_hole(s):
     """A plausible hole id: short, has a digit, not just a number/decimal."""
     s = str(s or "").strip()

@@ -309,8 +309,25 @@ def do_build(job):
     peak = model.get("peak_mb")
     if peak:
         where = (where + " · " if where else "") + f"peak {peak} MB"
-    return (f"built {stats['holes']} holes, {stats['intervals']} intervals, "
-            f"{stats['blocks']:,} blocks" + (f" — {where}" if where else ""))
+    out = (f"built {stats['holes']} holes, {stats['intervals']} intervals, "
+           f"{stats['blocks']:,} blocks" + (f" — {where}" if where else ""))
+    # What the public model actually contributed, in the client's own terms. A
+    # merge that silently adds nothing — because no hole ids matched — looks
+    # exactly like one that worked, which is the failure worth naming.
+    mg = model.get("merge") or (ds.get("merge") if isinstance(ds, dict) else None)
+    if mg:
+        bits = [f"{mg['collars_added']} collar(s) this project did not have"]
+        if mg.get("holes_filled"):
+            ex = ", ".join(mg.get("filled_examples") or [])
+            bits.append(f"**{mg['holes_filled']} hole(s) had a collar here and no assays, "
+                        f"and took grades from {mg.get('attached_to')}**"
+                        + (f" ({ex}…)" if ex else ""))
+        if mg.get("holes_kept_private"):
+            bits.append(f"{mg['holes_kept_private']} hole(s) are assayed in both — "
+                        f"your own assays were used and the public ones ignored")
+        bits.append(f"{mg['intervals_added']} interval(s) added")
+        out += "\n" + ("from %s: " % mg.get("attached_to")) + "; ".join(bits)
+    return out
 
 
 _SYNCED = False
@@ -333,6 +350,91 @@ def _ensure_public_data():
         print("[worker] synced public drill bank", flush=True)
     except Exception as e:
         print(f"[worker] public drill bank unavailable: {str(e)[:150]}", flush=True)
+
+
+def _fold_public(merged, base):
+    """Add a public project's drilling to a client's, on the client's terms.
+
+    The rule, in Jordan's words: "data uploaded from the private source should
+    take precedence. but if there is collar details but not assay details, then
+    we need to defer to data from the other sources."
+
+      collar      the client's, always
+      assays      per hole: the client's if the client assayed that hole at all;
+                  otherwise the other source's, for that hole only
+      a hole only the public source has: both
+
+    What this replaces simply appended every public interval, which DOUBLE-COUNTS
+    every hole both sides assayed — the same metre of core twice, from two
+    sources, in one estimate. And it compared hole ids RAW, so `LM-26-101` and
+    `LM26101` came in as two holes standing in the same place.
+
+    Returns counts for the build log, because "what did the public data actually
+    add" is the first question a reader has."""
+    import numpy as np
+    from minemodelingpro import holeid
+
+    # Two sources spell a hole two ways. `holeid.keyset` carries BOTH rules —
+    # leading zeros (LM-26-3 == LM-26-003) and missing separators (LM-26-003 ==
+    # LM26003) — because `key` alone joins only the first, whatever the docs
+    # said. A hole matches if any of its spellings is already here.
+    def spell(h):
+        return holeid.keyset(str(h or ""))
+
+    iv = merged["intervals"]
+    # holes the client has at all, and holes the client ASSAYED — different sets,
+    # and the gap between them is exactly what the other source is for
+    mine_holes, mine_assayed = set(), set()
+    for k, v in (merged["holes"] or {}).items():
+        mine_holes |= spell(v.get("id") or k)
+    if len(iv):
+        for i in np.unique(iv.hole_i):
+            mine_assayed |= spell(iv.holes[int(i)])
+    gap_names = [str(v.get("id") or k) for k, v in (merged["holes"] or {}).items()
+                 if not (spell(v.get("id") or k) & mine_assayed)]
+
+    biv = base.get("intervals")
+    theirs_assayed = set()
+    if biv is not None and len(biv):
+        for i in np.unique(biv.hole_i):
+            theirs_assayed |= spell(biv.holes[int(i)])
+
+    # collars: only holes the client does not already have, under any spelling
+    new_collars = 0
+    for k, v in (base.get("holes") or {}).items():
+        if not (spell(v.get("id") or k) & mine_holes):
+            merged["holes"][k] = v
+            new_collars += 1
+
+    # assays: everything EXCEPT holes the client already assayed
+    kept_rows = 0
+    if biv is not None and len(biv):
+        ok = np.array([not (spell(h) & mine_assayed) for h in biv.holes], bool)
+        drop = np.flatnonzero(~ok[biv.hole_i])
+        if len(drop):
+            biv._delete(drop)
+        kept_rows = len(biv)
+        if kept_rows:
+            iv.extend(biv)
+
+    # a hole with a collar here, no grades here, and grades there
+    filled = sorted(n for n in gap_names if spell(n) & theirs_assayed)
+    # holes BOTH sides assayed: the client's assays were used, the public ones
+    # dropped. Counted over the client's hole names, not over key strings, so a
+    # hole is counted once however many spellings it has
+    both = 0
+    if len(iv):
+        seen = set()
+        for k, v in (merged["holes"] or {}).items():
+            sp = spell(v.get("id") or k)
+            if sp & mine_assayed and sp & theirs_assayed and not (sp & seen):
+                both += 1
+                seen |= sp
+    return {"collars_added": new_collars,
+            "holes_filled": len(filled),
+            "filled_examples": filled[:8],
+            "holes_kept_private": both,
+            "intervals_added": kept_rows}
 
 
 def assemble_user_project(datasets, proj):
@@ -361,11 +463,9 @@ def assemble_user_project(datasets, proj):
          "companies": {proj.get("company")} - {None}, "project": proj["name"],
          "lat": None, "lon": None, "keys": set(), "country": (base or {}).get("region")}
     merged = PROJ._materialise(p, [], {}, {}, consume=True)
+    fold = None
     if base is not None and merged:
-        # fold the public project's holes/intervals/sources in alongside the import, so
-        # the client's own drilling is modelled WITH the public data, not instead of it
-        merged["holes"].update({k: v for k, v in base["holes"].items() if k not in merged["holes"]})
-        merged["intervals"].extend(base["intervals"])
+        fold = _fold_public(merged, base)
         merged["sources"] += base["sources"]
         merged["resources"] = (merged.get("resources") or []) + (base.get("resources") or [])
         merged["report_params"] = merged.get("report_params") or base.get("report_params")
@@ -377,6 +477,9 @@ def assemble_user_project(datasets, proj):
         ds = merged
     if ds is None:
         raise RuntimeError("the data could not be placed in 3D — check the coordinate system")
+    if fold:
+        # what the public data actually added, in the client's own terms
+        ds["merge"] = dict(fold, attached_to=proj.get("attach_to"))
     ds["slug"] = proj["slug"]
     ds["name"] = proj["name"]
     ds["company"] = proj.get("company")
