@@ -974,6 +974,7 @@ def _materialise(p, news_holes, news_ivs, ov, styled_reports=(), consume=False):
     for r in imported:
         ds_params.update(r.get("params") or {})
     rp, rp_from = _report_params(reports)
+    geo, rock, rock_from = _report_geophysics(reports)
     ext, ext_from = _report_extent(reports)
     near_style = _nearby_style(frame, rp.get("deposit_style"), styled_reports)
     return {"slug": slug, "name": name, "company": company, "region": region,
@@ -992,6 +993,8 @@ def _materialise(p, news_holes, news_ivs, ov, styled_reports=(), consume=False):
             "report_block": rp.get("block"),
             "commodities": [c for c in (str(r.get("commodity") or "").split("-")[0] for r in reports) if c],
             "report_density": rp.get("density"),
+            "geophysics": geo,
+            "rock": rock or None, "rock_from": rock_from or None,
             "updated": max(dates) if dates else None,
             "kinds": sorted({("report" if s["kind"].startswith("NI") else
                               "import" if s["kind"] == "imported data" else "news")
@@ -1078,6 +1081,37 @@ def _report_extent(reports):
         if e and (e.get("strike") or e.get("dip") or e.get("depth")):
             return e, {"id": r.get("id"), "date": _recency(r) or None}
     return None, None
+
+
+def _report_geophysics(reports):
+    """The ground between the holes, and the rock, from the reports that say so.
+
+    Surveys are gathered across every report, because a property's geophysical
+    history is cumulative and the newest report often summarises only its own
+    year's work; the rock properties come whole from the newest report that
+    states them, for the same reason extents do — a density from one study and a
+    slope angle from another describe different designs."""
+    rpt = [r for r in reports if r.get("source") != "import"]
+    rpt.sort(key=_recency, reverse=True)
+    surveys, targets, seen = [], [], set()
+    for r in rpt:
+        g = r.get("geophysics") or {}
+        for sv in (g.get("surveys") or []):
+            key = (sv.get("method"), sv.get("platform"), sv.get("year"), sv.get("line_km"))
+            if key in seen:
+                continue
+            seen.add(key)
+            surveys.append({**sv, "report": r.get("id")})
+        for tg in (g.get("targets") or [])[:12]:
+            targets.append({**tg, "report": r.get("id")})
+    rock, rock_from = None, None
+    for r in rpt:
+        if r.get("rock"):
+            rock = r["rock"]
+            rock_from = {"id": r.get("id"), "date": _recency(r) or None}
+            break
+    return ({"surveys": surveys[:120], "targets": targets[:30]} if (surveys or targets)
+            else None), rock, rock_from
 
 
 def _report_params(reports):

@@ -188,6 +188,114 @@ def intercepts_w(pts, g, hid, threshold):
     return np.asarray(out_p, float), np.asarray(out_h), np.asarray(out_w, float)
 
 
+# ---------------------------------------------------------------------------
+# The body as geometry, not as a cloud
+#
+# The wireframe already knows the shape: a surface triangulated through the
+# mineralised intercepts and inflated to the thickness each intercept actually
+# shows. That shape was then sampled into a point cloud, the cloud was snapped
+# to the block lattice, and the viewer drew the cells — so a vein that pinches
+# to half a metre between two holes and swells to thirty in a third arrived on
+# screen as the same row of boxes either way. The geometry was built and thrown
+# away twice over.
+#
+# These keep it. The triangles are the ones the alpha criterion already
+# accepted, so the surface stops where the drilling stops; the thickness is the
+# intercepts' own, so it pinches and swells where they do.
+
+
+def _boundary_edges(faces):
+    """Edges used by exactly one triangle, in that triangle's own winding."""
+    e = np.vstack([faces[:, [0, 1]], faces[:, [1, 2]], faces[:, [2, 0]]])
+    key = np.sort(e, axis=1)
+    _u, inv, cnt = np.unique(key, axis=0, return_inverse=True, return_counts=True)
+    return e[cnt[inv.ravel()] == 1]
+
+
+def sheet_mesh(cent, faces, normal, thick):
+    """A closed surface: the triangulated sheet offset to each half-thickness.
+
+    Top and bottom are the same triangulation pushed either way along the body's
+    across-axis by half the local thickness, and the rim is stitched between
+    them, so the result is a solid that is thin where the intercepts are thin."""
+    faces = np.asarray(faces, int)
+    if not len(faces):
+        return None
+    n = len(cent)
+    half = (np.asarray(thick, float) * 0.5)[:, None]
+    nrm = np.asarray(normal, float)
+    V = np.vstack([cent + half * nrm, cent - half * nrm])
+    T = [faces, faces[:, ::-1] + n]
+    be = _boundary_edges(faces)
+    if len(be):
+        a, b = be[:, 0], be[:, 1]
+        T.append(np.stack([a, b, b + n], 1))
+        T.append(np.stack([a, b + n, a + n], 1))
+    return V, np.vstack(T).astype(np.int64)
+
+
+def tube_mesh(p0, p1, r0, r1, k=8):
+    """A prism along one link, as thick at each end as that intercept is.
+
+    What a single fence of holes gives: no surface to triangulate, but the
+    ground between two intercepts on a section is still part of the body."""
+    p0 = np.asarray(p0, float); p1 = np.asarray(p1, float)
+    d = p1 - p0
+    L = float(np.linalg.norm(d))
+    if L < 1e-6:
+        return None
+    d /= L
+    t = np.array([0.0, 0.0, 1.0]) if abs(d[2]) < 0.9 else np.array([1.0, 0.0, 0.0])
+    u = np.cross(d, t); u /= np.linalg.norm(u)
+    v = np.cross(d, u)
+    a = np.linspace(0.0, 2.0 * np.pi, k, endpoint=False)
+    ring = np.cos(a)[:, None] * u + np.sin(a)[:, None] * v
+    V = np.vstack([p0 + max(r0, 0.25) * ring, p1 + max(r1, 0.25) * ring])
+    i = np.arange(k); j = (i + 1) % k
+    T = [np.stack([i, j, j + k], 1), np.stack([i, j + k, i + k], 1)]
+    f = np.arange(1, k - 1)
+    T.append(np.stack([np.zeros_like(f), f + 1, f], 1))          # cap at p0
+    T.append(np.stack([np.full_like(f, k), f + k, f + k + 1], 1))  # cap at p1
+    return V, np.vstack(T).astype(np.int64)
+
+
+def tet_boundary(cent, cells):
+    """The outside of a solid: tetrahedron faces that only one cell owns.
+
+    Each is wound to face away from the vertex it was cut from, so the solid
+    lights correctly instead of turning inside out face by face."""
+    c = np.asarray(cells, int)
+    if not len(c):
+        return None
+    f = np.vstack([c[:, [0, 1, 2]], c[:, [0, 3, 1]],
+                   c[:, [0, 2, 3]], c[:, [1, 3, 2]]])
+    opp = np.concatenate([c[:, 3], c[:, 2], c[:, 1], c[:, 0]])
+    key = np.sort(f, axis=1)
+    _u, inv, cnt = np.unique(key, axis=0, return_inverse=True, return_counts=True)
+    keep = cnt[inv.ravel()] == 1
+    f, opp = f[keep], opp[keep]
+    if not len(f):
+        return None
+    A, B, C = cent[f[:, 0]], cent[f[:, 1]], cent[f[:, 2]]
+    nz = np.cross(B - A, C - A)
+    flip = np.einsum("ij,ij->i", nz, A - cent[opp]) < 0
+    f[flip] = f[flip][:, ::-1]
+    return cent, f.astype(np.int64)
+
+
+def _merge(parts):
+    """One vertex and index buffer from several meshes."""
+    parts = [p for p in parts if p is not None and len(p[1])]
+    if not parts:
+        return None
+    V, F, off = [], [], 0
+    for v, f in parts:
+        V.append(np.asarray(v, float))
+        F.append(np.asarray(f, np.int64) + off)
+        off += len(v)
+    return np.concatenate(V), np.concatenate(F)
+
+
 def _alpha_faces(uv, reach):
     """Delaunay triangles small enough to be real ground between holes.
 
@@ -280,6 +388,7 @@ def wireframe(pts, g, hid, threshold, rot=None, aniso=None, reach=120.0, step=8.
     Q = cent @ R.T                                  # body frame: axes by variance
     tabular = across < 0.6 and len(cent) >= 4
     pts_out = [cent]
+    mesh = None                                     # the same shape, kept as geometry
     if tabular:
         faces = _alpha_faces(Q[:, :2], reach)
         info["mode"] = "sheet"
@@ -290,6 +399,8 @@ def wireframe(pts, g, hid, threshold, rot=None, aniso=None, reach=120.0, step=8.
         layers = 3
         for f in faces:
             pts_out.append(_fill_triangle(cent[f], [th[i] for i in f], step, layers, nrm))
+        if len(faces):
+            mesh = sheet_mesh(cent, faces, nrm, th)
         if not len(faces):
             # the intercepts lie on one line — a single drill section, or a body
             # tested down one fence of holes. There is no surface to triangulate,
@@ -298,10 +409,13 @@ def wireframe(pts, g, hid, threshold, rot=None, aniso=None, reach=120.0, step=8.
             info["mode"] = "strip"
             ed = links(cent, hole, R, aniso, reach=reach, k=4)
             info["links"] = int(len(ed))
+            tubes = []
             for a, b in ed:
                 P = np.stack([cent[a], cent[b], cent[b] + nrm * 1e-6])
                 pts_out.append(_fill_triangle(
                     P, [th[a], th[b], th[b]], step, layers, nrm))
+                tubes.append(tube_mesh(cent[a], cent[b], th[a] / 2.0, th[b] / 2.0))
+            mesh = _merge(tubes)
     else:
         from scipy.spatial import Delaunay
         info["mode"] = "solid"
@@ -314,6 +428,8 @@ def wireframe(pts, g, hid, threshold, rot=None, aniso=None, reach=120.0, step=8.
                        for j in range(i + 1, 4)) <= 2.0 * reach:
                     cells.append(sx)
             info["cells"] = len(cells)
+            if cells:
+                mesh = tet_boundary(cent, np.asarray(cells, int))
             for sx in cells:
                 V = cent[sx]
                 L = max(np.linalg.norm(V[i] - V[j]) for i in range(4)
@@ -332,4 +448,9 @@ def wireframe(pts, g, hid, threshold, rot=None, aniso=None, reach=120.0, step=8.
     if len(S) > max_points:
         S = S[np.linspace(0, len(S) - 1, max_points).astype(int)]
     info["points"] = int(len(S))
+    if mesh is not None and len(mesh[1]):
+        # under a private key: this is geometry, not something to serialise into
+        # the page's info block, and model3d lifts it out before the JSON is written
+        info["_mesh"] = (np.asarray(mesh[0], float), np.asarray(mesh[1], np.int64))
+        info["triangles"] = int(len(mesh[1]))
     return S, info

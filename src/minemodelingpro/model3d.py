@@ -78,10 +78,17 @@ _VIEWER_TMPL = os.path.join(_HERE, "model3d_viewer.html")
 #      the collar elevations instead of being drawn against a flat datum
 # 13 — mineralisation belonging to no named zone is drawn as the separate bodies
 #      it is, instead of as one sheet triangulated across the whole property
-MODEL_VERSION = 13
+# 14 — the wireframe's own geometry is carried to the viewer: the triangulated
+#      surface at the thickness each intercept shows, instead of that shape
+#      sampled to points and snapped to the block lattice, which flattened every
+#      pinch and swell a vein has into the same row of boxes
+MODEL_VERSION = 14
 # the most domain cells to send to a browser; beyond this the envelope is drawn
 # on a coarser lattice, which is a picture of the same shape
 BODY_MAX_CELLS = 120_000
+# triangles in the body's surface. A sheet through a few hundred intercepts is a
+# couple of thousand; the cap is for a solid through a porphyry's worth of them.
+SURFACE_MAX_TRIS = 400_000
 # how many separate bodies to triangulate out of the mineralisation that belongs
 # to no named zone; the rest are carried as the intercepts they are
 LEFTOVER_MAX_BODIES = 400
@@ -410,7 +417,10 @@ def anisotropy(pts, g, ratios, trend=None):
         if sv[0] <= 0 or not np.isfinite(sv).all():
             return None, None
         a = np.asarray(ratios, float)
-        if a.min() <= 0:
+        # a style with no ratios made this nan rather than None: nan fails every
+        # comparison, so it passed the guard and reached the callers as a
+        # 0-dimensional array they then indexed
+        if a.ndim != 1 or a.size != 3 or not np.isfinite(a).all() or a.min() <= 0:
             return None, None
         # rows of vt are the body's axes, longest first; scale each by its ratio
         return vt, a
@@ -1485,6 +1495,13 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
             el_reach = float(PS.get("max_gap_m") or PS.get("reach_m") or
                              reach_for_style(skey, spacing, max(blk)))
             dom_pts, dom_info, dom_zone = (None, None, None)
+            dom_mesh = []
+
+            def _keep_mesh(inf, zid):
+                """Lift a body's geometry out of its info block, under its own id."""
+                mv = (inf or {}).pop("_mesh", None)
+                if mv is not None and len(mv[1]):
+                    dom_mesh.append((mv[0], mv[1], int(zid)))
             rot_d, an_d = None, None
             if PS.get("domain") is not False:
                 rot_d, an_d = anisotropy(pts, g, eopts.get("anisotropy"),
@@ -1506,6 +1523,7 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                         lp, np.ones(len(lp)), lh, 0.5, rot=rot_d, aniso=an_d,
                         reach=reach, step=max(float(blk[0]), 3.0),
                         thickness=PS.get("true_width_m"))
+                    _keep_mesh(dom_info, 0)
                     if dom_info:
                         dom_info["from"] = "logged geology"
                         dom_info["units"] = lu
@@ -1548,6 +1566,7 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                             rot=rot_d, aniso=an_d, reach=reach,
                             step=max(float(blk[0]), 3.0),
                             thickness=PS.get("true_width_m") or med_w)
+                        _keep_mesh(zi, z["id"])
                         if zp is not None and len(zp):
                             if len(zp) <= 2:
                                 flat_bodies += 1          # one or two holes: no surface
@@ -1589,6 +1608,7 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                                 rot=rot_d, aniso=an_d, reach=reach,
                                 step=max(float(blk[0]), 3.0),
                                 thickness=PS.get("true_width_m") or med_w)
+                            _keep_mesh(_li, 0)
                             if lp is not None and len(lp):
                                 parts.append(lp)
                                 part_zone.append(np.zeros(len(lp), np.int32))
@@ -1620,6 +1640,7 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                                     rot=rot_d, aniso=an_d, reach=reach,
                                     step=max(float(blk[0]), 3.0),
                                     thickness=PS.get("true_width_m") or med_w)
+                                _keep_mesh(_li, 0)
                                 if lp is not None and len(lp):
                                     if len(lp) <= 2:
                                         flat_bodies += 1
@@ -1652,6 +1673,7 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                             pts, g, hid, max(bins[0], 1e-9), rot=rot_d, aniso=an_d,
                             reach=reach, step=max(float(blk[0]), 3.0),
                             thickness=PS.get("true_width_m") or med_w)
+                        _keep_mesh(dom_info, 0)
                         if dom_info:
                             dom_info["from"] = "mineralised intercepts"
                 # How THICK the body is, and how far to look for grade inside it.
@@ -1822,6 +1844,62 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                         "no_surface": (dom_info or {}).get("no_surface"),
                         "reach_m": round(float(reach), 1) if dom_pts is not None else None,
                     }
+            # ---- the same body as geometry
+            # The cells above are the shape on the block lattice; this is the
+            # shape itself. A vein that pinches to half a metre between two holes
+            # and swells to thirty in a third is the single most important thing
+            # a drill section shows, and rounding it to the nearest 5 m block
+            # erased it — in both directions, since a thin vein was also drawn
+            # as wide as a block. The triangles are the ones the alpha criterion
+            # already accepted, so this stops where the drilling stops.
+            if dom_mesh:
+                try:
+                    MV = np.concatenate([m[0] for m in dom_mesh])
+                    FA, ZS, off = [], [], 0
+                    for v, f, zid in dom_mesh:
+                        FA.append(np.asarray(f, np.int64) + off)
+                        ZS.append(np.full(len(f), zid, np.int32))
+                        off += len(v)
+                    FA = np.concatenate(FA)
+                    ZS = np.concatenate(ZS)
+                    # triangles grouped by body, so one body can be drawn alone
+                    ordr = np.argsort(ZS, kind="stable")
+                    FA, ZS = FA[ordr], ZS[ordr]
+                    dropped = 0
+                    if len(FA) > SURFACE_MAX_TRIS:
+                        # thin evenly within each body rather than truncating,
+                        # which would drop whole bodies off the end of the sort
+                        take = np.linspace(0, len(FA) - 1, SURFACE_MAX_TRIS).astype(int)
+                        dropped = int(len(FA) - len(take))
+                        FA, ZS = FA[take], ZS[take]
+                    used, flat = np.unique(FA.ravel(), return_inverse=True)
+                    MV, FA = MV[used], flat.reshape(-1, 3)
+                    lo3, hi3 = MV.min(0), MV.max(0)
+                    sc = np.maximum(hi3 - lo3, 1e-6) / 65535.0
+                    QV = np.clip(np.round((MV - lo3) / sc), 0, 65535).astype(np.uint16)
+                    groups, i = [], 0
+                    while i < len(ZS):
+                        j = i
+                        while j < len(ZS) and ZS[j] == ZS[i]:
+                            j += 1
+                        groups.append({"id": int(ZS[i]), "start": int(i * 3),
+                                       "count": int((j - i) * 3)})
+                        i = j
+                    wide = len(MV) > 65535
+                    el_out["surface"] = {
+                        "origin": [round(float(x), 3) for x in lo3],
+                        "scale": [float(x) for x in sc],
+                        "v": _b64(QV), "nv": int(len(MV)),
+                        "f": _b64(FA.astype(np.uint32 if wide else np.uint16)),
+                        "wide": bool(wide),
+                        "tris": int(len(FA)),
+                        "dropped": dropped,
+                        "bodies": int(len(groups)),
+                        "groups": groups,
+                    }
+                except Exception as exc:                 # geometry is a bonus layer
+                    if verbose:
+                        print("    surface skipped: %s" % exc)
             PH.mark("wireframe")
             el_out["gt"] = gt
             if PS.get("default_cutoff") is not None:
@@ -1923,6 +2001,13 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
         "holes": hole_rows, "elements": elements, "primary": primary, "by_metal": by_metal,
         "style": style_info, "metallurgy": PS.get("metallurgy") or ds.get("metallurgy"),
         "rock_units": ds.get("rock_units"),
+        # what covers the ground between the holes, and what the rock itself is.
+        # Neither is an assay, so neither reaches the estimator here — the two
+        # numbers that ARE model inputs (density, overburden depth) arrive as
+        # settings, through model_params, like every other stated parameter.
+        "geophysics": ds.get("geophysics") or None,
+        "rock": ds.get("rock") or None,
+        "rock_from": ds.get("rock_from") or None,
         "coverage": _cover,
         "track_record": _validation(),
         "integrity": integrity or None,

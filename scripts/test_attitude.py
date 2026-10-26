@@ -16,7 +16,7 @@ import sys
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(_ROOT, "src"))
 from minemodelingpro import extent as E                      # noqa: E402
-from minemodelingpro.drill_tables import _with_attitude      # noqa: E402
+from minemodelingpro.drill_tables import _with_stated as _with_attitude   # noqa: E402
 
 PASS, FAIL = [], []
 

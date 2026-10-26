@@ -163,6 +163,25 @@ async function interact(p) {
     if (out.meas) out.readout = out.meas.readout;
   }
 
+  /* the report's geophysics and rock properties. No built page carries these
+     until the report corpus is re-extracted, so they are injected and drawn
+     here: the renderer must handle them, and must handle their absence. */
+  out.ground = await p.evaluate(() => {
+    const before = !!document.getElementById("groundbox");
+    M.geophysics = {surveys: [{method: "IP/resistivity", page: 23, platform: "ground",
+                               line_km: 102, year: 2018, text: "an IP survey"},
+                              {method: "magnetics", page: 23, platform: "airborne",
+                               line_km: 277, year: 1991, text: "an airborne magnetic survey"}],
+                    targets: [{page: 31, explained: false, untested: true,
+                               text: "The chargeability anomaly remains untested."}]};
+    M.rock = {density_low: {median: 2.43, n: 1, text: "bulk density"},
+              density_high: {median: 2.63, n: 1, text: "bulk density"},
+              slope_angle_deg: {median: 45, n: 1, text: "slope angle"}};
+    drawGround();
+    const b = document.getElementById("groundbox");
+    return {before, drawn: !!b, txt: b ? b.textContent.replace(/\s+/g, " ") : ""};
+  });
+
   await p.keyboard.press("Escape");
   await p.keyboard.press("Escape");
   await p.waitForTimeout(150);
@@ -198,8 +217,15 @@ srv.listen(8766, async () => {
       await p.waitForTimeout(4000);
       const st = await p.evaluate(() => {
         const cv = document.querySelector('canvas');
+        /* the deposit's own geometry, where the page was built with it */
+        const E = M.elements[EL] || {};
         return { canvas: !!cv, w: cv ? cv.width : 0, h: cv ? cv.height : 0,
-                 panels: document.querySelectorAll('.panel').length };
+                 panels: document.querySelectorAll('.panel').length,
+                 wantSurf: !!(E.surface && E.surface.tris),
+                 gotSurf: !!surfMesh,
+                 surfTris: surfMesh ? surfMesh.geometry.getIndex().count / 3 : 0,
+                 payloadTris: E.surface ? E.surface.tris : 0,
+                 styleSwitch: !!document.getElementById('body-style') };
       });
       const act = await interact(p);
       out.push({ name, ...st, act, errors: errs });
@@ -232,6 +258,13 @@ for res in results:
           (res["w"], res["h"]))
     check("%s draws its panels" % nm, res["panels"] >= 2, res["panels"])
 
+    if res.get("wantSurf"):
+        check("%s draws the deposit's geometry, not only its cells" % nm,
+              res.get("gotSurf") and res.get("surfTris", 0) >= res.get("payloadTris", 0),
+              (res.get("gotSurf"), res.get("surfTris"), res.get("payloadTris")))
+        check("%s offers the shape/cells switch" % nm, res.get("styleSwitch"),
+              res.get("styleSwitch"))
+
     a = res.get("act") or {}
     if not a.get("holes"):
         continue
@@ -257,6 +290,16 @@ for res in results:
               -1e-6 <= m["ma"] <= m["da"] + 1e-6 and -1e-6 <= m["mb"] <= m["db"] + 1e-6,
               (m["ma"], m["da"], m["mb"], m["db"]))
         check("%s shows the measurement readout" % nm, a.get("readout") == "on", a.get("readout"))
+    gr = a.get("ground") or {}
+    if gr:
+        check("%s shows nothing about geophysics when the page carries none" % nm,
+              gr.get("before") is False, gr.get("before"))
+        check("%s draws the report's geophysics and rock properties when it has them" % nm,
+              gr.get("drawn") and "IP/resistivity" in gr.get("txt", "")
+              and "2.43" in gr.get("txt", ""), gr.get("txt", "")[:160])
+        check("%s marks an untested anomaly as the report's words, not a measurement" % nm,
+              "untested" in gr.get("txt", "").lower(), gr.get("txt", "")[:160])
+
     check("%s clears the selection and the measurement on Escape" % nm,
           a.get("cleared") == "null|none", a.get("cleared"))
     if a.get("emptyCleared") is not None:

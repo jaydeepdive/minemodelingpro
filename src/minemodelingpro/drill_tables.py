@@ -38,7 +38,9 @@ from minemodelingpro import holeid
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 OUT_DIR = os.path.join(_ROOT, "data", "keep", "mmp_reports")
-EXTRACTOR = "dt20"   # dt20: the body's attitude (dip angle, dip direction) from prose
+EXTRACTOR = "dt21"   # dt21: geophysical surveys and targets, and the rock's own
+                     # properties — density, overburden, RQD/GSI/UCS, slope angle
+                     # (dt20: the body's attitude — dip angle, dip direction — from prose)
 
 # ------------------------------------------------------------------ elements
 _EL = {"au": "Au", "gold": "Au", "ag": "Ag", "silver": "Ag", "cu": "Cu", "copper": "Cu",
@@ -2134,8 +2136,8 @@ def extract_report(pdf_path, meta=None):
     return _extract(doc, pages_text, meta, pages_n=len(doc))
 
 
-def _with_attitude(mp, att):
-    """Carry a stated dip into the modelling parameters.
+def _with_stated(mp, att, rk=None):
+    """Carry what the report states in prose into the modelling parameters.
 
     `dip` and `dip_direction` already orient the wireframe and stretch the search
     along strike and down dip (`model3d.frame_from_trend`) — they were simply
@@ -2145,6 +2147,20 @@ def _with_attitude(mp, att):
     approximate attitude from the geologist beats one measured off the drilling.
     """
     mp = dict(mp or {})
+    if rk:
+        # The tonnage factor. A model carrying an assumed 2.7 against a report's
+        # own measured 2.43-2.63 is wrong by that ratio on every tonne, and the
+        # measurement was sitting in the geotechnical section all along. Only
+        # fills what the resource tables did not already state.
+        from minemodelingpro import geophysics as GP
+        d = GP.density_from(rk)
+        if d:
+            mp.setdefault("density", float(d))
+        # The overburden depth is read too, and is NOT put here. Nothing in the
+        # estimator clips a block model to the base of cover yet, and a parameter
+        # that travels through the settings while changing no estimate reads like
+        # an input and is not one. It stays on `rock`, where the page shows it as
+        # the report's statement that it is.
     if not att:
         return mp
     d = (att.get("dip") or {}).get("median")
@@ -2182,6 +2198,14 @@ def _extract(doc, pages_text, meta=None, pages_n=None):
         att = EXT.attitude(pages_text) or None
     except Exception:
         ext = att = None
+    # what covers the ground between the holes, and what the rock itself is
+    try:
+        from minemodelingpro import geophysics as GP
+        gsv = GP.surveys(pages_text) or []
+        gtg = GP.targets(pages_text) or []
+        rock = GP.rock(pages_text) or None
+    except Exception:
+        gsv, gtg, rock = [], [], None
     eff = effective_date(pages_text)
     # link collars <-> intervals via normalised hole ids
     ckeys = {holeid.key(c["hole"]) for c in collars}
@@ -2200,7 +2224,9 @@ def _extract(doc, pages_text, meta=None, pages_n=None):
         "block_size": block, "density": density,
         "sensitivity": (extract_sensitivity(doc, pages_text) or [None])[0],
         "extent": ext, "attitude": att,
-        "model_params": _with_attitude(mp, att) or None, "effective_date": eff,
+        "geophysics": ({"surveys": gsv[:60], "targets": gtg[:30]} if (gsv or gtg) else None),
+        "rock": rock,
+        "model_params": _with_stated(mp, att, rock) or None, "effective_date": eff,
         "resource": head, "resource_rows": res_rows[:80],
         "counts": {"collars": len(collars), "intervals": len(intervals), "surveyed_holes": len({x["hole"] for x in surveys}),
                    "holes_with_intervals": len(ikeys), "linked": len(ckeys & ikeys)},

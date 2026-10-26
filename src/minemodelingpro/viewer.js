@@ -188,14 +188,17 @@ const ZCOL=["#8d98a7","#2f7ed8","#d94f3d","#1f9d55","#8e5bd1","#d99a00","#0f9fb0
             "#c2447a","#6b8e23","#4a5bbd","#b5651d","#2aa198"];
 function zoneColor(id){return id?ZCOL[((id-1)%(ZCOL.length-1))+1]:ZCOL[0];}
 
-let bodyMesh=null,BD=null;
+let bodyMesh=null,BD=null,surfMesh=null,SF=null;
+let bodyStyle=store.get("bodystyle","shape");
 function buildBody(){
   if(bodyMesh){scene.remove(bodyMesh);bodyMesh.geometry.dispose();bodyMesh.material.dispose();bodyMesh=null;}
+  if(surfMesh){scene.remove(surfMesh);surfMesh.geometry.dispose();surfMesh.material.dispose();surfMesh=null;SF=null;}
+  buildSurface();
   const E=M.elements[EL],B=E&&E.body;
   const cb=$("L-body"),row=$("body-op-row"),why=$("body-why");
-  if(cb)cb.disabled=!B;
-  if($("body-note"))ctl("body-note").textContent=B?(fmtN(B.n)+" cells"):"not built";
-  if(row)row.style.display=B?"":"none";
+  if(cb)cb.disabled=!B&&!SF;
+  bodyNote();
+  if(row)row.style.display=(B||SF)?"":"none";
   if(why){
     if(B){why.style.display="";
       const nz=(B.zones||[]).filter(z=>z.id>0).length;
@@ -244,7 +247,7 @@ function buildBody(){
     } else {why.style.display="none";}
   }
   BD=null;
-  if(!B)return;
+  if(!B){bodyVis();return;}
   const ijk=b64(B.ijk,Uint16Array),[bx,by,bz]=B.size,o=B.origin,n=B.n;
   const pos=new Float32Array(n*3);
   for(let i=0;i<n;i++){const p=V(o[0]+(ijk[i*3]+.5)*bx,o[1]+(ijk[i*3+1]+.5)*by,o[2]+(ijk[i*3+2]+.5)*bz);
@@ -274,9 +277,112 @@ function buildBody(){
     transparent:true,opacity:+(($("body-op")||{}).value||18)/100,
     depthWrite:false,side:THREE.DoubleSide}),n);
   bodyMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  bodyMesh.visible=!!(cb&&cb.checked);
-  {const r=$("zlab-row");if(r)r.style.display=bodyMesh.visible?"":"none";}
-  scene.add(bodyMesh);applyBody();}
+  scene.add(bodyMesh);applyBody();bodyVis();}
+
+/* ---- the body as geometry ----------------------------------------------
+   The cells are the shape on the block lattice; this is the shape itself —
+   the surface triangulated through the mineralised intercepts at the
+   thickness each one actually shows. A vein that pinches to half a metre
+   between two holes and swells to thirty in a third is what a drill section
+   is for, and rounding it to the nearest block erased that in both
+   directions. Pages built before this carry no surface and keep the cells,
+   so nothing here may assume one exists. */
+function buildSurface(){
+  const E=M.elements[EL],S=E&&E.surface;
+  if(!S||!S.tris)return;
+  const QV=b64(S.v,Uint16Array),F=b64(S.f,S.wide?Uint32Array:Uint16Array);
+  const o=S.origin,sc=S.scale,nv=S.nv;
+  const pos=new Float32Array(nv*3),col=new Float32Array(nv*3);
+  for(let i=0;i<nv;i++){
+    const p=V(o[0]+QV[i*3]*sc[0],o[1]+QV[i*3+1]*sc[1],o[2]+QV[i*3+2]*sc[2]);
+    pos[i*3]=p.x;pos[i*3+1]=p.y;pos[i*3+2]=p.z;}
+  // one colour per body, matching the Bodies panel and the cell envelope
+  const _c=new THREE.Color();
+  for(const gp of (S.groups||[])){_c.set(zoneColor(gp.id));
+    for(let k=gp.start;k<gp.start+gp.count;k++){const vi=F[k];
+      col[vi*3]=_c.r;col[vi*3+1]=_c.g;col[vi*3+2]=_c.b;}}
+  let P=pos,C=col,IX=F,groups=S.groups||[],mul=1;
+  // Rounded off in the browser rather than in the page: four times the triangles
+  // cost nothing to compute here and would quadruple what every reader downloads.
+  if(!MOBILE&&S.tris<=60000){const r=refineSurface(P,C,IX);
+    if(r){P=r.pos;C=r.col;IX=r.idx;mul=4;}}
+  if(mul!==1)groups=groups.map(g=>({id:g.id,start:g.start*mul,count:g.count*mul}));
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute("position",new THREE.BufferAttribute(P,3));
+  geo.setAttribute("color",new THREE.BufferAttribute(C,3));
+  geo.setIndex(new THREE.BufferAttribute(IX,1));
+  geo.computeVertexNormals();
+  geo.computeBoundingSphere();
+  surfMesh=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({
+    vertexColors:true,transparent:true,opacity:+((ctl("body-op")||{}).value||18)/100,
+    depthWrite:false,side:THREE.DoubleSide}));
+  surfMesh.renderOrder=2;
+  scene.add(surfMesh);
+  SF={tris:S.tris,groups:groups,total:IX.length,dropped:S.dropped||0,bodies:S.bodies||0};
+  applySurface();}
+
+/* One subdivision, then the inserted points relax toward their neighbours.
+   The triangulation is one face per three intercepts, so a body arrives as a
+   handful of large flat panels and reads as a crystal rather than as rock.
+   Splitting each face and letting only the NEW points move keeps every vertex
+   the data put there exactly where it was — the shape is rounded, not
+   redrawn. */
+function refineSurface(pos,col,idx){
+  const nv=pos.length/3,nt=idx.length/3;
+  if(nv>1000000||!nt)return null;
+  const mid=new Map(),K=1048576;
+  const P=[],C=[];                                   // the inserted points
+  const em=(a,b)=>{const k=a<b?a*K+b:b*K+a;let m=mid.get(k);
+    if(m===undefined){m=nv+P.length/3;
+      P.push((pos[a*3]+pos[b*3])/2,(pos[a*3+1]+pos[b*3+1])/2,(pos[a*3+2]+pos[b*3+2])/2);
+      C.push((col[a*3]+col[b*3])/2,(col[a*3+1]+col[b*3+1])/2,(col[a*3+2]+col[b*3+2])/2);
+      mid.set(k,m);}
+    return m;};
+  const F2=new Uint32Array(nt*12);
+  for(let t=0;t<nt;t++){const a=idx[t*3],b=idx[t*3+1],c=idx[t*3+2];
+    const ab=em(a,b),bc=em(b,c),ca=em(c,a);
+    F2.set([a,ab,ca, ab,b,bc, ca,bc,c, ab,bc,ca],t*12);}
+  const n2=nv+P.length/3;
+  const NP=new Float32Array(n2*3),NC=new Float32Array(n2*3);
+  NP.set(pos);NC.set(col);
+  for(let i=0;i<P.length;i++){NP[nv*3+i]=P[i];NC[nv*3+i]=C[i];}
+  const sum=new Float32Array(n2*3),cnt=new Uint32Array(n2);
+  for(let it=0;it<2;it++){
+    sum.fill(0);cnt.fill(0);
+    for(let t=0;t<F2.length;t+=3){
+      const i0=F2[t],i1=F2[t+1],i2=F2[t+2];
+      const acc=(a,b)=>{sum[a*3]+=NP[b*3];sum[a*3+1]+=NP[b*3+1];sum[a*3+2]+=NP[b*3+2];cnt[a]++;};
+      acc(i0,i1);acc(i1,i0);acc(i1,i2);acc(i2,i1);acc(i2,i0);acc(i0,i2);}
+    for(let i=nv;i<n2;i++){const c=cnt[i];if(!c)continue;
+      NP[i*3]+=0.5*(sum[i*3]/c-NP[i*3]);
+      NP[i*3+1]+=0.5*(sum[i*3+1]/c-NP[i*3+1]);
+      NP[i*3+2]+=0.5*(sum[i*3+2]/c-NP[i*3+2]);}}
+  return {pos:NP,col:NC,idx:F2};}
+
+/* one body on its own, the same rule the blocks and the cells follow. The
+   triangles arrive grouped by body, so this is a draw range rather than a
+   rebuild. */
+function applySurface(){
+  if(!surfMesh||!SF)return;
+  if(!curZone){surfMesh.geometry.setDrawRange(0,SF.total);return;}
+  const gp=SF.groups.find(x=>x.id===curZone);
+  if(gp)surfMesh.geometry.setDrawRange(gp.start,gp.count);
+  else surfMesh.geometry.setDrawRange(0,0);}
+
+/* which of the two the envelope toggle shows */
+function bodyNote(){
+  const B=(M.elements[EL]||{}).body;
+  if(!$("body-note"))return;
+  ctl("body-note").textContent=
+    (SF&&bodyStyle==="shape")?(fmtN(SF.tris)+" triangles")
+      :(B?(fmtN(B.n)+" cells"):(SF?fmtN(SF.tris)+" triangles":"not built"));}
+
+function bodyVis(){
+  const on=!!(ctl("L-body").checked),shape=SF&&bodyStyle==="shape";
+  if(surfMesh)surfMesh.visible=on&&!!shape;
+  if(bodyMesh)bodyMesh.visible=on&&!shape;
+  const r=$("zlab-row");if(r)r.style.display=on?"":"none";
+  const sw=$("body-style");if(sw)sw.style.display=(SF&&BD)?"":"none";}
 
 /* Which of the envelope is drawn: everything, or one body when a zone is picked.
    Same rule as the blocks, so the two always show the same deposit. */
@@ -293,7 +399,8 @@ function applyBody(){
 
 /* the body's name, written in the middle of it */
 function zoneLabels(){
-  if(!BD||!bodyMesh||!bodyMesh.visible||!BD.zones.length)return[];
+  const shown=(bodyMesh&&bodyMesh.visible)||(surfMesh&&surfMesh.visible);
+  if(!BD||!shown||!BD.zones.length)return[];
   const cb=$("L-zlabels");
   // Names over a deposit are a reading aid, not a default. Nineteen of them
   // covered the model they were describing, so they are opt-in — and when one
@@ -483,7 +590,7 @@ function drawZones(){
   const chip=(id,label)=>`<button class="chip${curZone===id?" on":""}" data-z="${id}">${id?dot(id):""}${label}</button>`;
   ctl("zones").innerHTML=chip(0,"Whole project")+Z.map(z=>chip(z.id,z.name)).join("");
   [...$("zones").querySelectorAll("button")].forEach(b=>b.onclick=()=>{
-    const id=+b.dataset.z;curZone=(curZone===id?0:id);drawZones();applyCut();applyBody();drawZoneBox();
+    const id=+b.dataset.z;curZone=(curZone===id?0:id);drawZones();applyCut();applyBody();applySurface();drawZoneBox();
     if(curZone)flyToZone(Z.find(z=>z.id===curZone));});
   drawZoneBox();
 }
@@ -1242,12 +1349,30 @@ $("L-terrain").onchange=e=>{if(terrain)terrain.visible=e.target.checked;store.se
 $("ter-op").oninput=e=>{const v=+e.target.value;$("ter-op-v").textContent=v+"%";if(terrain){terrain.material.uniforms.uOp.value=v/100;terrain.material.depthWrite=v>=100;}store.set("terop",v);};
 $("blk-op").oninput=e=>{const v=+e.target.value;$("blk-op-v").textContent=v+"%";if(blockMesh){blockMesh.material.opacity=v/100;blockMesh.material.transparent=v<100;blockMesh.material.depthWrite=v>=100;blockMesh.material.needsUpdate=true;}store.set("blkop",v);};
 {const v=store.get("blkop",35);$("blk-op").value=v;$("blk-op-v").textContent=v+"%";$("L-blocks").checked=store.get("blocks",true);}
-ctl("L-body").onchange=e=>{if(bodyMesh)bodyMesh.visible=e.target.checked;store.set("body",e.target.checked);
-  const r=$("zlab-row");if(r)r.style.display=e.target.checked?"":"none";drawLabels();};
+ctl("L-body").onchange=e=>{store.set("body",e.target.checked);bodyVis();drawLabels();};
+/* Shape or cells. Built here rather than in the page shell, like the hole card:
+   every model page bakes its own markup and only the renderer is shared. */
+{const cb=$("L-body");
+ const row=(cb&&cb.closest)?cb.closest("label"):null;   // the toggle's own row
+ if(row&&row.parentNode&&row.parentNode.insertBefore){
+   const d=document.createElement("div");d.id="body-style";
+   d.style.cssText="display:none;margin:4px 0 2px;font-size:11px";
+   d.innerHTML='<button class="chip" data-bs="shape" title="The surface through the '
+     +'intercepts, at the thickness each one shows">Shape</button>'
+     +'<button class="chip" data-bs="cells" title="The same body on the block '
+     +'lattice, cell by cell">Cells</button>';
+   d.style.cssText+=";padding-left:18px";
+   row.parentNode.insertBefore(d,row.nextSibling);
+   const mark=()=>d.querySelectorAll("[data-bs]").forEach(
+     x=>x.classList.toggle("on",x.dataset.bs===bodyStyle));
+   d.querySelectorAll("[data-bs]").forEach(b=>b.onclick=()=>{
+     bodyStyle=b.dataset.bs;store.set("bodystyle",bodyStyle);mark();bodyVis();bodyNote();});
+   mark();}}
 ctl("L-zlabels").onchange=e=>{store.set("zlabels",e.target.checked);drawLabels();};
 {const v=store.get("zlabels",false);const c=$("L-zlabels");if(c)c.checked=v;}
 ctl("body-op").oninput=e=>{const v=+e.target.value;ctl("body-op-v").textContent=v+"%";
-  if(bodyMesh){bodyMesh.material.opacity=v/100;bodyMesh.material.needsUpdate=true;}store.set("bodyop",v);};
+  for(const m of [bodyMesh,surfMesh])if(m){m.material.opacity=v/100;m.material.needsUpdate=true;}
+  store.set("bodyop",v);};
 {const v=store.get("bodyop",18);ctl("body-op").value=v;ctl("body-op-v").textContent=v+"%";
  ctl("L-body").checked=store.get("body",false);}
 /* hole labels (nearest ~80 to screen centre) */
@@ -1483,8 +1608,81 @@ function updHud(){const mpp=2*dist*Math.tan(camera.fov*Math.PI/360)/Hh();const n
   document.querySelector("#scalebar .sb").style.width=Math.max(20,Math.min(200,n/mpp))+"px";$("sb-l").textContent=n>=1000?(n/1000)+" km":Math.round(n)+" m";
   $("needle").setAttribute("transform",`rotate(${(-yaw*180/Math.PI+180).toFixed(1)})`);}
 
+/* ---- what the report says about the ground between the holes --------------
+   Geophysics covers the ground drilling cannot: it is why a target was drilled
+   where it was, and it is the report's own statement of where the body might
+   continue past the last hole. None of it is an assay, so none of it estimates
+   anything here — it is shown as the sentences it is, with the page they came
+   from, beside the shape MMP drew from the drilling alone. The rock properties
+   are different: the density IS the tonnage factor, and where the report states
+   its own, the model carries that rather than an assumption.
+   Built at runtime like the hole card: model pages bake their own markup. */
+function drawGround(){
+  const G=M.geophysics,R=M.rock;
+  if(!G&&!R)return;
+  const host2=$("pModel");if(!host2||!host2.appendChild)return;
+  const box=document.createElement("div");
+  box.id="groundbox";box.style.cssText="margin-top:14px;border-top:1px solid var(--line,#e6e9ee);padding-top:10px";
+  const H=[];
+  const sv=(G&&G.surveys)||[],tg=(G&&G.targets)||[];
+  if(sv.length){
+    const by={};for(const s of sv){const k=s.method;(by[k]=by[k]||[]).push(s);}
+    H.push(`<h3 style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut,#6b7684);margin:0 0 6px">Geophysics the report describes</h3>`);
+    H.push(`<table style="width:100%;border-collapse:collapse;font-size:11.5px">`+
+      Object.keys(by).map(k=>{const rows=by[k];
+        const km=rows.reduce((a,b)=>a+(b.line_km||0),0);
+        const st=rows.reduce((a,b)=>a+(b.stations||0),0);
+        const plats=[...new Set(rows.map(r=>r.platform).filter(Boolean))];
+        const yrs=rows.map(r=>r.year).filter(Boolean).sort();
+        const bits=[];
+        if(km)bits.push(fmtN(km,km<10?1:0)+" line-km");
+        if(st)bits.push(fmtN(st)+" stations");
+        if(plats.length)bits.push(plats.join(" + "));
+        if(yrs.length)bits.push(yrs[0]===yrs[yrs.length-1]?yrs[0]:yrs[0]+"–"+yrs[yrs.length-1]);
+        return `<tr><td style="padding:2px 0">${esc(k)}</td>`+
+               `<td style="padding:2px 0;text-align:right;color:var(--mut,#6b7684)">${esc(bits.join(" · ")||rows.length+"×")}</td></tr>`;}).join("")
+      +`</table>`);
+  }
+  if(tg.length){
+    const open=tg.filter(t=>t.untested),exp=tg.filter(t=>t.explained&&!t.untested);
+    const pick=open.concat(exp).slice(0,3);
+    H.push(`<p class="note" style="margin:8px 0 4px">`+
+      (open.length?open.length+" of these anomalies the report calls untested or recommends drilling. ":"")+
+      `Quoted as written — a sentence is not a sample, and nothing here estimates grade.</p>`);
+    H.push(pick.map(t=>`<blockquote style="margin:6px 0;padding:5px 8px;border-left:3px solid `
+      +(t.untested?"#ff7a18":"#9aa4b2")+`;background:#f7f8fa;font-size:11px;color:#3a434f">`
+      +`${esc(t.text)} <span style="color:var(--mut,#6b7684)">— p${t.page}</span></blockquote>`).join(""));
+  }
+  if(R){
+    const row=(lbl,v,ttl)=>`<tr title="${esc(ttl||"")}"><td style="padding:2px 0">${esc(lbl)}</td>`+
+      `<td style="padding:2px 0;text-align:right;font-weight:600">${esc(v)}</td></tr>`;
+    const rs=[];
+    if(R.density_low&&R.density_high)
+      rs.push(row("Density (stated range)",R.density_low.median+"–"+R.density_high.median+" t/m³",R.density_low.text));
+    else if(R.density)rs.push(row("Density",R.density.median+" t/m³",R.density.text));
+    if(R.density_samples)rs.push(row("Density measurements",fmtN(R.density_samples.median),R.density_samples.text));
+    if(R.overburden_m)rs.push(row("Overburden",R.overburden_m.median+" m",R.overburden_m.text));
+    if(R.weathering_m)rs.push(row("Weathering to",R.weathering_m.median+" m",R.weathering_m.text));
+    if(R.rqd)rs.push(row("RQD",R.rqd.median+"%",R.rqd.text));
+    if(R.gsi)rs.push(row("GSI",R.gsi.median,R.gsi.text));
+    if(R.rmr)rs.push(row("Rock mass rating",R.rmr.median,R.rmr.text));
+    if(R.ucs_mpa)rs.push(row("Unconfined strength",R.ucs_mpa.median+" MPa",R.ucs_mpa.text));
+    if(R.slope_angle_deg)rs.push(row("Pit slope angle",R.slope_angle_deg.median+"°",R.slope_angle_deg.text));
+    if(rs.length){
+      H.push(`<h3 style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut,#6b7684);margin:12px 0 6px">The rock itself</h3>`);
+      H.push(`<table style="width:100%;border-collapse:collapse;font-size:11.5px">`+rs.join("")+`</table>`);
+      const used=(M.settings||{}).density;
+      H.push(`<p class="note" style="margin:6px 0 0">`+
+        (used?`The model is using ${used} t/m³.`:"")+
+        ` Everything else here is reported, not applied: it says how the rock would be mined, not where it is.</p>`);
+    }
+  }
+  if(H.length<2)return;
+  box.innerHTML=H.join("");
+  host2.appendChild(box);}
+
 /* ---------------- start ---------------- */
-drawEls();buildIntervals();drawLegend();drawSources();buildBlocks();buildBody();setupGT();drawData();drawBreakdown();drawSize();drawZones();
+drawEls();buildIntervals();drawLegend();drawSources();drawGround();buildBlocks();buildBody();setupGT();drawData();drawBreakdown();drawSize();drawZones();
 {const ib=$("intbox");if(ib)ib.innerHTML=integrity();
  const mb=$("metbox");if(mb)mb.innerHTML=metallurgy();}
 resize();F=framing();view("3d",0);
