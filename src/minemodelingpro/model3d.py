@@ -76,10 +76,15 @@ _VIEWER_TMPL = os.path.join(_HERE, "model3d_viewer.html")
 #      reported at "<10" and exported as 10 was being modelled as 10 g/t ore)
 # 12 — a project with no map position gets its ground surface interpolated from
 #      the collar elevations instead of being drawn against a flat datum
-MODEL_VERSION = 12
+# 13 — mineralisation belonging to no named zone is drawn as the separate bodies
+#      it is, instead of as one sheet triangulated across the whole property
+MODEL_VERSION = 13
 # the most domain cells to send to a browser; beyond this the envelope is drawn
 # on a coarser lattice, which is a picture of the same shape
 BODY_MAX_CELLS = 120_000
+# how many separate bodies to triangulate out of the mineralisation that belongs
+# to no named zone; the rest are carried as the intercepts they are
+LEFTOVER_MAX_BODIES = 400
 
 # ------------------------------------------------------------ element settings
 BINS = {
@@ -1523,6 +1528,8 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                     # continuity, in the deposit's frame: generous along strike and
                     # down dip, tight across. The wireframe keeps its own bound.
                     zreach = max(float(reach), float(el_reach))
+                    leftover_bodies = 0
+                    flat_bodies = 0
                     zlab, zlist = ZON.find(pts[mz], hid[mz], zreach,
                                            rot=rot_d, aniso=an_d)
                     PH.mark("zones")
@@ -1542,6 +1549,8 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                             step=max(float(blk[0]), 3.0),
                             thickness=PS.get("true_width_m") or med_w)
                         if zp is not None and len(zp):
+                            if len(zp) <= 2:
+                                flat_bodies += 1          # one or two holes: no surface
                             parts.append(zp)
                             # every point of this body remembers whose body it is,
                             # so the envelope can be read zone by zone instead of
@@ -1556,26 +1565,88 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                     # from the bridges between them, never from the drilling itself.
                     if parts:
                         left = (zof == 0) & mz
-                        if left.sum() >= 6:
-                            near = ZON.assign(pts, pts[left], np.ones(int(left.sum()), int),
+                        # Mineralisation belonging to no named body was being
+                        # triangulated as ONE body across the whole property —
+                        # a single sheet 1,940 m across Castle and 6,825 m
+                        # across White, where the named zones held two cells
+                        # each. That is exactly the failure the zone split
+                        # exists to prevent, reintroduced for the remainder,
+                        # and it is what made a wireframe look nothing like the
+                        # veins it was drawn from. The leftovers are split into
+                        # connected bodies at the WIREFRAME's own reach — the
+                        # distance a solid may be drawn over — so none of the
+                        # rock is dropped and none of it is bridged across
+                        # ground nobody tested. Every one of them is still
+                        # zone 0: shown, labelled as unzoned, never hidden.
+                        if left.any() and os.environ.get("MMP_LEFTOVER") == "sheet":
+                            # the behaviour this replaced, kept so the change
+                            # stays A/B-able against the filed statements
+                            near = ZON.assign(pts, pts[left],
+                                              np.ones(int(left.sum()), int),
                                               zreach, rot=rot_d, aniso=an_d) > 0
-                            lp, li = DOM.wireframe(
+                            lp, _li = DOM.wireframe(
                                 pts[near], g[near], hid[near], max(bins[0], 1e-9),
                                 rot=rot_d, aniso=an_d, reach=reach,
                                 step=max(float(blk[0]), 3.0),
                                 thickness=PS.get("true_width_m") or med_w)
                             if lp is not None and len(lp):
                                 parts.append(lp)
-                                # zone 0: real mineralisation that belongs to no
-                                # named body. Shown, labelled as such, never hidden
                                 part_zone.append(np.zeros(len(lp), np.int32))
+                                leftover_bodies = 1
+                        elif left.any():
+                            # Built exactly as a named zone is: cluster the
+                            # leftover intercepts at the continuity distance,
+                            # then give each body the composites that belong to
+                            # it before triangulating. Clustering at the
+                            # wireframe's tighter reach instead, without that
+                            # second step, left most components under three
+                            # points and collapsed White's shape from 8,173
+                            # cells to 12 — trading one fiction for another.
+                            lpts, lhid = pts[left], hid[left]
+                            llab, llist = ZON.find(lpts, lhid, zreach, min_holes=1,
+                                                   min_points=1, rot=rot_d, aniso=an_d)
+                            lof = ZON.assign(pts, lpts, llab, zreach,
+                                             rot=rot_d, aniso=an_d)
+                            big = sorted((lz for lz in (llist or [])),
+                                         key=lambda lz: -int((lof == lz["id"]).sum()))
+                            nbod = 0
+                            placed = np.zeros(len(lpts), bool)
+                            for lz in big[:LEFTOVER_MAX_BODIES]:
+                                w = lof == lz["id"]
+                                if w.sum() < 3:
+                                    continue
+                                lp, _li = DOM.wireframe(
+                                    pts[w], g[w], hid[w], max(bins[0], 1e-9),
+                                    rot=rot_d, aniso=an_d, reach=reach,
+                                    step=max(float(blk[0]), 3.0),
+                                    thickness=PS.get("true_width_m") or med_w)
+                                if lp is not None and len(lp):
+                                    if len(lp) <= 2:
+                                        flat_bodies += 1
+                                    parts.append(lp)
+                                    part_zone.append(np.zeros(len(lp), np.int32))
+                                    placed |= (llab == lz["id"])
+                                    nbod += 1
+                            # a lone intercept is a point of the body and
+                            # nothing can be triangulated through it. It is
+                            # carried as itself rather than dropped.
+                            if (~placed).any():
+                                parts.append(lpts[~placed])
+                                part_zone.append(np.zeros(int((~placed).sum()), np.int32))
+                                nbod += 1
+                            leftover_bodies = nbod
                     if parts:
                         dom_pts = np.concatenate(parts)
                         dom_zone = np.concatenate(part_zone) if part_zone else None
                         dom_info = {"from": "mineralised intercepts, zone by zone",
                                     "intercepts": int(mz.sum()), "zones": zinfo,
                                     "bodies": len(parts),
-                                    "unzoned": int(sum(1 for a in part_zone if a.size and a[0] == 0))}
+                                    "unzoned": int(leftover_bodies),
+                                    # bodies one or two holes have seen. A surface
+                                    # needs three intercepts; with fewer, the body
+                                    # is drawn as the intersections themselves
+                                    # rather than as a sheet invented through them
+                                    "no_surface": int(flat_bodies)}
                     else:
                         dom_pts, dom_info = DOM.wireframe(
                             pts, g, hid, max(bins[0], 1e-9), rot=rot_d, aniso=an_d,

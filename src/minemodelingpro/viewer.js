@@ -173,6 +173,17 @@ function buildBody(){
       why.innerHTML="";
       why.textContent=nz+" "+(nz===1?"body":"bodies")+", coloured to match the Bodies panel."
         +(B.reach_m?" Holes linked up to "+B.reach_m+" m apart.":"");
+      // A surface needs three intercepts. Where most bodies are single
+      // intersections there is almost no shape to draw, and saying so beats
+      // showing an all-but-empty layer -- or, as this used to, triangulating one
+      // sheet across the whole property to fill it.
+      if(B.no_surface&&B.bodies&&B.no_surface>=Math.max(2,B.bodies/2)){
+        const d0=document.createElement("div");
+        d0.style.cssText="margin-top:4px;color:#6b7684";
+        d0.textContent=B.no_surface+" of "+B.bodies+" are single intersections — one or "
+          +"two holes cannot define a surface, so they are drawn as the intercepts "
+          +"themselves rather than as a sheet invented through them.";
+        why.appendChild(d0);}
       why.title="Blocks are only estimated inside this shape, so a gap in it is ground the "
         +"drilling could not justify closing. Grey belongs to no named body.";
       // Is the shape in the estimate? A cell of the shape with no block in it is

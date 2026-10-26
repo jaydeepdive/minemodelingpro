@@ -1094,17 +1094,110 @@ tests in `test_imports.py` cover the catch and the four ways it must decline:
 a real lognormal population, an element that is one value everywhere, too few
 samples, and a spike that is not at the bottom.
 
-**Still open from the same screenshot, not yet done:**
+Both of the items this screenshot left open are now done — see the two sections
+below.
 
-1. **Terrain is lost when the grid is local.** Langis could not be georeferenced,
-   so there is no DEM and the collars are drawn against a flat datum — which
-   misplaces every intercept in depth. The collars carry real elevations, so a
-   surface can be interpolated from the collar z themselves and labelled as that
-   rather than as a DEM. Always possible, needs no map position.
-2. **The wireframe does not track the veins.** "The estimate fills 31% of this
-   shape (3,647 of 11,920 cells)" on a narrow-vein system: the shape is three
-   times the rock. Suspect the anisotropy and `true_width_m` for a vein style,
-   and whether the inferred style is right at all.
+## The ground, interpolated from the collars (2026-10-25)
+
+A project in a local mine grid has no map position, so no DEM can be read for it
+and every intercept was drawn against a **flat datum**, which misplaces the whole
+deposit in depth. But a drill collar is a surveyed point ON the topography, and
+it is the one elevation record every drill database has.
+
+`terrain.from_collars` fits the ground from them: inverse-square over the twelve
+nearest collars, on a lattice about half the collar spacing, smoothed by half a
+cell. **Local rather than global on purpose** — a weighted mean of every collar
+reverts to the property's average elevation wherever the drilling thins, which
+flattens exactly the relief this exists to show. `model3d.build_project` uses it
+whenever `terrain.grid` returns nothing, and it carries `from="collars"` plus a
+note, so the viewer says what it is instead of passing it off as a DEM.
+
+Measured over 32 local-grid public projects: the surface passes within **0.82 m**
+of the collars it was built from (median of medians), median p90 3.6 m, median
+payload 122 KB.
+
+**It also finds bad data.** 75 of 5,256 collars (1.43%) state an elevation no
+surface can pass through — Goldboro has two 1.6 m apart differing by 75 m, South
+Mountain two 21 m apart differing by 431 m. Mixed datums between reports, not
+hillsides, and one of them bends the ground around it. They are dropped and the
+count goes into the model's note rather than being smoothed over silently.
+
+**The outlier test is a SLOPE, not a number of metres.** A first version used a
+flat 20 m allowance and threw away real folded hillsides: 5.44% dropped across
+the corpus and 1 in 80 on noiseless synthetic ground. Judged instead against
+twice the neighbours' own baseline, clean data loses nothing and the 47:1 slopes
+go. `scripts/test_terrain.py` holds 19 checks, including that ordinary survey
+scatter is not called an outlier and that a planted 400 m collar does not move
+the ground near it.
+
+## Why the wireframe looked nothing like the veins (2026-10-25)
+
+Jordan: "there seems to be minimal correlation between the wire frame and the
+actual mineralization. this is a vein type system." Two separate faults, and the
+number he was reading was one of them.
+
+**1. The fill ratio was measuring the cut-off slider.** "The estimate fills 31%
+of this shape" was computed in the browser against `blockCells()` — and the page
+only ever receives the blocks above the display threshold (`shown_from`), never
+the rest. So it compared a whole shape against a cut-off slice. Counted at build
+time against every estimated block (`body.filled`), the same projects are Avino
+**91.8%** (the old metric: 6.9%) and El Cubo **98.2%**. **Any ratio computed in
+the viewer is computed over the blocks the page carries, which is not the model.**
+
+**2. Mineralisation belonging to no named zone was drawn as ONE body across the
+whole property.** Intercepts too isolated for the zone finder to name are kept
+rather than dropped (dropping them shrinks models that are already short) — but
+they were all triangulated together, and on the worst cases that sheet *was* the
+model: White one sheet spanning **6,825 x 7,800 m**, 8,169 of 8,173 cells, with
+its two named zones holding 2 cells each; Castle **1,940 x 1,124 x 622 m**,
+52,755 of 52,757. Each triangle passed the alpha test individually; the sheet was
+a legal chain across ground the zone finder had already judged discontinuous.
+That is the failure the zone split exists to prevent, reintroduced for the
+remainder.
+
+Each leftover is now its own connected body, built **exactly as a named zone is**:
+clustered at the continuity distance, then given the composites that belong to it
+before triangulating. Clustering at the wireframe's tighter reach instead, with
+no second step, left most components under three points and collapsed White from
+8,173 cells to 12 — one fiction for another. A body one or two holes have seen
+gets no surface (three intercepts are needed for a triangle) and is drawn as the
+intercepts themselves; `no_surface` counts them and the viewer says so rather
+than showing an all-but-empty layer.
+
+**Measured over 131 projects, same projects both arms:**
+
+| | median fill | lower quartile | under 60% | under 30% | median cells |
+|---|---|---|---|---|---|
+| one leftover sheet | 0.805 | 0.52 | 47 | 14 | 13,353 |
+| **leftovers as bodies** | **0.968** | **0.92** | **3** | **2** | 4,571 |
+
+Fill improved on 76 projects and worsened on **0**. By style it is exactly the
+two that go down the tabular-sheet branch, and the styles that were already right
+barely move:
+
+      vein       55   0.545 -> 0.945        skarn      11   0.993 -> 0.995
+      orogenic   13   0.468 -> 0.983        porphyry    7   0.998 -> 0.998
+
+**Against the filed statements it is neutral, and shipped on the mechanism.**
+114 projects with a statement and >=60 assayed holes, `MMP_LEFTOVER=sheet`
+restores the old rule so this stays A/B-able:
+
+| | median ratio | med abs log err | within 2x | >10x |
+|---|---|---|---|---|
+| one leftover sheet | 0.800 | **1.210** | 41 | 32 |
+| leftovers as bodies | 0.789 | 1.260 | **42** | 32 |
+
+Median tonnage change **0.998x** — one project moves more than 2x down
+(Castle, already at 0.049x of its filing), none up. Paired it is a coin flip:
+closer on 31, further on 33, tied 50. The movers that matter moved the right way
+(Auld Creek 130x -> 84x, Montauban 3.35x -> 1.72x). A sheet drawn 6.8 km across a
+property from intercepts already judged discontinuous is indefensible whatever it
+scores, and the corpus is neutral on removing it.
+
+MODEL_VERSION 13. `scripts/test_zones.py`: 15 checks, including that two lenses a
+kilometre apart stay two bodies, that triangulating them together does span the
+gap (the failure, pinned), that lone intercepts are kept, and that clustering
+happens in the deposit's own frame.
 
 ## Reasonable backlog / ideas
 
