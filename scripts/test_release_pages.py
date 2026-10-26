@@ -120,5 +120,54 @@ check("a survey both describe is listed once",
       sum(1 for s in same["surveys"] if s["method"] == "IP/resistivity" and
           s.get("line_km") == 20.0) == 1, same["surveys"])
 
+print("\n== a release that reports no drilling")
+# The clustering that builds a project is driven by holes, so a release whose
+# whole subject is a geophysical survey used to attach to nothing at all.
+import sqlite3                                              # noqa: E402
+from minemodelingpro import projects as PJ                  # noqa: E402
+
+tmp2 = tempfile.mkdtemp(prefix="mmp-rel2-")
+db = os.path.join(tmp2, "drillbank.sqlite")
+con = sqlite3.connect(db)
+con.execute("CREATE TABLE releases(id TEXT PRIMARY KEY, project TEXT, company TEXT, "
+            "url TEXT, title TEXT, published TEXT, n_holes INTEGER)")
+con.executemany("INSERT INTO releases VALUES (?,?,?,?,?,?,?)", [
+    ("geo1", "Thompson Knolls Project", "BCM Resources",
+     "https://example.com/r/1", "Initial Modeling of Geophysical Data", "2026-10-26", 0),
+    ("geo2", "Some Other Property", "BCM Resources",
+     "https://example.com/r/2", "Other news", "2026-10-20", 0),
+    ("drill1", "Thompson Knolls Project", "BCM Resources",
+     "https://example.com/r/3", "Drill results", "2026-09-01", 7),
+])
+con.commit()
+con.close()
+
+old_db, old_out, old_cache = PJ.DRILLBANK, RP.OUT_DIR, dict(PJ._NAMED_RELEASES)
+try:
+    PJ.DRILLBANK = db
+    RP.OUT_DIR = tempfile.mkdtemp(prefix="mmp-rel3-")
+    PJ._NAMED_RELEASES.clear()
+    RP.save("geo1", rec)
+    RP.save("geo2", rec)
+    # geo1's release has been read; drill1 has holes and is attached the normal way
+    got = PJ._named_releases("Thompson Knolls")
+    check("a hole-free release is matched to its project by name",
+          list(got) == ["geo1"], list(got))
+    check("and not to another property of the same company",
+          list(PJ._named_releases("Some Other")) == ["geo2"],
+          list(PJ._named_releases("Some Other")))
+    check("a release with holes is left to the normal clustering",
+          "drill1" not in got, list(got))
+    check("a project nobody named gets nothing", PJ._named_releases("") == {},
+          PJ._named_releases(""))
+    PJ._NAMED_RELEASES.clear()
+    RP.OUT_DIR = tempfile.mkdtemp(prefix="mmp-rel4-")
+    check("an unread release is not guessed at", PJ._named_releases("Thompson Knolls") == {},
+          PJ._named_releases("Thompson Knolls"))
+finally:
+    PJ.DRILLBANK, RP.OUT_DIR = old_db, old_out
+    PJ._NAMED_RELEASES.clear()
+    PJ._NAMED_RELEASES.update(old_cache)
+
 print("\n%d passed, %d failed" % (len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

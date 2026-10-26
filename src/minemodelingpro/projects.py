@@ -970,6 +970,22 @@ def _materialise(p, news_holes, news_ivs, ov, styled_reports=(), consume=False):
     o = ov.get(slug) or {}
     name = o.get("name", name)
     company = o.get("company", company)
+    # ---- releases that report no drilling
+    # The clustering that builds a project is driven by holes, so a release
+    # whose whole subject is a geophysical survey — the kind that says where a
+    # company believes its deposit continues — was attached to nothing and read
+    # by nobody. Those are matched on the project's own NAME, never on the
+    # company alone: a company with four properties would otherwise have every
+    # one of them claim the same survey.
+    for rid, rec in _named_releases(name).items():
+        if rid in rel_read:
+            continue
+        rel_read[rid] = rec
+        u = rec.get("url")
+        if u and u not in {x.get("url") for x in sources}:
+            sources.append({"kind": "news release", "id": "news:" + rid,
+                            "title": (rec.get("title") or u)[:140], "url": u,
+                            "date": rec.get("published")})
     # region: news releases' stated place; else the report's own lat/long text; else the
     # curated index jurisdiction. (A SEDAR filing's jurisdiction is the ISSUER's filing
     # province, not where the deposit is, so it is never used as the region.)
@@ -1117,6 +1133,47 @@ def _report_extent(reports):
         if e and (e.get("strike") or e.get("dip") or e.get("depth")):
             return e, {"id": r.get("id"), "date": _recency(r) or None}
     return None, None
+
+
+_NAMED_RELEASES = {}
+
+
+def _named_releases(project_name):
+    """Readings of releases the bank has no holes for, matched by project name.
+
+    Built once per process from the bank, and only ever consulted for releases
+    MMP has actually read — an unread release has nothing to offer and is not
+    guessed at."""
+    key = name_key(project_name)
+    if not key or len(key) < 4:
+        return {}
+    if not _NAMED_RELEASES:
+        _NAMED_RELEASES["_"] = {}
+        try:
+            from minemodelingpro import release_pages as RP
+            if os.path.exists(DRILLBANK):
+                con = sqlite3.connect(DRILLBANK)
+                try:
+                    rows = list(con.execute(
+                        "SELECT id, project, company, url, title, published FROM releases "
+                        "WHERE (n_holes IS NULL OR n_holes = 0) AND project IS NOT NULL "
+                        "AND project != ''"))
+                finally:
+                    con.close()
+                read = RP.load_all([r[0] for r in rows])
+                for rid, proj, comp, url, title, pub in rows:
+                    rec = read.get(rid)
+                    if not rec:
+                        continue
+                    k = name_key(clean_project(proj) or proj)
+                    if not k or len(k) < 4:
+                        continue
+                    _NAMED_RELEASES.setdefault(k, {})[rid] = {
+                        **rec, "url": rec.get("url") or url, "title": title,
+                        "published": pub, "company": comp}
+        except Exception:
+            pass
+    return dict(_NAMED_RELEASES.get(key) or {})
 
 
 def _fold_release_geophysics(geo, rel_read):
