@@ -96,14 +96,23 @@ _HOLE = re.compile(r"down[- ]?hole|borehole", re.I)
 # sentence instead of its own
 _HY = r"[\s\u00a0-]*"
 _LINE_KM = re.compile(
+    # "102-line km", "20 line-km" — but not the grid somebody cut to walk along
     r"(?:(\d{1,3}(?:,\d{3})*(?:\.\d+)?)" + _HY + r"line[-\s]?(?:km|kilometres?|kilometers?)\b"
+    r"(?!\s*of\s+(?:line[-\s]?cutting|grid))"
+    # "7.7 km of road-based induced polarization", "12 km of IP survey"
     r"|(\d{1,3}(?:,\d{3})*(?:\.\d+)?)" + _SP + r"(?:km|kilometres?|kilometers?)" + _SP
-    + r"of" + _SP + r"(?:line|survey|grid|road[-\s]?based|induced|IP\b|magnetic|gravity|"
-    r"electromagnetic|seismic)"
-    r"|(\d{1,3}(?:,\d{3})*(?:\.\d+)?)" + _SP + r"(?:km|kilometres?|kilometers?)" + _SP
-    + r"(?:of" + _SP + r")?(?:line[-\s]?cutting|lines)\b)", re.I)
+    + r"of" + _SP + r"(?:survey|road[-\s]?based|induced|IP\b|magnetic|gravity|"
+    r"electromagnetic|seismic|radiometric|magnetotelluric|MT\b))", re.I)
+# NOT counted: "140.2 km of grid lines were cut" and "28-line km of line-cutting"
+# are the grid, not a survey run along it
+_CUT = re.compile(r"line[-\s]?cutting|grid\s+lines?|cutting\s+of\s+lines", re.I)
 _STATIONS = re.compile(r"(?:a\s+total\s+of\s+)?" + _N + _SP + r"(?:gravity\s+|survey\s+)?stations", re.I)
-_SPACING = re.compile(r"(?:flight\s+lines?|lines?|stations?)\s+(?:spaced\s+|at\s+|on\s+)"
+# a release says "transmitter electrode positions were spaced at 300 m intervals"
+# and "receiver dipole spacing was reduced to 150 m" where a report says "flight
+# lines at 200 m"
+_SPACING = re.compile(r"(?:flight\s+lines?|lines?|stations?|electrodes?|dipoles?|"
+                      r"receivers?)(?:\s+\w+){0,3}?\s+(?:spaced\s+(?:at\s+)?|spacing\s+(?:of\s+|"
+                      r"was\s+reduced\s+to\s+|reduced\s+to\s+|was\s+)?|at\s+|on\s+|of\s+)"
                       r"(?:approximately\s+|about\s+|~)?" + _N + r"\s*m(?:etre|eter)?s?"
                       r"(?:\s+(?:intervals?|spacing|centres?|centers?|apart))?", re.I)
 _YEAR = re.compile(r"\b(19[5-9]\d|20[0-4]\d)\b")
@@ -118,8 +127,34 @@ _DID = re.compile(r"survey(?:s|ed|ing)?\b|flown|flew|carried\s+out|completed|con
                   r"response", re.I)
 
 
+# The bare nouns, for deciding which method a measurement belongs to. A report
+# writes "82 line-km of gravity and 20 line-km of ground magnetic surveys": the
+# word gravity names a method there without the word survey beside it, and the
+# full patterns above would not see it.
+_BARE = {
+    "IP/resistivity": re.compile(r"induced\s+polari|chargeabilit|resistivit|\bIP\b", re.I),
+    "magnetics": re.compile(r"magnetic|magnetometer|aeromag", re.I),
+    "electromagnetics": re.compile(r"electromagnetic|\bEM\b|\bVLF\b|\bVTEM\b|\bZTEM\b|"
+                                   r"\bTDEM\b", re.I),
+    "gravity": re.compile(r"gravity|gravimetric", re.I),
+    "seismic": re.compile(r"seismic", re.I),
+    "radiometrics": re.compile(r"radiometric", re.I),
+    "magnetotellurics": re.compile(r"magnetotelluric|\bMT\b", re.I),
+    "borehole geophysics": re.compile(r"down[- ]?hole|borehole", re.I),
+}
+
+
 def surveys(pages_text, max_pages=None):
-    """Every geophysical survey the report describes, with what it covered."""
+    """Every geophysical survey the report describes, with what it covered.
+
+    A measurement is given to the method named NEAREST to it, which is the rule
+    a reader uses and the only one that survives the sentences these documents
+    actually contain: "82 line-km of gravity and 20 line-km of ground magnetic
+    surveys" and "20 line-km of IP and about 24 line-km of MT coverage" both put
+    two lengths and two methods in one line, and attaching a length to whichever
+    method the paragraph happened to open with gave the gravity survey's
+    coverage to the magnetic one. Where no method stands close enough, the
+    survey is listed without a length rather than with a guess."""
     out, seen = [], set()
     for pno, t in enumerate(pages_text or []):
         if max_pages and pno >= max_pages:
@@ -127,68 +162,114 @@ def surveys(pages_text, max_pages=None):
         flat = re.sub(r"\s+", " ", str(t or ""))
         if len(flat) < 40:
             continue
+        found = {}
         for name, rx in _METHOD:
-            m = rx.search(flat)
-            if not m:
-                continue
-            sent = _snip(flat, m.start())
-            if sent.count(".") > 14 or "......" in sent:
-                continue                     # table of contents dot leaders
-            # "IP Induced Polarisation K Thousand" is a glossary, not a survey
-            if not _DID.search(sent):
-                continue
-            # "Fritz, F.P., 2012, ... Aeromagnetic Survey Interpretation" is a
-            # reference list: the survey is somebody else's report, not work done
-            if _CITED.search(flat[max(0, m.start() - 90):m.start() + 20]):
-                continue
-            rec = {"method": name, "page": pno + 1, "text": sent[:240]}
-            plat = ("airborne" if _AIR.search(sent) else
-                    "borehole" if _HOLE.search(sent) else
-                    "ground" if _GROUND.search(sent) else None)
-            if plat:
-                rec["platform"] = plat
-            # the length that belongs to THIS survey, read beside the method's own
-            # words rather than anywhere in the sentence: a paragraph listing a
-            # magnetic grid and an IP grid states two lengths
-            near = flat[max(0, m.start() - 30):m.end() + 120]
-            km = _LINE_KM.search(near)
-            if km:
+            for m in rx.finditer(flat):
+                sent = _snip(flat, m.start())
+                if sent.count(".") > 14 or "......" in sent:
+                    continue                 # table of contents dot leaders
+                # "IP Induced Polarisation K Thousand" is a glossary, not a
+                # survey. Asked of the surrounding text rather than of the quote,
+                # because the verb is often a clause away from the method's name
+                if not _DID.search(flat[max(0, m.start() - 200):m.end() + 200]):
+                    continue
+                # "Fritz, F.P., 2012, ... Aeromagnetic Survey Interpretation" is a
+                # reference list: somebody else's report, not work done here
+                if _CITED.search(flat[max(0, m.start() - 90):m.start() + 20]):
+                    continue
+                rec = found.get(name)
+                if rec is None:
+                    rec = found[name] = {"method": name, "page": pno + 1,
+                                         "text": sent[:240], "_at": []}
+                rec["_at"].append(m.start())
+                if "platform" not in rec:
+                    plat = ("airborne" if _AIR.search(sent) else
+                            "borehole" if _HOLE.search(sent) else
+                            "ground" if _GROUND.search(sent) else None)
+                    if plat:
+                        rec["platform"] = plat
+                if "year" not in rec:
+                    # the year usually opens the sentence — "In 1987 the company
+                    # completed an airborne magnetic survey"
+                    yw = flat[max(0, m.start() - 130):m.end() + 100]
+                    yr = _YEAR.search(yw)
+                    if yr and not _MONTH.search(yw[:yr.start()]):
+                        rec["year"] = int(yr.group(1))
+        if not found:
+            continue
+        # every bare mention of a method on the page, for deciding what each
+        # measurement is closest to — including the ones too bare to be a record
+        names = [(mm.start(), nm) for nm, rx in _BARE.items() for mm in rx.finditer(flat)]
+        for field, rx, lo, hi, conv in _MEASURED:
+            for mm in rx.finditer(flat):
                 try:
-                    v = float(next(g for g in km.groups() if g).replace(",", ""))
-                    if 0.1 <= v <= 100000:
-                        rec["line_km"] = v
-                except (TypeError, ValueError):
-                    pass
-            # a station count is unambiguous, so it may be read from further off:
-            # "A ground gravity survey was carried out in 2022 by ... A total of
-            # 1,168 stations were" puts it two sentences away
-            st = _STATIONS.search(flat[max(0, m.start() - 30):m.end() + 300])
-            if st:
-                try:
-                    rec["stations"] = int(float(st.group(1).replace(",", "")))
-                except ValueError:
-                    pass
-            sp = _SPACING.search(near)
-            if sp:
-                try:
-                    v = float(sp.group(1).replace(",", ""))
-                    if 1 <= v <= 2000:
-                        rec["line_spacing_m"] = v
-                except ValueError:
-                    pass
-            # the year usually opens the sentence — "In 1987 the company
-            # completed an airborne magnetic survey" — so it is looked for
-            # further back than the measurements are
-            yw = flat[max(0, m.start() - 130):m.end() + 100]
-            yr = _YEAR.search(yw)
-            if yr and not _MONTH.search(yw[:yr.start()]):
-                rec["year"] = int(yr.group(1))
+                    v = conv(next(g for g in mm.groups() if g))
+                except (TypeError, ValueError, StopIteration):
+                    continue
+                if not (lo <= v <= hi):
+                    continue
+                # "line-cutting and surveying (28-line km), to facilitate the
+                # completion of ground geophysical surveys" measures the grid
+                # that was cut, which the survey then walked along
+                if field == "line_km" and _CUT.search(flat[max(0, mm.start() - 60):mm.start()]):
+                    continue
+                owner = _nearest(flat, names, mm.start(), mm.end())
+                rec = found.get(owner)
+                if rec is not None:
+                    rec.setdefault(field, v)
+        for name, rec in found.items():
+            rec.pop("_at", None)
             key = (name, rec.get("platform"), rec.get("line_km"), rec.get("year"))
             if key in seen:
                 continue
             seen.add(key)
             out.append(rec)
     return out
+
+
+def _num(x):
+    return float(str(x).replace(",", ""))
+
+
+def _int(x):
+    return int(float(str(x).replace(",", "")))
+
+
+# what can be measured about a survey, and the range each must fall in
+_MEASURED = [
+    ("line_km", _LINE_KM, 0.1, 100000.0, _num),
+    ("stations", _STATIONS, 1, 1000000, _int),
+    ("line_spacing_m", _SPACING, 1.0, 2000.0, _num),
+]
+
+# How far a measurement may sit from the method it belongs to. A sentence is
+# about this long; beyond it the nearest name is no longer evidence.
+_REACH = 140
+
+
+# "20 line-km OF IP" names its owner after the number; "ground magnetic
+# surveying (108-line km) and VLF" names it before. The word `of` is what tells
+# the two apart, and getting it wrong hands one survey's coverage to another.
+_OF = re.compile(r"^\s*(?:of|for)\b[^.]{0,25}$", re.I)
+
+
+def _nearest(flat, names, a, b):
+    before = after = None
+    for at, nm in names:
+        if at < a:
+            if before is None or at > before[0]:
+                before = (at, nm)
+        elif at > b and (after is None or at < after[0]):
+            after = (at, nm)
+    if after and after[0] - b < _REACH and _OF.match(flat[b:after[0]]):
+        return after[1]
+    if before and a - before[0] < _REACH:
+        return before[1]
+    if after and after[0] - b < _REACH:
+        return after[1]
+    return None
+
+
 
 
 # ------------------------------------------------- anomalies worth drilling

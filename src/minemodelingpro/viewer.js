@@ -1639,6 +1639,10 @@ function drawGround(){
         if(st)bits.push(fmtN(st)+" stations");
         if(plats.length)bits.push(plats.join(" + "));
         if(yrs.length)bits.push(yrs[0]===yrs[yrs.length-1]?yrs[0]:yrs[0]+"–"+yrs[yrs.length-1]);
+        // a company's own announcement is not a qualified person's report, and
+        // the difference is worth a reader's eye
+        if(rows.every(r=>r.from_release))bits.push("from a release");
+        else if(rows.some(r=>r.from_release))bits.push("report + release");
         return `<tr><td style="padding:2px 0">${esc(k)}</td>`+
                `<td style="padding:2px 0;text-align:right;color:var(--mut,#6b7684)">${esc(bits.join(" · ")||rows.length+"×")}</td></tr>`;}).join("")
       +`</table>`);
@@ -1651,7 +1655,8 @@ function drawGround(){
       `Quoted as written — a sentence is not a sample, and nothing here estimates grade.</p>`);
     H.push(pick.map(t=>`<blockquote style="margin:6px 0;padding:5px 8px;border-left:3px solid `
       +(t.untested?"#ff7a18":"#9aa4b2")+`;background:#f7f8fa;font-size:11px;color:#3a434f">`
-      +`${esc(t.text)} <span style="color:var(--mut,#6b7684)">— p${t.page}</span></blockquote>`).join(""));
+      +`${esc(t.text)} <span style="color:var(--mut,#6b7684)">— `
+      +(t.from_release?"a news release":"p"+t.page)+`</span></blockquote>`).join(""));
   }
   if(R){
     const row=(lbl,v,ttl)=>`<tr title="${esc(ttl||"")}"><td style="padding:2px 0">${esc(lbl)}</td>`+

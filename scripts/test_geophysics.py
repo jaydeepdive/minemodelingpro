@@ -55,6 +55,48 @@ s = one("A program of rock geochemistry and 7.7 km of road-based induced polariz
         "surveying was completed.")
 check("km OF a survey counts as survey length", s and s[0].get("line_km") == 7.7, s)
 
+print("\n== which survey a length belongs to")
+# One sentence, two methods, two lengths. Attaching a length to whichever method
+# the paragraph opened with gave the gravity survey's coverage to the magnetic
+# one, so a length now belongs to the method named nearest to it — and the word
+# "of" decides whether that name comes before the number or after.
+s = one("Zonge completed induced polarization (IP) and magnetotelluric (MT) surveys. "
+        "A total of 6 lines of IP/Resistivity and MT acquisition totalling approximately "
+        "20 line-km of IP and about 24 line-km of MT coverage.")
+got = {x["method"]: x.get("line_km") for x in s}
+check("'20 line-km of IP and 24 line-km of MT' splits correctly",
+      got.get("IP/resistivity") == 20.0 and got.get("magnetotellurics") == 24.0, got)
+
+s = one("Western Pacific contracted 82 line-km of gravity and 20 line-km of ground "
+        "magnetic surveys in 2012.")
+check("the magnetic survey takes its own 20, not the gravity survey's 82",
+      [x.get("line_km") for x in s if x["method"] == "magnetics"] == [20.0], s)
+
+s = one("Work included ground magnetic surveying (108-line km) and VLF electromagnetics "
+        "over the grid.")
+got = {x["method"]: x.get("line_km") for x in s}
+check("a length in brackets belongs to the method in front of it",
+      got.get("magnetics") == 108.0 and got.get("electromagnetics") is None, got)
+
+s = one("Data collection for this survey was conducted at 50 m spacing with 500 m spaced "
+        "tie lines, for a total of 139 line-kilometres of aeromagnetic coverage.")
+check("'line-kilometres' is read like 'line-km'",
+      [x.get("line_km") for x in s if x["method"] == "magnetics"] == [139.0], s)
+
+s = one("The work also included line-cutting and surveying (28-line km), to facilitate "
+        "the completion of ground magnetic surveys.")
+check("the grid somebody cut is not survey coverage",
+      all(x.get("line_km") is None for x in s), s)
+
+s = one("Ground magnetic surveying was completed. A total of 140.2 km of grid lines "
+        "were cut across the property.")
+check("nor is the length of grid line cut", all(x.get("line_km") is None for x in s), s)
+
+s = one("Zonge completed an induced polarization survey over six lines. Transmitter "
+        "electrode positions were spaced at 300 m intervals along each line.")
+check("a release's electrode spacing is read like a report's flight-line spacing",
+      s and s[0].get("line_spacing_m") == 300.0, s)
+
 print("\n== the traps")
 s = one("ICP Inductively Coupled Plasma IP Induced Polarisation K Thousand K-Ar "
         "Potassium-Argon kg Kilogram m Metre")

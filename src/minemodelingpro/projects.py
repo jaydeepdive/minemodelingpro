@@ -884,6 +884,39 @@ def _materialise(p, news_holes, news_ivs, ov, styled_reports=(), consume=False):
                                    "url": nh["url"], "date": nh["date"]}
     sources.extend(sorted(rel_seen.values(), key=lambda s: s.get("date") or "", reverse=True))
 
+    # ---- the releases themselves, read rather than taken on trust
+    # The bank carries what one upstream parser found in each release. Where MMP
+    # has since read the release itself (release_pages), that reading fills in
+    # assays the parser missed on holes the project already has, and carries the
+    # release's prose — its geophysics, the body's stated size and attitude —
+    # which never had anywhere to go before. It adds no HOLE: a release that
+    # states no coordinates cannot place one, and guessing where it sits is how
+    # a model grows ground nobody drilled.
+    rel_read, rel_ivs_added = {}, 0
+    rids = sorted({news_holes[i]["rid"] for i in p["news"]})
+    if rids:
+        try:
+            from minemodelingpro import release_pages as RP
+            rel_read = RP.load_all(rids)
+        except Exception:
+            rel_read = {}
+    for rid, rec in rel_read.items():
+        for row in (rec.get("intervals") or []):
+            k = holeid.key(row.get("hole"))
+            if k not in holes:
+                continue                              # no collar, no place to put it
+            f, t, g = row.get("from"), row.get("to"), row.get("grade")
+            el = str(row.get("el") or row.get("element") or "").strip()
+            if f is None or t is None or g is None or not el:
+                continue
+            if (rid, holes[k]["id"]) in news_ivs or (rid, row.get("hole")) in news_ivs:
+                continue                              # the bank already has this hole
+            intervals.extend(Intervals.from_rows([{
+                "key": k, "hole": holes[k]["id"], "from": float(f), "to": float(t),
+                "el": el, "grade": float(g), "unit": row.get("unit"),
+                "src": "news:" + rid}]))
+            rel_ivs_added += 1
+
     # logged geology, from any source that has it (imported datasets today)
     lithology = []
     for r in p["reports"]:
@@ -975,6 +1008,7 @@ def _materialise(p, news_holes, news_ivs, ov, styled_reports=(), consume=False):
         ds_params.update(r.get("params") or {})
     rp, rp_from = _report_params(reports)
     geo, rock, rock_from = _report_geophysics(reports)
+    geo = _fold_release_geophysics(geo, rel_read)
     ext, ext_from = _report_extent(reports)
     near_style = _nearby_style(frame, rp.get("deposit_style"), styled_reports)
     return {"slug": slug, "name": name, "company": company, "region": region,
@@ -994,6 +1028,8 @@ def _materialise(p, news_holes, news_ivs, ov, styled_reports=(), consume=False):
             "commodities": [c for c in (str(r.get("commodity") or "").split("-")[0] for r in reports) if c],
             "report_density": rp.get("density"),
             "geophysics": geo,
+            "releases_read": len(rel_read) or None,
+            "release_intervals_added": rel_ivs_added or None,
             "rock": rock or None, "rock_from": rock_from or None,
             "updated": max(dates) if dates else None,
             "kinds": sorted({("report" if s["kind"].startswith("NI") else
@@ -1081,6 +1117,32 @@ def _report_extent(reports):
         if e and (e.get("strike") or e.get("dip") or e.get("depth")):
             return e, {"id": r.get("id"), "date": _recency(r) or None}
     return None, None
+
+
+def _fold_release_geophysics(geo, rel_read):
+    """Surveys and targets the releases describe, added to the reports'.
+
+    A release is where a company first says what its geophysics found, often
+    years before a technical report repeats it and sometimes instead of one.
+    Each entry keeps the release it came from, so a reader can tell a company's
+    own announcement from a qualified person's report."""
+    surveys = list((geo or {}).get("surveys") or [])
+    targets = list((geo or {}).get("targets") or [])
+    seen = {(s.get("method"), s.get("platform"), s.get("year"), s.get("line_km"))
+            for s in surveys}
+    for rid, rec in sorted((rel_read or {}).items()):
+        g = rec.get("geophysics") or {}
+        for sv in (g.get("surveys") or []):
+            key = (sv.get("method"), sv.get("platform"), sv.get("year"), sv.get("line_km"))
+            if key in seen:
+                continue
+            seen.add(key)
+            surveys.append({**sv, "release": rid, "from_release": True})
+        for tg in (g.get("targets") or [])[:6]:
+            targets.append({**tg, "release": rid, "from_release": True})
+    if not (surveys or targets):
+        return None
+    return {"surveys": surveys[:120], "targets": targets[:40]}
 
 
 def _report_geophysics(reports):
