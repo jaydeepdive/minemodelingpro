@@ -513,7 +513,7 @@ function drawLegend(){const E=M.elements[EL];$("lg-h").textContent=EL+" grade ("
   for(let k=E.bins.length-1;k>=0;k--){const d=document.createElement("div");const hi=k<E.bins.length-1?E.bins[k+1]:null;
     d.innerHTML=`<i style="background:${E.colors[k]}"></i>${hi==null?"≥ "+E.bins[k]:E.bins[k]+" – "+hi} ${esc(E.unit)}`;L.appendChild(d);}
   const d=document.createElement("div");d.innerHTML=`<i class="lo"></i>&lt; ${E.bins[0]} ${esc(E.unit)} · <span style="color:var(--mut)">grey = no reported intercept</span>`;L.appendChild(d);}
-function setEl(e){EL=e;store.set("el:"+M.slug,e);curZone=0;drawEls();buildIntervals();drawLegend();setupGT();buildBlocks();buildBody();drawData();drawZones();}
+function setEl(e){EL=e;store.set("el:"+M.slug,e);curZone=0;drawEls();buildIntervals();drawLegend();setupGT();buildBlocks();buildBody();drawData();drawZones();drawCard();}
 
 function setupGT(){const E=M.elements[EL];const cut=$("cut");
   if(!E.gt){$("gtsec").hidden=true;$("nogt").hidden=false;
@@ -898,7 +898,7 @@ function drawData(){
     $("holetbl").querySelectorAll("tr[data-h]").forEach(tr=>tr.onclick=()=>{
       const h=HO.find(x=>x.id===tr.dataset.h);if(!h)return;
       const mid=at(h,(h.depth||0)/2),L=Math.max(h.depth||100,120);
-      fly({x:mid.x,y:mid.y,z:mid.z,dist:L*1.8},600);toast("Pivoting on "+h.id);
+      fly({x:mid.x,y:mid.y,z:mid.z,dist:L*1.8},600);select(h);toast("Showing "+h.id);
       if(MOBILE)document.querySelectorAll(".panel").forEach(x=>x.classList.remove("open"));});};
   draw("");
   const f=$("hfilter");if(f)f.oninput=e=>draw(e.target.value.trim().toLowerCase());
@@ -977,7 +977,7 @@ function drawIvs(){
   box.querySelectorAll("tr[data-h]").forEach(tr=>tr.onclick=()=>{
     const h=HO.find(x=>x.id===tr.dataset.h);if(!h)return;
     const mid=at(h,(h.depth||0)/2),L=Math.max(h.depth||100,120);
-    fly({x:mid.x,y:mid.y,z:mid.z,dist:L*1.8},600);toast("Pivoting on "+h.id);});
+    fly({x:mid.x,y:mid.y,z:mid.z,dist:L*1.8},600);select(h);toast("Showing "+h.id);});
   const miss=shown.filter(x=>{const r=(cov[x.h.id]||{})[x.f+"|"+x.t];return r&&r.cov<r.len*0.5;}).length;
   ctl("ivnote").textContent = ivFilter==="all"
     ? "Every interval the model was given, including the ones below the cut-off. “Block” is the grade the block model holds at that interval's own position."
@@ -1095,7 +1095,7 @@ function setPivot(px,py){const p=pick3D(px,py);if(!p){toast("Nothing under the c
   fly({x:p.x,y:p.y,z:p.z,dist:nd},450);flashPivot(px,py);toast("Pivot set — orbit now turns around this point");}
 function flashPivot(px,py){const e=$("pivot");e.style.left=px+"px";e.style.top=(py+host.getBoundingClientRect().top)+"px";e.style.opacity=1;clearTimeout(e._t);e._t=setTimeout(()=>e.style.opacity=0,900);}
 
-const el=renderer.domElement;let drag=null,lx=0,ly=0,auto=false;
+const el=renderer.domElement;let drag=null,lx=0,ly=0,auto=false,dn=null;
 let navMode=store.get("nav","orbit");                     // left-drag behaviour: orbit | pan
 let spaceDown=false, vel={yaw:0,pitch:0,px:0,py:0}, grab=null;
 function orbit(dx,dy){yaw-=dx*0.0055;pitch+=dy*0.0055;place();}
@@ -1130,6 +1130,7 @@ function setNav(m){navMode=m;store.set("nav",m);
 el.addEventListener("pointerdown",e=>{if(e.pointerType==="touch")return;el.setPointerCapture(e.pointerId);
   const wantPan=(e.button===2||e.button===1||e.shiftKey||spaceDown)!==(navMode==="pan");
   drag=wantPan?"pan":"orbit";lx=e.clientX;ly=e.clientY;flyAnim=null;hideTip();vel={yaw:0,pitch:0,px:0,py:0};
+  dn=[e.clientX,e.clientY,performance.now()];
   if(drag==="pan"){const r=el.getBoundingClientRect();grabStart(e.clientX-r.left,e.clientY-r.top);el.style.cursor="grabbing";}});
 el.addEventListener("pointermove",e=>{if(e.pointerType==="touch")return;const r=el.getBoundingClientRect();
   if(!drag){hoverAt(e.clientX-r.left,e.clientY-r.top,e.clientX,e.clientY);return;}
@@ -1139,6 +1140,12 @@ el.addEventListener("pointermove",e=>{if(e.pointerType==="touch")return;const r=
        vel.px=target.x-bx;vel.py=target.y-by;vel.pz=target.z-bz;}});
 function endDrag(){drag=null;grab=null;el.style.cursor=navMode==="pan"?"grab":"default";}
 el.addEventListener("pointerup",endDrag);el.addEventListener("pointercancel",endDrag);
+/* a press that neither moved nor lingered is a click: select the hole under it */
+el.addEventListener("pointerup",e=>{if(e.pointerType==="touch"||!dn)return;
+  const moved=Math.hypot(e.clientX-dn[0],e.clientY-dn[1]),held=performance.now()-dn[2];dn=null;
+  if(moved>5||held>700||e.button!==0)return;
+  const r=el.getBoundingClientRect();clickAt(e.clientX-r.left,e.clientY-r.top);});
+el.addEventListener("pointercancel",()=>{dn=null;});
 el.addEventListener("wheel",e=>{e.preventDefault();const r=el.getBoundingClientRect();
   if(e.ctrlKey||e.metaKey||!e.shiftKey){const f=Math.exp(Math.sign(e.deltaY)*Math.min(Math.abs(e.deltaY),120)*0.0018);
     zoomAt(f,e.clientX-r.left,e.clientY-r.top);}
@@ -1183,7 +1190,8 @@ el.addEventListener("touchmove",e=>{e.preventDefault();const t=tinfo(e.touches);
 el.addEventListener("touchend",e=>{e.preventDefault();grab=null;if(e.touches.length){T0=tinfo(e.touches);return;}
   if(tapStart&&performance.now()-tapStart.t<280){const now=performance.now();
     if(now-lastTap<320){setPivot(tapStart.x,tapStart.y);lastTap=0;hideTip();}
-    else{lastTap=now;const r=el.getBoundingClientRect();hoverAt(tapStart.x,tapStart.y,tapStart.x+r.left,tapStart.y+r.top,true);}}
+    else{lastTap=now;const r=el.getBoundingClientRect();
+      if(!clickAt(tapStart.x,tapStart.y))hoverAt(tapStart.x,tapStart.y,tapStart.x+r.left,tapStart.y+r.top,true);}}
   T0=null;tapStart=null;},{passive:false});
 
 /* ---- glide: a flick keeps moving briefly, then settles ---- */
@@ -1206,7 +1214,7 @@ function glide(){if(drag)return;
   setNav(navMode);})();
 
 /* tooltip */
-const tip=$("tip");function hideTip(){tip.style.display="none";}
+const tip=$("tip");function hideTip(){tip.style.display="none";hovPending=null;}
 let hovPending=null;
 function hoverAt(px,py,cx,cy,touch){hovPending=[px,py,cx,cy,touch];}
 function doHover(){if(!hovPending)return;const[px,py,cx,cy,touch]=hovPending;hovPending=null;const E=M.elements[EL];
@@ -1223,7 +1231,7 @@ function doHover(){if(!hovPending)return;const[px,py,cx,cy,touch]=hovPending;hov
 {const dl=$("holelist");HO.slice(0,3000).forEach(h=>{const o=document.createElement("option");o.value=h.id;dl.appendChild(o);});
  const go=()=>{const q=$("find").value.trim().toLowerCase();if(!q)return;const h=HO.find(x=>x.id.toLowerCase()===q)||HO.find(x=>x.id.toLowerCase().includes(q));
    if(!h){toast("No hole matching “"+$("find").value+"”");return;}const mid=at(h,(h.depth||0)/2);const L=Math.max(h.depth||100,120);
-   fly({x:mid.x,y:mid.y,z:mid.z,dist:L*1.8},600);toast("Pivoting on "+h.id);if(MOBILE){document.querySelectorAll(".panel").forEach(x=>x.classList.remove("open"));}};
+   fly({x:mid.x,y:mid.y,z:mid.z,dist:L*1.8},600);select(h);toast("Showing "+h.id);if(MOBILE){document.querySelectorAll(".panel").forEach(x=>x.classList.remove("open"));}};
  $("find-go").onclick=go;$("find").addEventListener("keydown",e=>{if(e.key==="Enter")go();});}
 
 /* layers */
@@ -1249,8 +1257,225 @@ function drawLabels(){
   if(lblOn){const cands=[];for(const h of HO){const s=scr(at(h,0));if(s[2]>1||s[0]<0||s[1]<0||s[0]>W()||s[1]>Hh())continue;cands.push([Math.hypot(s[0]-W()/2,s[1]-Hh()/2),h,s]);}
     cands.sort((a,b)=>a[0]-b[0]);
     parts.push(...cands.slice(0,MOBILE?40:90).map(c=>`<span style="left:${c[2][0]}px;top:${c[2][1]}px">${esc(c[1].id)}</span>`));}
-  parts.push(...zoneLabels());
-  LBL.innerHTML=parts.join("");}
+  parts.push(...zoneLabels());parts.push(...selLabels());
+  LBL.innerHTML=parts.join("");placeSel();}
+
+/* ---------------- selected hole: highlight, data card, hole-to-hole distance ----
+   Click a hole and its assays come up in a card beside it; the hole itself gets an
+   orange centreline, a pin above the collar and a ring on the collar, so it stays
+   identifiable in a crowd and when something else flies the camera to it.
+   The markup and CSS are built here, not in model3d_viewer.html: every model page
+   bakes its own shell, so a template-only addition reaches just the pages rebuilt
+   afterwards, while the renderer is shared and a runtime build works everywhere. */
+let SEL=null,selMesh=null;
+let measFrom=null,measWant=false,MEAS=null,measMesh=null,measBtn=null;
+HO.forEach((h,i)=>{h.i=i;});
+
+(function(){const s=document.createElement("style");s.textContent=
+`#hcard{position:fixed;z-index:39;width:272px;max-width:calc(100vw - 16px);background:#fff;color:#1d2530;
+  border:1px solid #d6dbe2;border-radius:10px;box-shadow:0 10px 30px rgba(16,22,30,.20);display:none;
+  font-size:12px;line-height:1.35}
+#hcard.on{display:block}
+#hcard .hh{display:flex;align-items:flex-start;gap:6px;padding:8px 9px 6px;border-bottom:1px solid #eceff3}
+#hcard .hh b{font-size:13px;font-weight:700;word-break:break-all;flex:1}
+#hcard .x{cursor:pointer;border:0;background:#f1f3f6;border-radius:6px;width:20px;height:20px;
+  line-height:18px;font-size:14px;color:#5f6670;padding:0;flex:none}
+#hcard .hs{padding:5px 9px 6px;color:#5f6670;font-size:11px}
+#hcard .iw{max-height:38vh;overflow:auto;border-top:1px solid #eceff3}
+#hcard table{width:100%;border-collapse:collapse;font-size:11.5px;margin:0}
+#hcard th{position:sticky;top:0;background:#f7f8fa;color:#5f6670;font-weight:600;text-align:right;
+  padding:3px 9px;border-bottom:1px solid #eceff3}
+#hcard th:first-child{text-align:left}
+#hcard td{padding:2px 9px;text-align:right;border-bottom:1px solid #f4f6f8;font-variant-numeric:tabular-nums}
+#hcard td:first-child{text-align:left}
+#hcard .hf{padding:6px 9px;border-top:1px solid #eceff3;color:#5f6670;font-size:11px}
+#hcard .hb{display:flex;gap:6px;padding:7px 9px 9px}
+#hcard .hb button{flex:1;cursor:pointer;font:inherit;font-size:11px;padding:4px 6px;border:1px solid #d6dbe2;
+  background:#fff;border-radius:6px;color:#1d2530}
+#hcard .hb button:hover{background:#f4f6f8}
+#hpin{position:fixed;z-index:13;width:17px;height:17px;margin:-8.5px 0 0 -8.5px;border-radius:50%;
+  border:2.5px solid #ff7a18;background:rgba(255,122,24,.20);pointer-events:none;display:none}
+#mline{position:fixed;z-index:39;left:50%;transform:translateX(-50%);bottom:70px;display:none;
+  background:#fff;border:1px solid #d6dbe2;border-radius:9px;box-shadow:0 8px 24px rgba(16,22,30,.18);
+  padding:7px 10px;font-size:11.5px;color:#1d2530;max-width:calc(100vw - 24px)}
+#mline.on{display:flex;gap:10px;align-items:center}
+#mline button{cursor:pointer;font:inherit;font-size:11px;border:1px solid #d6dbe2;background:#fff;
+  border-radius:6px;padding:3px 7px;flex:none}`;
+ document.head.appendChild(s);})();
+
+const HC=document.createElement("div");HC.id="hcard";document.body.appendChild(HC);
+const HPIN=document.createElement("div");HPIN.id="hpin";document.body.appendChild(HPIN);
+const MLINE=document.createElement("div");MLINE.id="mline";document.body.appendChild(MLINE);
+
+function fmtM(m){if(m==null)return"–";const a=Math.abs(m);
+  return a>=1000?(m/1000).toFixed(2)+" km":a>=100?m.toFixed(0)+" m":m.toFixed(1)+" m";}
+/* every interval the model holds for one hole in one element, deepening */
+function holeIv(h,el){const E=M.elements[el];if(!E||!E.segments)return[];const out=[];
+  for(const s of E.segments)if(s[0]===h.i)out.push({f:+s[1],t:+s[2],g:+s[3]});
+  out.sort((a,b)=>a.f-b.f);return out;}
+
+function select(h){SEL=h||null;hideTip();drawSel();drawCard();drawLabels();}
+function clearSel(){SEL=null;drawSel();drawCard();drawLabels();}
+function centre(h){const mid=at(h,(h.depth||0)/2),L=Math.max(h.depth||100,120);
+  fly({x:mid.x,y:mid.y,z:mid.z,dist:L*1.8},600);}
+
+function clickAt(px,py){
+  const iv=pickInterval(px,py,MOBILE?18:10);
+  const hit=iv?{h:iv.v.h}:pickHole(px,py,MOBILE?16:9);
+  if(!hit){if(measWant){measWant=false;measFrom=null;syncMeas();toast("Measuring off");}else clearSel();return false;}
+  select(hit.h);
+  if(measWant){
+    if(!measFrom||measFrom===hit.h){measFrom=hit.h;syncMeas();toast("Now click the hole to measure to");}
+    else{setMeas(measFrom,hit.h);measFrom=null;measWant=false;}}
+  return true;}
+
+/* ---- distance between two holes ----
+   Collar to collar is the number people quote; the one that decides whether two
+   holes actually test the same ground is how close the traces come at depth, so
+   both are reported, with where on each hole the closest approach falls. */
+function holePath(h,n){const d=h.depth||0,k=Math.max(2,Math.min(n,Math.round(d/2)+2)),out=[];
+  for(let i=0;i<k;i++)out.push(at(h,d*i/(k-1)));return out;}
+function nearestApproach(a,b){const A=holePath(a,300),B=holePath(b,300);
+  let bd=Infinity,bi=0,bj=0;
+  for(let i=0;i<A.length;i++)for(let j=0;j<B.length;j++){const d=A[i].distanceToSquared(B[j]);
+    if(d<bd){bd=d;bi=i;bj=j;}}
+  return{d:Math.sqrt(bd),pa:A[bi],pb:B[bj],
+         ma:(a.depth||0)*bi/(A.length-1),mb:(b.depth||0)*bj/(B.length-1)};}
+function setMeas(a,b){const dx=b.x-a.x,dy=b.y-a.y,dz=b.z-a.z;
+  const hz=Math.hypot(dx,dy),d3=Math.hypot(hz,dz),az=(Math.atan2(dx,dy)*180/Math.PI+360)%360;
+  const c=nearestApproach(a,b);
+  MEAS={a,b,collar:d3,horiz:hz,vert:dz,az,d:c.d,pa:c.pa,pb:c.pb,ma:c.ma,mb:c.mb};
+  drawMeas();drawMline();syncMeas();drawLabels();
+  toast(a.id+" → "+b.id+": "+fmtM(d3)+" collar to collar");}
+function clearMeas(){MEAS=null;measFrom=null;measWant=false;drawMeas();drawMline();syncMeas();drawLabels();}
+function syncMeas(){if(measBtn&&measBtn.classList)measBtn.classList.toggle("on",!!(measWant||MEAS));}
+
+function drawMline(){
+  if(!MEAS){MLINE.className="";MLINE.innerHTML="";return;}
+  const m=MEAS,up=m.vert>=0?"higher":"lower";
+  /* the closest approach is only worth a clause when the holes converge: two
+     parallel holes come no closer at depth than their collars already are */
+  const conv=m.d<m.collar-Math.max(1,m.collar*0.02);
+  MLINE.innerHTML=`<span><b>${esc(m.a.id)} → ${esc(m.b.id)}</b> · collars ${fmtM(m.collar)} apart`+
+    ` (${fmtM(m.horiz)} horizontal, second collar ${fmtM(Math.abs(m.vert))} ${up}, bearing ${m.az.toFixed(0)}°)`+
+    (conv?` · the traces close to ${fmtM(m.d)}, at ${m.ma.toFixed(0)} m down ${esc(m.a.id)}`+
+      ` and ${m.mb.toFixed(0)} m down ${esc(m.b.id)}`
+      :` · they never come closer than that`)+`</span><button id="m-clr">Clear</button>`;
+  MLINE.className="on";
+  const b=MLINE.querySelector("#m-clr");if(b)b.onclick=clearMeas;}
+
+function drawCard(){
+  if(!SEL){HC.className="";HC.innerHTML="";HPIN.style.display="none";return;}
+  const h=SEL,E=M.elements[EL],unit=E.unit,iv=holeIv(h,EL);
+  const len=iv.reduce((s,x)=>s+(x.t-x.f),0);
+  const wavg=len?iv.reduce((s,x)=>s+x.g*(x.t-x.f),0)/len:null;
+  const best=iv.length?iv.reduce((p,x)=>x.g>p.g?x:p):null;
+  const rows=iv.map(x=>{const k=binIdx(E,x.g);
+    return `<tr><td>${x.f.toFixed(1)}</td><td>${x.t.toFixed(1)}</td><td>${(x.t-x.f).toFixed(2)}</td>`+
+      `<td style="color:${k<0?"#5f6670":E.colors[k]};font-weight:700">${fmtG(x.g,unit)}</td></tr>`;}).join("");
+  const others=ELS.filter(e=>e!==EL).map(e=>{const n=holeIv(h,e);if(!n.length)return null;
+    const bb=n.reduce((p,x)=>x.g>p.g?x:p);
+    return esc(e)+" "+n.length+"× (best "+fmtG(bb.g,M.elements[e].unit)+")";}).filter(Boolean);
+  HC.innerHTML=
+    `<div class="hh"><b>${esc(h.id)}</b><button class="x" title="Close">×</button></div>`+
+    `<div class="hs">${h.depth?h.depth.toFixed(0)+" m":"depth n/a"} · az ${h.az}° · dip ${h.dip}°`+
+    ` · collar ${h.z.toFixed(0)} masl<br>`+
+    `${h.p&&h.p.length>=8?"path from the downhole survey":"drawn straight on collar azimuth and dip"}</div>`+
+    (iv.length
+      ?`<div class="iw"><table><thead><tr><th>From</th><th>To</th><th>Len</th><th>${esc(EL)}</th></tr></thead>`+
+       `<tbody>${rows}</tbody></table></div>`+
+       `<div class="hf">${iv.length} ${esc(EL)} interval${iv.length>1?"s":""} · ${len.toFixed(1)} m assayed`+
+       ` · ${fmtG(wavg,unit)} over that length · best ${fmtG(best.g,unit)} at ${best.f.toFixed(1)} m</div>`
+      :`<div class="hf">No ${esc(EL)} intervals reported on this hole.</div>`)+
+    (others.length?`<div class="hf">Also assayed: ${others.join(" · ")}</div>`:"")+
+    `<div class="hb"><button id="hc-m">Measure to…</button><button id="hc-c">Centre view</button></div>`;
+  HC.className="on";
+  const bx=HC.querySelector(".x");if(bx)bx.onclick=clearSel;
+  const bm=HC.querySelector("#hc-m");
+  if(bm)bm.onclick=()=>{measFrom=h;measWant=true;syncMeas();toast("Click the hole to measure to");};
+  const bc=HC.querySelector("#hc-c");if(bc)bc.onclick=()=>centre(h);
+  placeSel();}
+
+/* Where to hang the ring, the chip and the card. The collar when it is in view —
+   but a default view often frames the drilling at depth with every collar off
+   screen, and a marker you cannot see marks nothing, so fall back to the first
+   point down the hole that is actually on screen. */
+function selAnchor(h){
+  if(!h)return null;const d=h.depth||0,n=16;let any=null;
+  for(let i=0;i<=n;i++){const s=scr(at(h,d*i/n));if(s[2]>1)continue;
+    if(s[0]>=0&&s[1]>=0&&s[0]<=W()&&s[1]<=Hh())return{s,m:d*i/n,on:true};
+    if(!any)any={s,m:d*i/n,on:false};}
+  return any;}
+
+/* the card and the ring follow the hole as the camera moves */
+function placeSel(){
+  if(!SEL){HPIN.style.display="none";return;}
+  const r=host.getBoundingClientRect(),A=selAnchor(SEL);
+  const vis=!!(A&&A.on);
+  HPIN.style.display=vis?"block":"none";
+  if(vis){HPIN.style.left=(A.s[0]+r.left)+"px";HPIN.style.top=(A.s[1]+r.top)+"px";}
+  const s=A?A.s:[0,0,2];
+  if(HC.className!=="on")return;
+  const w=HC.offsetWidth||272,ch=HC.offsetHeight||220;
+  let L,T;
+  if(vis){L=s[0]+r.left+24;T=s[1]+r.top-20;
+    if(L+w>innerWidth-8)L=s[0]+r.left-w-24;}                 // flip to the other side
+  else{L=innerWidth-w-12;T=r.top+12;}                         // off screen: park it
+  HC.style.left=Math.max(8,Math.min(L,innerWidth-w-8))+"px";
+  HC.style.top=Math.max(r.top+6,Math.min(T,innerHeight-ch-8))+"px";}
+
+function drawSel(){
+  if(selMesh){scene.remove(selMesh);selMesh.geometry.dispose();selMesh=null;}
+  if(!SEL)return;
+  const segs=[],c=new THREE.Color(0xff7a18),d=SEL.depth||0;
+  /* a thin centreline, not a fat one: it has to read through terrain and blocks
+     without burying the grade colours it is drawn over */
+  if(d>0)holeSegs(SEL,0,d).forEach(([a,b])=>segs.push({a:at(SEL,a),b:at(SEL,b),w:2.0,c}));
+  const p0=at(SEL,0);
+  segs.push({a:p0,b:p0.clone().add(new THREE.Vector3(0,Math.max(R0*0.015,6),0)),w:3.0,c});
+  selMesh=fatSegments(segs);selMesh.material.depthTest=false;selMesh.material.depthWrite=false;
+  selMesh.renderOrder=997;scene.add(selMesh);}
+
+function drawMeas(){
+  if(measMesh){scene.remove(measMesh);measMesh.geometry.dispose();measMesh=null;}
+  if(!MEAS)return;
+  const segs=[],red=new THREE.Color(0xd71920),blu=new THREE.Color(0x1f6feb);
+  const A=at(MEAS.a,0),B=at(MEAS.b,0),nd=30;
+  for(let i=0;i<nd;i++){const t=i/nd;
+    segs.push({a:A.clone().lerp(B,t),b:A.clone().lerp(B,t+0.62/nd),w:2.4,c:red});}
+  if(MEAS.pa&&MEAS.pb&&MEAS.d<MEAS.collar-Math.max(1,MEAS.collar*0.02))
+    segs.push({a:MEAS.pa,b:MEAS.pb,w:3.2,c:blu});
+  measMesh=fatSegments(segs);measMesh.material.depthTest=false;measMesh.material.depthWrite=false;
+  measMesh.renderOrder=996;scene.add(measMesh);}
+
+function selLabels(){const out=[];
+  /* a chip whose anchor is off screen is clipped to a coloured sliver at the
+     edge, which reads as a glitch — leave it out */
+  const chip=(x,y,bg,t)=>{if(!(x>=40&&y>=10&&x<=W()-40&&y<=Hh()-10))return;
+    out.push(`<span style="left:${x.toFixed(0)}px;top:${y.toFixed(0)}px;background:${bg};`+
+      `color:#fff;font-weight:700;border:0">${t}</span>`);};
+  if(SEL){const A=selAnchor(SEL);if(A&&A.on)chip(A.s[0],A.s[1]-24,"#ff7a18",esc(SEL.id));}
+  if(MEAS){const A=at(MEAS.a,0),B=at(MEAS.b,0),m=scr(A.clone().lerp(B,0.5));
+    if(m[2]<=1)chip(m[0],m[1],"#d71920",fmtM(MEAS.collar));
+    if(MEAS.pa&&MEAS.d<MEAS.collar-Math.max(1,MEAS.collar*0.02)){
+      const q=scr(MEAS.pa.clone().lerp(MEAS.pb,0.5));
+      if(q[2]<=1)chip(q[0],q[1],"#1f6feb",fmtM(MEAS.d)+" closest");}}
+  return out;}
+
+/* measure button in the navigation cluster, so the feature is findable */
+{const n=document.getElementById("nav");
+ if(n){const b=document.createElement("button");b.className="nb sq";b.id="n-meas";
+   b.title="Measure from one hole to another";b.innerHTML="↔";
+   b.onclick=()=>{if(MEAS||measWant){clearMeas();toast("Measuring off");return;}
+     measWant=true;measFrom=SEL||null;syncMeas();
+     toast(measFrom?"Click the hole to measure to":"Click the first hole");};
+   n.appendChild(b);measBtn=b;}}
+
+addEventListener("keydown",e=>{
+  if(/input|textarea|select/i.test((e.target.tagName||"")))return;
+  if(e.key==="Escape"){if(MEAS||measWant)clearMeas();else if(SEL)clearSel();return;}
+  if(e.key.toLowerCase()==="m"){measWant=true;measFrom=SEL||null;syncMeas();
+    toast(measFrom?"Click the hole to measure to":"Click the first hole");}});
 
 /* scale bar + compass */
 function niceNum(x){const p=Math.pow(10,Math.floor(Math.log10(x)));const f=x/p;return(f<1.5?1:f<3.5?2:f<7.5?5:10)*p;}
