@@ -958,5 +958,20 @@
   "size_kb": 18715,
   "collected": "2026-10-26T13:02:41Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_CCMC-2026-10-26-technical-report-ni-43-101-english-1ece.pdf"
+ },
+ {
+  "file": "ceo_PGA-2026-10-26-technical-report-ni-43-101-english-76c4.pdf",
+  "filing_ref": "PGA-2026-10-26-technical-report-ni-43-101-english-76c4.pdf",
+  "company": "PGA",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-10-26",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/PGA-2026-10-26-technical-report-ni-43-101-english-76c4.pdf",
+  "source": "ceo.ca",
+  "size_kb": 3656,
+  "collected": "2026-10-26T19:18:51Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_PGA-2026-10-26-technical-report-ni-43-101-english-76c4.pdf"
  }
 ]
