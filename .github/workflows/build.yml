@@ -45,6 +45,17 @@ jobs:
         run: |
           PYTHONPATH=src python -m minemodelingpro.shards rebuild || true
           PYTHONPATH=src python -m minemodelingpro.export || true
+      # The drill bank keeps one parser's output per release, and 722 of its
+      # releases produced nothing at all. The bank does keep each release's
+      # URL, so MMP reads the release itself: assays the parser missed, the
+      # body's stated size and attitude, and the geophysics — which a technical
+      # report often does not carry at all. Hole-free releases first: those are
+      # the ones with the most to recover. Runs here rather than with the report
+      # ingest because this is the job that has the drill bank.
+      - name: Read the news releases themselves
+        run: |
+          PYTHONPATH=src python -m minemodelingpro.release_pages \
+            --max-seconds 600 --empty-first || true
       - name: DEM tile cache (terrain)
         uses: actions/cache@v4
         with:
@@ -60,7 +71,7 @@ jobs:
           git config user.name "mmp-bot"
           git config user.email "actions@github.com"
           git pull --no-edit -X ours origin main || true
-          git add -A site data/keep/mmp data/keep/mmp_collars_sample.csv 2>/dev/null || true
+          git add -A site data/keep/mmp data/keep/mmp_collars_sample.csv data/keep/mmp_release_text 2>/dev/null || true
           git commit -m "MMP daily build $(date -u +%Y-%m-%d) [skip ci]" || echo "no changes"
           git push || echo "nothing to push"
       - uses: actions/configure-pages@v5

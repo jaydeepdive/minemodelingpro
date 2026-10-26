@@ -14,6 +14,7 @@ data/keep/mmp_reextract.sqlite-journal
 data/keep/drillbank.sqlite
 
 # SEDAR PDFs + scraper profile: retained in the report-archive release, not git
+data/keep/mmp_release_raw/
 data/keep/sedar_pdfs/
 data/keep/sedar_profile/
 data/keep/sedar_batch.log

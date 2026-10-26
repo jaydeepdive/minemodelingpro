@@ -25,9 +25,10 @@ What comes back per release:
     the company's own statement of where it thinks the deposit continues; and
   * anything the release says about the rock itself.
 
-Nothing here fetches on import. ``run()`` does the fetching, once per release,
-and everything it reads is cached on disk, so a reader bump re-reads from the
-cache rather than from the web.
+Nothing here fetches on import. ``run()`` does the fetching, once per release.
+The readings are committed; the fetched pages are not, because they are large
+and reproducible — so a reader bump re-reads from the cache on a machine that
+still has it, and asks again on one that does not.
 """
 import os
 import re
