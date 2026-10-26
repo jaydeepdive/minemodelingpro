@@ -620,7 +620,7 @@ function drawLegend(){const E=M.elements[EL];$("lg-h").textContent=EL+" grade ("
   for(let k=E.bins.length-1;k>=0;k--){const d=document.createElement("div");const hi=k<E.bins.length-1?E.bins[k+1]:null;
     d.innerHTML=`<i style="background:${E.colors[k]}"></i>${hi==null?"≥ "+E.bins[k]:E.bins[k]+" – "+hi} ${esc(E.unit)}`;L.appendChild(d);}
   const d=document.createElement("div");d.innerHTML=`<i class="lo"></i>&lt; ${E.bins[0]} ${esc(E.unit)} · <span style="color:var(--mut)">grey = no reported intercept</span>`;L.appendChild(d);}
-function setEl(e){EL=e;store.set("el:"+M.slug,e);curZone=0;drawEls();buildIntervals();drawLegend();setupGT();buildBlocks();buildBody();drawData();drawZones();drawCard();}
+function setEl(e){EL=e;store.set("el:"+M.slug,e);curZone=0;drawEls();buildIntervals();drawLegend();setupGT();buildBlocks();buildBody();drawData();drawZones();drawCard();buildTargets();}
 
 function setupGT(){const E=M.elements[EL];const cut=$("cut");
   if(!E.gt){$("gtsec").hidden=true;$("nogt").hidden=false;
@@ -1382,7 +1382,7 @@ function drawLabels(){
   if(lblOn){const cands=[];for(const h of HO){const s=scr(at(h,0));if(s[2]>1||s[0]<0||s[1]<0||s[0]>W()||s[1]>Hh())continue;cands.push([Math.hypot(s[0]-W()/2,s[1]-Hh()/2),h,s]);}
     cands.sort((a,b)=>a[0]-b[0]);
     parts.push(...cands.slice(0,MOBILE?40:90).map(c=>`<span style="left:${c[2][0]}px;top:${c[2][1]}px">${esc(c[1].id)}</span>`));}
-  parts.push(...zoneLabels());parts.push(...selLabels());
+  parts.push(...zoneLabels());parts.push(...selLabels());parts.push(...targetLabels());
   LBL.innerHTML=parts.join("");placeSel();}
 
 /* ---------------- selected hole: highlight, data card, hole-to-hole distance ----
@@ -1686,8 +1686,92 @@ function drawGround(){
   box.innerHTML=H.join("");
   host2.appendChild(box);}
 
+/* ---- where the next hole goes -------------------------------------------
+   The block model answers what is here. The rim of it — where the body is
+   still carrying grade when the drilling stops — answers where to drill, and
+   that is computed at build time from the same alpha criterion that stops the
+   wireframe. Drawn as a marker on the ground it points at, and listed with the
+   hole each one steps out from, so a reader can check it against the drilling
+   rather than take it on trust. */
+let tgtMesh=null,TG=null;
+function buildTargets(){
+  if(tgtMesh){scene.remove(tgtMesh);tgtMesh.geometry.dispose();tgtMesh.material.dispose();tgtMesh=null;}
+  TG=null;
+  const T=(M.elements[EL]||{}).targets;
+  if(!T||!T.rows||!T.rows.length)return;
+  TG=T;
+  const segs=[],c=new THREE.Color(0xd71920),up=Math.max(R0*0.02,12);
+  for(const t of T.rows){
+    const p=V(t.x,t.y,t.z);
+    segs.push({a:p,b:p.clone().add(new THREE.Vector3(0,up,0)),w:3.0,c});
+    // a cross on the spot itself, so it reads as a target and not as a hole
+    const r=up*0.25;
+    segs.push({a:p.clone().add(new THREE.Vector3(-r,0,0)),b:p.clone().add(new THREE.Vector3(r,0,0)),w:2.4,c});
+    segs.push({a:p.clone().add(new THREE.Vector3(0,0,-r)),b:p.clone().add(new THREE.Vector3(0,0,r)),w:2.4,c});
+    if(t.collar){const q=V(t.collar.x,t.collar.y,t.collar.z);
+      segs.push({a:q,b:p,w:1.2,c});}        // the hole that would cut it
+  }
+  tgtMesh=fatSegments(segs);
+  tgtMesh.material.depthTest=false;tgtMesh.material.depthWrite=false;
+  tgtMesh.renderOrder=995;
+  tgtMesh.visible=store.get("targets",true);
+  scene.add(tgtMesh);
+  drawTargetList();}
+
+function targetLabels(){
+  if(!TG||!tgtMesh||!tgtMesh.visible)return[];
+  const out=[];
+  TG.rows.forEach((t,i)=>{
+    if(out.length>=(MOBILE?4:10))return;
+    const s=scr(V(t.x,t.y,t.z));
+    if(s[2]>1||s[0]<40||s[1]<16||s[0]>W()-40||s[1]>Hh()-16)return;
+    out.push(`<span style="left:${s[0].toFixed(0)}px;top:${(s[1]-26).toFixed(0)}px;`
+      +`background:#d71920;color:#fff;font-weight:700;border:0">T${i+1}</span>`);});
+  return out;}
+
+function drawTargetList(){
+  const host2=$("pModel");if(!host2||!host2.appendChild)return;
+  let box=$("tgtbox");
+  if(!TG){if(box)box.remove();return;}
+  if(!box){box=document.createElement("div");box.id="tgtbox";
+    box.style.cssText="margin-top:14px;border-top:1px solid var(--line,#e6e9ee);padding-top:10px";
+    host2.appendChild(box);}
+  const unit=M.elements[EL].unit;
+  box.innerHTML=
+    `<h3 style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut,#6b7684);margin:0 0 2px">`
+    +`Where the next hole goes</h3>`
+    +`<label class="tg" style="margin:2px 0 6px"><input type="checkbox" id="L-targets"`
+    +(tgtMesh&&tgtMesh.visible?" checked":"")+`>Show on the model`
+    +`<small>${TG.rows.length} step-out${TG.rows.length>1?"s":""}</small></label>`
+    +`<table style="width:100%;border-collapse:collapse;font-size:11.5px">`
+    +`<thead><tr><th style="text-align:left;padding:2px 0;color:var(--mut,#6b7684)">From</th>`
+    +`<th style="text-align:right;padding:2px 0;color:var(--mut,#6b7684)">It cut</th>`
+    +`<th style="text-align:right;padding:2px 0;color:var(--mut,#6b7684)">Hole</th></tr></thead><tbody>`
+    +TG.rows.map((t,i)=>`<tr data-t="${i}" style="cursor:pointer">`
+      +`<td style="padding:2px 0"><b style="color:#d71920">T${i+1}</b> ${esc(t.from_hole)}</td>`
+      +`<td style="padding:2px 0;text-align:right">${t.width_m} m @ ${fmtG(t.grade,unit)}</td>`
+      +`<td style="padding:2px 0;text-align:right;color:var(--mut,#6b7684)">`
+      +(t.collar?`${Math.round(t.collar.depth_m)} m · `
+        +(Math.abs(t.collar.dip)>85?"vertical"
+          :`${Math.round(t.collar.az)}°/${Math.round(t.collar.dip)}°`):"–")
+      +`</td></tr>`).join("")
+    +`</tbody></table>`
+    +`<p class="note" style="margin:6px 0 0">Each is one ${TG.step_m} m step-out — the `
+    +`drill spacing this pattern already uses — from a hole that cut mineralisation at `
+    +`the edge of the model, onto ground no existing hole passes through. `
+    +(TG.oriented?"Holes are angled to the attitude the report states."
+      :"Holes are angled square to the body's own plane; no report states its attitude.")
+    +` Nothing here is an estimate: the model stops where the drilling stops, and so does this.</p>`;
+  ctl("L-targets").onchange=e=>{if(tgtMesh)tgtMesh.visible=e.target.checked;
+    store.set("targets",e.target.checked);drawLabels();};
+  box.querySelectorAll("tr[data-t]").forEach(tr=>tr.onclick=()=>{
+    const t=TG.rows[+tr.dataset.t];if(!t)return;
+    const p=V(t.x,t.y,t.z);
+    fly({x:p.x,y:p.y,z:p.z,dist:Math.max(TG.step_m*6,200)},600);
+    toast("T"+(+tr.dataset.t+1)+" — "+t.width_m+" m at "+fmtG(t.grade,unit)+" in "+t.from_hole);});}
+
 /* ---------------- start ---------------- */
-drawEls();buildIntervals();drawLegend();drawSources();drawGround();buildBlocks();buildBody();setupGT();drawData();drawBreakdown();drawSize();drawZones();
+drawEls();buildIntervals();drawLegend();drawSources();drawGround();buildTargets();buildBlocks();buildBody();setupGT();drawData();drawBreakdown();drawSize();drawZones();
 {const ib=$("intbox");if(ib)ib.innerHTML=integrity();
  const mb=$("metbox");if(mb)mb.innerHTML=metallurgy();}
 resize();F=framing();view("3d",0);

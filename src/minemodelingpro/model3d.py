@@ -78,11 +78,13 @@ _VIEWER_TMPL = os.path.join(_HERE, "model3d_viewer.html")
 #      the collar elevations instead of being drawn against a flat datum
 # 13 — mineralisation belonging to no named zone is drawn as the separate bodies
 #      it is, instead of as one sheet triangulated across the whole property
+# 15 — the model says where the next hole goes: the rim of the body, stepped out
+#      one drill spacing onto ground no existing hole passes through
 # 14 — the wireframe's own geometry is carried to the viewer: the triangulated
 #      surface at the thickness each intercept shows, instead of that shape
 #      sampled to points and snapped to the block lattice, which flattened every
 #      pinch and swell a vein has into the same row of boxes
-MODEL_VERSION = 14
+MODEL_VERSION = 15
 # the most domain cells to send to a browser; beyond this the envelope is drawn
 # on a coarser lattice, which is a picture of the same shape
 BODY_MAX_CELLS = 120_000
@@ -1900,6 +1902,41 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                 except Exception as exc:                 # geometry is a bonus layer
                     if verbose:
                         print("    surface skipped: %s" % exc)
+            # ---- where the next hole goes
+            # The block model answers what is here; the question a company asks
+            # is where to drill, and the answer is at the EDGE of the model,
+            # where the body is still carrying grade when the drilling stops.
+            # The alpha criterion already found that edge — it is what stops the
+            # wireframe — so this reads its rim and steps one drill spacing out
+            # from the intercepts on it, onto ground no existing hole passes
+            # through. Nothing is extrapolated: the estimate does not go past
+            # the edge, which is what the edge means.
+            try:
+                from minemodelingpro import targets as TGT
+                tcent, thole, twid, tgr = DOM.intercepts_g(
+                    pts, g, hid, max(bins[0], 1e-9))
+                if len(tcent) >= 4:
+                    ridx, rdir = DOM.boundary_of(tcent, rot_d, reach)
+                    tg_rows = TGT.propose(
+                        tcent, tgr, twid, thole, ridx, rdir,
+                        TGT.hole_samples(H), step=float(max(spacing, 20.0)),
+                        dip=PS.get("dip"), dip_direction=PS.get("dip_direction"),
+                        normal=(rot_d[2] if rot_d is not None else None),
+                        surface=TGT.surface_from_collars(H),
+                        max_targets=12)
+                    if tg_rows:
+                        el_out["targets"] = {
+                            "rows": tg_rows,
+                            "step_m": round(float(max(spacing, 20.0)), 1),
+                            "rim": int(len(ridx)),
+                            "oriented": bool(PS.get("dip") is not None
+                                             and PS.get("dip_direction") is not None),
+                            "with_collar": sum(1 for r in tg_rows if r.get("collar")),
+                        }
+            except Exception as exc:                 # targeting is a bonus layer
+                if verbose:
+                    print("    targets skipped: %s" % exc)
+            PH.mark("targets")
             PH.mark("wireframe")
             el_out["gt"] = gt
             if PS.get("default_cutoff") is not None:

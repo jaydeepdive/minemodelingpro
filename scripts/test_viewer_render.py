@@ -182,6 +182,23 @@ async function interact(p) {
     return {before, drawn: !!b, txt: b ? b.textContent.replace(/\s+/g, " ") : ""};
   });
 
+  /* where the next hole goes. Injected for the same reason the geophysics is:
+     a page built before this carries no targets, and the renderer has to cope
+     both with having them and with not. */
+  out.targets = await p.evaluate(() => {
+    const before = !!document.getElementById("tgtbox");
+    M.elements[EL].targets = {step_m: 50, rim: 12, oriented: false, with_collar: 1,
+      rows: [{x: HO[0].x + 50, y: HO[0].y, z: HO[0].z - 100, from_hole: HO[0].id,
+              grade: 5.1, width_m: 12, gram_metres: 61.2, step_m: 50, bearing: 90,
+              nearest_drilling_m: 44,
+              collar: {x: HO[0].x + 50, y: HO[0].y, z: HO[0].z, az: 90, dip: -60,
+                       depth_m: 115}}]};
+    buildTargets();
+    const b = document.getElementById("tgtbox");
+    return {before, drawn: !!b, mesh: !!tgtMesh,
+            txt: b ? b.textContent.replace(/\s+/g, " ") : ""};
+  });
+
   await p.keyboard.press("Escape");
   await p.keyboard.press("Escape");
   await p.waitForTimeout(150);
@@ -225,7 +242,8 @@ srv.listen(8766, async () => {
                  gotSurf: !!surfMesh,
                  surfTris: surfMesh ? surfMesh.geometry.getIndex().count / 3 : 0,
                  payloadTris: E.surface ? E.surface.tris : 0,
-                 styleSwitch: !!document.getElementById('body-style') };
+                 styleSwitch: !!document.getElementById('body-style'),
+                 hasBodyToggle: !!document.getElementById('L-body') };
       });
       const act = await interact(p);
       out.push({ name, ...st, act, errors: errs });
@@ -262,8 +280,14 @@ for res in results:
         check("%s draws the deposit's geometry, not only its cells" % nm,
               res.get("gotSurf") and res.get("surfTris", 0) >= res.get("payloadTris", 0),
               (res.get("gotSurf"), res.get("surfTris"), res.get("payloadTris")))
-        check("%s offers the shape/cells switch" % nm, res.get("styleSwitch"),
-              res.get("styleSwitch"))
+        # a shell with no envelope toggle at all gets no switch, which is the
+        # rule the stripped page exists to prove
+        if res.get("hasBodyToggle"):
+            check("%s offers the shape/cells switch" % nm, res.get("styleSwitch"),
+                  res.get("styleSwitch"))
+        else:
+            check("%s adds no switch to a shell with no envelope toggle" % nm,
+                  not res.get("styleSwitch"), res.get("styleSwitch"))
 
     a = res.get("act") or {}
     if not a.get("holes"):
@@ -299,6 +323,17 @@ for res in results:
               and "2.43" in gr.get("txt", ""), gr.get("txt", "")[:160])
         check("%s marks an untested anomaly as the report's words, not a measurement" % nm,
               "untested" in gr.get("txt", "").lower(), gr.get("txt", "")[:160])
+
+    tg = a.get("targets") or {}
+    if tg:
+        check("%s shows no targets when the page carries none" % nm,
+              tg.get("before") is False, tg.get("before"))
+        check("%s lists where the next hole goes when it has them" % nm,
+              tg.get("drawn") and tg.get("mesh")
+              and "step-out" in tg.get("txt", ""), tg.get("txt", "")[:160])
+        check("%s says a target is not an estimate" % nm,
+              "Nothing here is an estimate" in tg.get("txt", ""),
+              tg.get("txt", "")[-200:])
 
     check("%s clears the selection and the measurement on Escape" % nm,
           a.get("cleared") == "null|none", a.get("cleared"))

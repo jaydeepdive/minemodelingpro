@@ -296,6 +296,88 @@ def _merge(parts):
     return np.concatenate(V), np.concatenate(F)
 
 
+def intercepts_g(pts, g, hid, threshold):
+    """Mineralised intercepts with their thickness AND their grade.
+
+    `intercepts_w` answers how thick the body is where each hole cut it. Asking
+    where to drill next needs the other half of that: a boundary intercept of
+    thirty metres at five grams is a target and one of one metre at a third of a
+    gram is not, and nothing downstream can tell them apart from thickness
+    alone. Returns (centroids, holes, widths, grades) — the grade being the
+    length-weighted average over the intercept, which is what a release would
+    quote for it."""
+    pts = np.asarray(pts, float)
+    g = np.asarray(g, float)
+    hid = np.asarray(hid)
+    keep = g >= threshold
+    if not keep.any():
+        return (np.zeros((0, 3)), np.zeros(0, int), np.zeros(0), np.zeros(0))
+    P, G, H = pts[keep], g[keep], hid[keep]
+    out_p, out_h, out_w, out_g = [], [], [], []
+    for h in np.unique(H):
+        sel = H == h
+        q, qg = P[sel], G[sel]
+        order = np.argsort(q[:, 2])[::-1]
+        q, qg = q[order], qg[order]
+        if len(q) == 1:
+            out_p.append(q[0]); out_h.append(h); out_w.append(2.0); out_g.append(float(qg[0]))
+            continue
+        gap = np.r_[0.0, np.linalg.norm(np.diff(q, axis=0), axis=1)]
+        for part in np.split(np.arange(len(q)), np.where(gap > 12.0)[0]):
+            if not len(part):
+                continue
+            seg, sg = q[part], qg[part]
+            out_p.append(seg.mean(0))
+            out_h.append(h)
+            out_w.append(max(float(np.linalg.norm(seg[-1] - seg[0])), 2.0))
+            out_g.append(float(sg.mean()))
+    return (np.asarray(out_p, float), np.asarray(out_h),
+            np.asarray(out_w, float), np.asarray(out_g, float))
+
+
+def boundary_of(cent, rot, reach):
+    """The rim of the sheet: vertices on its edge, with the way out of it.
+
+    The alpha triangulation that draws the body already stops where the
+    drilling stops, so its boundary IS the edge of what has been tested. Each
+    boundary vertex comes back with a unit direction, in the body's own plane,
+    pointing away from the body — which is the direction the next hole goes."""
+    R = rot if rot is not None else np.eye(3)
+    Q = cent @ R.T
+    faces = _alpha_faces(Q[:, :2], reach)
+    if not len(faces):
+        return np.zeros(0, int), np.zeros((0, 3))
+    e = np.vstack([faces[:, [0, 1]], faces[:, [1, 2]], faces[:, [2, 0]]])
+    key = np.sort(e, axis=1)
+    _u, inv, cnt = np.unique(key, axis=0, return_inverse=True, return_counts=True)
+    rim = e[cnt[inv.ravel()] == 1]
+    if not len(rim):
+        return np.zeros(0, int), np.zeros((0, 3))
+    uv = Q[:, :2]
+    inside = uv.mean(0)
+    acc = {}
+    for a, b in rim:
+        d = uv[b] - uv[a]
+        n = np.array([d[1], -d[0]], float)        # normal to the rim edge
+        ln = np.linalg.norm(n)
+        if ln < 1e-9:
+            continue
+        n /= ln
+        mid = (uv[a] + uv[b]) / 2.0
+        if np.dot(n, mid - inside) < 0:           # point it away from the body
+            n = -n
+        for v in (a, b):
+            acc.setdefault(int(v), []).append(n)
+    idx = sorted(acc)
+    dirs = []
+    for v in idx:
+        n = np.mean(acc[v], axis=0)
+        ln = np.linalg.norm(n)
+        n = n / ln if ln > 1e-9 else np.array([1.0, 0.0])
+        dirs.append(R.T @ np.array([n[0], n[1], 0.0]))   # back into world axes
+    return np.asarray(idx, int), np.asarray(dirs, float)
+
+
 def _alpha_faces(uv, reach):
     """Delaunay triangles small enough to be real ground between holes.
 
