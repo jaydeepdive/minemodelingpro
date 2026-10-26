@@ -928,5 +928,35 @@
   "size_kb": 6664,
   "collected": "2026-10-25T16:17:10Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_MCI-2026-10-25-technical-report-ni-43-101-english-485a.pdf"
+ },
+ {
+  "file": "ceo_CCMC-2026-10-26-technical-report-ni-43-101-english-d120.pdf",
+  "filing_ref": "CCMC-2026-10-26-technical-report-ni-43-101-english-d120.pdf",
+  "company": "CCMC",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-10-26",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/CCMC-2026-10-26-technical-report-ni-43-101-english-d120.pdf",
+  "source": "ceo.ca",
+  "size_kb": 15954,
+  "collected": "2026-10-26T13:02:33Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_CCMC-2026-10-26-technical-report-ni-43-101-english-d120.pdf"
+ },
+ {
+  "file": "ceo_CCMC-2026-10-26-technical-report-ni-43-101-english-1ece.pdf",
+  "filing_ref": "CCMC-2026-10-26-technical-report-ni-43-101-english-1ece.pdf",
+  "company": "CCMC",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-10-26",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/CCMC-2026-10-26-technical-report-ni-43-101-english-1ece.pdf",
+  "source": "ceo.ca",
+  "size_kb": 18715,
+  "collected": "2026-10-26T13:02:41Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_CCMC-2026-10-26-technical-report-ni-43-101-english-1ece.pdf"
  }
 ]
