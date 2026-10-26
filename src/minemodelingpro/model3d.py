@@ -1819,6 +1819,7 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                         "from": (dom_info or {}).get("from"),
                         "bodies": (dom_info or {}).get("bodies"),
                         "unzoned": (dom_info or {}).get("unzoned"),
+                        "no_surface": (dom_info or {}).get("no_surface"),
                         "reach_m": round(float(reach), 1) if dom_pts is not None else None,
                     }
             PH.mark("wireframe")
