@@ -569,7 +569,8 @@ def project_model(pid: str, request: Request, u=Depends(require)):
 @app.get("/api/projects/{pid}/data")
 def project_data(pid: str, request: Request, u=Depends(require),
                  table: str = "assays", q: str = "", el: str = "",
-                 limit: int = 200, offset: int = 0):
+                 limit: int = 200, offset: int = 0,
+                 group: str = "", hole: str = "", wide: int = 0):
     """The client's own drill data, as rows, from the project page.
 
     **Never materialises more than the page asked for.** The first version built
@@ -589,6 +590,10 @@ def project_data(pid: str, request: Request, u=Depends(require),
     ql = (q or "").strip().lower()
     problems = []
     try:
+        if group == "hole":
+            return _read_holes(keys, table, ql, el, limit, offset, problems)
+        if hole:
+            return _read_one_hole(keys, table, hole, el, bool(wide), problems)
         return _read_project_data(keys, table, ql, el, limit, offset, problems)
     except HTTPException:
         raise
@@ -629,6 +634,193 @@ def _dataset(key):
     while len(_DATA_CACHE) > max(1, _DATA_CACHE_CAP):
         _DATA_CACHE.pop(next(iter(_DATA_CACHE)))
     return val
+
+
+# One row per hole, so a 144,774-row assay table opens as the 600 holes it
+# actually is. Cached per (stored file, element) because it is a few passes over
+# every row and the answer cannot change — the parse writes a new key.
+_HOLE_CACHE = {}
+
+
+def _hole_summary(key, el):
+    """Per-hole aggregates over the interval columns, vectorised.
+
+    Never builds a row: the lesson from the first version of this endpoint, which
+    made a Row per interval to count them and died on a real file."""
+    import numpy as np
+    ck = (key, el or "")
+    hit = _HOLE_CACHE.get(ck)
+    if hit is not None:
+        return hit
+    t, _c, _s = _dataset(key)
+    idx = t.index()
+    if el:
+        sel = idx.get(el)
+        sel = sel if sel is not None else np.zeros(0, np.int64)
+    else:
+        sel = np.arange(len(t.hole_i), dtype=np.int64)
+    nH = len(t.holes)
+    hi = t.hole_i[sel]
+    frm, to, gr, eli = t.frm[sel], t.to[sel], t.grade[sel], t.el_i[sel]
+    samples = np.bincount(hi, minlength=nH)
+    f_lo = np.full(nH, np.inf); np.minimum.at(f_lo, hi, frm)
+    t_hi = np.full(nH, -np.inf); np.maximum.at(t_hi, hi, to)
+    # assayed metres: distinct intervals only, or a 19-element package counts
+    # every metre of core nineteen times
+    ok = np.isfinite(frm) & np.isfinite(to) & (to > frm)
+    if ok.any():
+        trip = np.unique(np.c_[hi[ok], frm[ok], to[ok]], axis=0)
+        length = np.bincount(trip[:, 0].astype(np.int64),
+                             weights=trip[:, 2] - trip[:, 1], minlength=nH)
+    else:
+        length = np.zeros(nH)
+    pair = np.unique(np.c_[hi, eli], axis=0) if len(hi) else np.zeros((0, 2), np.int64)
+    nels = np.bincount(pair[:, 0].astype(np.int64), minlength=nH)
+    gmax = gmean = None
+    if el and len(sel):
+        g_ok = np.isfinite(gr)
+        gmax = np.full(nH, -np.inf); np.maximum.at(gmax, hi[g_ok], gr[g_ok])
+        gsum = np.bincount(hi[g_ok], weights=gr[g_ok], minlength=nH)
+        gcnt = np.bincount(hi[g_ok], minlength=nH)
+        gmean = np.divide(gsum, np.maximum(gcnt, 1))
+    val = {"samples": samples, "from": f_lo, "to": t_hi, "length": length,
+           "nels": nels, "max": gmax, "mean": gmean, "holes": list(t.holes),
+           "unit": (t.units[t.unit_i[sel[0]]] if el and len(sel) else "")}
+    _HOLE_CACHE[ck] = val
+    while len(_HOLE_CACHE) > 8:
+        _HOLE_CACHE.pop(next(iter(_HOLE_CACHE)))
+    return val
+
+
+def _f(v):
+    import numpy as np
+    return None if v is None or not np.isfinite(v) else round(float(v), 4)
+
+
+def _read_holes(keys, table, ql, el, limit, offset, problems):
+    """The hole list: one line per drill hole, which is how a person reads a
+    drill database. The intervals come when a hole is opened."""
+    import numpy as np
+    rows, total, elements = [], 0, set()
+    if el:
+        cols = ["hole", "samples", "from (m)", "to (m)", "assayed (m)",
+                "max " + el, "mean " + el]
+    else:
+        cols = ["hole", "samples", "elements", "from (m)", "to (m)", "assayed (m)"]
+    if table == "surveys":
+        cols = ["hole", "stations", "from (m)", "to (m)"]
+    for k in keys:
+        try:
+            t, collars, surveys = _dataset(k)
+        except Exception as e:
+            problems.append("could not read a stored file: %s" % str(e)[:120])
+            continue
+        if table == "surveys":
+            byh = {}
+            for v in surveys:
+                h = str(v.get("hole") or v.get("id") or "")
+                md = v.get("md", v.get("depth"))
+                a = byh.setdefault(h, [0, None, None])
+                a[0] += 1
+                if isinstance(md, (int, float)):
+                    a[1] = md if a[1] is None else min(a[1], md)
+                    a[2] = md if a[2] is None else max(a[2], md)
+            names = sorted(h for h in byh if not ql or ql in h.lower())
+            total += len(names)
+            for h in names[offset:offset + limit]:
+                a = byh[h]
+                rows.append([h, a[0], a[1], a[2]])
+            continue
+        S = _hole_summary(k, el)
+        elements |= set(t.index())
+        order = [i for i, h in enumerate(S["holes"])
+                 if S["samples"][i] > 0 and (not ql or ql in str(h or "").lower())]
+        order.sort(key=lambda i: str(S["holes"][i] or ""))
+        total += len(order)
+        for i in order[offset:offset + limit]:
+            base = [S["holes"][i] or "", int(S["samples"][i])]
+            if el:
+                base += [_f(S["from"][i]), _f(S["to"][i]), _f(S["length"][i]),
+                         _f(S["max"][i] if S["max"] is not None else None),
+                         _f(S["mean"][i] if S["mean"] is not None else None)]
+            else:
+                base += [int(S["nels"][i]), _f(S["from"][i]), _f(S["to"][i]),
+                         _f(S["length"][i])]
+            rows.append(base)
+    if problems and not rows and not total:
+        raise HTTPException(500, "; ".join(problems[:3]))
+    return {"table": table, "group": "hole", "columns": cols, "rows": rows,
+            "total": total, "offset": offset, "limit": limit,
+            "elements": sorted(e for e in elements if e), "problems": problems or None}
+
+
+def _read_one_hole(keys, table, hole, el, wide, problems):
+    """One hole's intervals. Wide by default: a metre of core assayed for
+    nineteen elements is ONE interval with nineteen numbers on it, not nineteen
+    rows — which is what made the flat table unreadable."""
+    import numpy as np
+    hl = str(hole).strip().lower()
+    for k in keys:
+        try:
+            t, collars, surveys = _dataset(k)
+        except Exception as e:
+            problems.append("could not read a stored file: %s" % str(e)[:120])
+            continue
+        if table == "surveys":
+            src = [v for v in surveys
+                   if str(v.get("hole") or v.get("id") or "").lower() == hl]
+            if not src:
+                continue
+            return {"table": table, "hole": hole,
+                    "columns": ["depth (m)", "azimuth", "dip"],
+                    "rows": [[v.get("md", v.get("depth")), v.get("az"), v.get("dip")]
+                             for v in src],
+                    "total": len(src), "problems": problems or None}
+        hits = [i for i, h in enumerate(t.holes) if str(h or "").lower() == hl]
+        if not hits:
+            continue
+        sel = np.flatnonzero(np.isin(t.hole_i, np.array(hits, np.int64)))
+        if el:
+            idx = t.index().get(el)
+            if idx is not None:
+                sel = sel[np.isin(sel, idx)]
+        if not len(sel):
+            continue
+        frm, to = t.frm[sel], t.to[sel]
+        if not wide:
+            out = []
+            for j in sel[np.lexsort((t.el_i[sel], t.frm[sel]))]:
+                j = int(j)
+                a, b = _f(t.frm[j]), _f(t.to[j])
+                out.append([a, b, (round(b - a, 2) if a is not None and b is not None else None),
+                            t.els[t.el_i[j]] or "", _f(t.grade[j]),
+                            t.units[t.unit_i[j]] or ""])
+            return {"table": table, "hole": hole,
+                    "columns": ["from (m)", "to (m)", "length (m)", "element", "grade", "unit"],
+                    "rows": out, "total": len(out), "problems": problems or None}
+        # one row per interval, one column per element
+        iv, inv = np.unique(np.c_[frm, to], axis=0, return_inverse=True)
+        els_here = sorted({t.els[int(e)] or "" for e in np.unique(t.el_i[sel])})
+        unit = {e: "" for e in els_here}
+        pos = {e: n for n, e in enumerate(els_here)}
+        grid = [[None] * len(els_here) for _ in range(len(iv))]
+        for n, j in enumerate(sel):
+            e = t.els[t.el_i[int(j)]] or ""
+            grid[int(inv[n])][pos[e]] = _f(t.grade[int(j)])
+            if not unit[e]:
+                unit[e] = t.units[t.unit_i[int(j)]] or ""
+        cols = ["from (m)", "to (m)", "length (m)"] + [
+            (e + (" (" + unit[e] + ")" if unit[e] else "")) for e in els_here]
+        out = []
+        for n in range(len(iv)):
+            a, b = _f(iv[n][0]), _f(iv[n][1])
+            out.append([a, b, (round(b - a, 2) if a is not None and b is not None else None)]
+                       + grid[n])
+        out.sort(key=lambda r: (r[0] is None, r[0] or 0))
+        return {"table": table, "hole": hole, "wide": True, "columns": cols,
+                "rows": out, "total": len(out), "elements": els_here,
+                "problems": problems or None}
+    raise HTTPException(404, "no rows for hole %s" % hole)
 
 
 def _read_project_data(keys, table, ql, el, limit, offset, problems):

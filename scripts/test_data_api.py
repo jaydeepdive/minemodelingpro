@@ -210,5 +210,103 @@ check("filters work on the stored shape",
 check("collars read from the stored shape",
       c.get(sb + "?table=collars").json()["total"] == 1)
 
+# --- ONE LINE PER DRILL HOLE.
+# Jordan, reading 144,774 rows of 1 m assays 200 at a time: "this is impossible
+# to read. i need one line per drill hole, with the ability to expand the data on
+# each hole." A metre of core assayed for twenty elements is ONE interval with
+# twenty numbers on it, not twenty rows.
+print("\none line per drill hole, expandable")
+
+r = c.get(base + "?table=assays&group=hole").json()
+check("the hole list has one row per hole", r.get("total") == 2 and len(r["rows"]) == 2, r)
+check("it says it is grouped", r.get("group") == "hole", r.get("group"))
+byh = {x[0]: x for x in r["rows"]}
+check("holes come back in order", [x[0] for x in r["rows"]] == ["DDH-001", "DDH-002"],
+      [x[0] for x in r["rows"]])
+check("the sample count is the hole's own", byh["DDH-001"][1] == 2 and byh["DDH-002"][1] == 2,
+      {k: v[1] for k, v in byh.items()})
+check("a hole assayed for two elements reports two", byh["DDH-002"][2] == 2, byh["DDH-002"])
+check("the depth range is the hole's own",
+      byh["DDH-001"][3] == 10.0 and byh["DDH-001"][4] == 12.0, byh["DDH-001"])
+# DDH-002 has ONE 1.5 m interval assayed for two elements: 1.5 m of core, not 3
+check("assayed metres count core, not analyses", abs(byh["DDH-002"][5] - 1.5) < 1e-9,
+      byh["DDH-002"])
+check("and a hole with two separate metres reports two",
+      abs(byh["DDH-001"][5] - 2.0) < 1e-9, byh["DDH-001"])
+
+r = c.get(base + "?table=assays&group=hole&el=Ag").json()
+check("picking an element adds its best and mean",
+      r["columns"][-2:] == ["max Ag", "mean Ag"], r["columns"])
+a1 = [x for x in r["rows"] if x[0] == "DDH-001"][0]
+check("max is the hole's highest grade", a1[5] == 240.0, a1)
+check("mean is the hole's average", abs(a1[6] - 180.0) < 1e-9, a1)
+check("a hole without that element is left out of the list",
+      all(x[0] != "NOPE" for x in r["rows"]))
+check("the hole filter still applies when grouped",
+      c.get(base + "?table=assays&group=hole&q=ddh-002").json()["total"] == 1)
+
+# --- expanding one hole: wide, one row per interval
+r = c.get(base + "?table=assays&hole=DDH-002&wide=1").json()
+check("expanding a hole returns its intervals", r.get("total") == 1, r)
+check("it is wide: one row for an interval assayed twice", len(r["rows"]) == 1, r["rows"])
+check("each element is a column with its unit",
+      r["columns"] == ["from (m)", "to (m)", "length (m)", "Ag (g/t)", "Co (%)"],
+      r["columns"])
+check("both grades sit on the one row", r["rows"][0][3] == 15.0 and r["rows"][0][4] == 0.21,
+      r["rows"][0])
+check("the length is the interval's", r["rows"][0][2] == 1.5, r["rows"][0])
+
+r = c.get(base + "?table=assays&hole=ddh-001&wide=1").json()
+check("the hole name is matched case-insensitively", r.get("total") == 2, r)
+check("intervals come back in depth order",
+      [x[0] for x in r["rows"]] == [10.0, 11.0], [x[0] for x in r["rows"]])
+check("an element the hole lacks is still a column or absent, never a wrong number",
+      all(len(x) == len(r["columns"]) for x in r["rows"]))
+check("a hole that does not exist says so",
+      c.get(base + "?table=assays&hole=NOT-A-HOLE&wide=1").status_code == 404)
+
+r = c.get(base + "?table=assays&hole=DDH-002&wide=1&el=Co").json()
+check("expanding with an element filter shows only it",
+      r["columns"] == ["from (m)", "to (m)", "length (m)", "Co (%)"], r["columns"])
+
+# surveys group and expand the same way
+r = c.get(base + "?table=surveys&group=hole").json()
+check("surveys group by hole too", r["total"] == 1 and r["rows"][0][1] == 2, r)
+r = c.get(base + "?table=surveys&hole=DDH-001").json()
+check("a hole's survey stations expand", r["total"] == 2 and r["rows"][1][0] == 50.0, r)
+
+# --- and at a client's scale, where the point of this is
+t0 = time.time()
+r = c.get(bb + "?table=assays&group=hole&limit=200")
+dt = time.time() - t0
+check("the hole list does not 500 on 720,000 rows", r.status_code == 200, r.status_code)
+j = r.json() if r.status_code == 200 else {}
+check("it is 600 holes, not 720,000 rows", j.get("total") == N_HOLES, j.get("total"))
+check("the first page is quick", dt < 25, "%.1fs" % dt)
+check("a cached second call is immediate",
+      (lambda t: t < 3)(
+          (lambda s: (c.get(bb + "?table=assays&group=hole&limit=200"), time.time() - s)[1])
+          (time.time())))
+row = j["rows"][0]
+check("each hole reports its own sample count", row[1] == N_EL * PER, row)
+check("assayed metres are core metres, not analyses", abs(row[5] - PER) < 1e-6,
+      (row[5], PER))
+check("and all 20 elements are counted once", row[2] == N_EL, row)
+
+t0 = time.time()
+r = c.get(bb + "?table=assays&hole=LM-26-005&wide=1").json()
+check("expanding one hole out of 600 is quick", time.time() - t0 < 10,
+      "%.1fs" % (time.time() - t0))
+check("it is PER rows, not PER x 20", r["total"] == PER, r["total"])
+check("with a column for every element", len(r["columns"]) == 3 + N_EL,
+      len(r["columns"]))
+
+check("the stored column shape groups too",
+      c.get(sb + "?table=assays&group=hole").json()["total"] == 1)
+sw = c.get(sb + "?table=assays&hole=SM-001&wide=1").json()
+check("and expands on the stored shape", sw["total"] == 2, sw)
+check("a missing grade in a wide row is empty, not shifted",
+      sw["rows"][0][3] == 310.0 and sw["rows"][0][4] is None, sw["rows"][0])
+
 print("\n%d passed, %d failed" % (len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

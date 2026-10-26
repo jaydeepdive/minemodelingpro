@@ -75,10 +75,14 @@
        inside the 3D viewer, which is not where someone checking an import is. -->
   <div class="card" style="margin-top:18px" id="browsecard">
     <h3>Your data</h3>
-    <p class="note">Every interval <b>as the model used it</b> — hole, from, to, and the length between them.</p>
+    <p class="note">One line per drill hole — click a hole to open its intervals,
+      with a column per element rather than a row each.</p>
     <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
       <div class="seg" id="dtabs">
         <button class="on" data-t="assays">Assays</button><button data-t="collars">Collars</button><button data-t="surveys">Surveys</button>
+      </div>
+      <div class="seg" id="dview">
+        <button class="on" data-v="hole">By hole</button><button data-v="flat">Every row</button>
       </div>
       <select id="d-el" style="min-width:120px"><option value="">All elements</option></select>
       <input id="dq" placeholder="Filter by hole…" style="flex:1;min-width:150px">
@@ -183,7 +187,9 @@ paint(project, null);
    intervals" is answerable here instead of taken on trust. Every row shows from,
    to, and the length between them. The raw parse (every assayed element,
    including the ones not estimated) is behind the "raw uploaded file" toggle. */
-const D = { table: "assays", el: "", q: "", offset: 0, limit: 200, src: "model" };
+const D = { table: "assays", el: "", q: "", offset: 0, limit: 200, src: "model",
+            view: "hole" };          // one line per drill hole by default
+const OPEN = new Set();              // holes the reader has expanded
 let MODEL = null, ROWS = null, ROWKEY = "";
 const dnum = v => v === null || v === undefined || v === ""
   ? "" : (typeof v === "number" ? (Number.isInteger(v) ? v : +v.toFixed(4)) : v);
@@ -225,6 +231,130 @@ function rowsFromModel(m) {
   ROWS = rows; ROWKEY = key; return rows;
 }
 
+/* ---- one line per drill hole -------------------------------------------
+   144,774 rows of one-metre assays, one row per element, 200 at a time is not
+   a table anybody can read. A drill database is read hole by hole: the hole
+   list is the index, and a hole's intervals are a column per element — a metre
+   of core assayed for twenty elements is ONE interval with twenty numbers on
+   it, not twenty rows. */
+function holeCols(el) {
+  return el ? ["hole", "samples", "from (m)", "to (m)", "assayed (m)", "max " + el, "mean " + el]
+            : ["hole", "samples", "elements", "from (m)", "to (m)", "assayed (m)"];
+}
+
+function groupByHole(rows, el) {
+  // rows are [hole, from, to, length, element, grade, unit]
+  const by = new Map();
+  for (const r of rows) {
+    const h = String(r[0] ?? "");
+    let a = by.get(h);
+    if (!a) { a = { n: 0, lo: null, hi: null, els: new Set(), iv: new Set(),
+                    max: null, sum: 0, cnt: 0 }; by.set(h, a); }
+    a.n++;
+    if (typeof r[1] === "number") a.lo = a.lo === null ? r[1] : Math.min(a.lo, r[1]);
+    if (typeof r[2] === "number") a.hi = a.hi === null ? r[2] : Math.max(a.hi, r[2]);
+    if (r[4]) a.els.add(r[4]);
+    // assayed metres are CORE metres: one interval assayed for twenty elements
+    // is 1 m of core, not 20
+    if (typeof r[1] === "number" && typeof r[2] === "number" && r[2] > r[1])
+      a.iv.add(r[1] + "/" + r[2]);
+    if (typeof r[5] === "number") {
+      a.max = a.max === null ? r[5] : Math.max(a.max, r[5]);
+      a.sum += r[5]; a.cnt++;
+    }
+  }
+  const out = [];
+  for (const [h, a] of by) {
+    let m = 0;
+    for (const k of a.iv) { const p = k.split("/"); m += (+p[1]) - (+p[0]); }
+    out.push(el ? [h, a.n, a.lo, a.hi, +m.toFixed(2), a.max, a.cnt ? a.sum / a.cnt : null]
+                : [h, a.n, a.els.size, a.lo, a.hi, +m.toFixed(2)]);
+  }
+  out.sort((x, y) => String(x[0]).localeCompare(String(y[0]), undefined, { numeric: true }));
+  return out;
+}
+
+function pivot(rows) {
+  // [hole, from, to, length, element, grade, unit] -> one row per interval,
+  // a column per element
+  const els = [], unit = {}, byIv = new Map();
+  for (const r of rows) {
+    const e = r[4] || "";
+    if (e && !unit.hasOwnProperty(e)) { unit[e] = r[6] || ""; els.push(e); }
+    const k = r[1] + "/" + r[2];
+    let a = byIv.get(k);
+    if (!a) { a = { from: r[1], to: r[2], g: {} }; byIv.set(k, a); }
+    a.g[e] = r[5];
+  }
+  els.sort();
+  const cols = ["from (m)", "to (m)", "length (m)"]
+    .concat(els.map(e => e + (unit[e] ? " (" + unit[e] + ")" : "")));
+  const out = [...byIv.values()]
+    .sort((a, b) => (a.from ?? 0) - (b.from ?? 0))
+    .map(a => [a.from, a.to,
+               (typeof a.from === "number" && typeof a.to === "number")
+                 ? +(a.to - a.from).toFixed(2) : null]
+              .concat(els.map(e => a.g.hasOwnProperty(e) ? a.g[e] : null)));
+  return { columns: cols, rows: out };
+}
+
+function renderHoleTable(cols, rows) {
+  cols = Array.isArray(cols) ? cols : [];
+  rows = Array.isArray(rows) ? rows : [];
+  if (!cols.length || !rows.length)
+    return `<p class="muted small" style="padding:10px">No holes.</p>`;
+  return `<table><thead><tr><th style="width:20px"></th>` +
+    cols.map(c => `<th>${esc(c)}</th>`).join("") + `</tr></thead><tbody>` +
+    rows.map(r => {
+      const h = String(r[0] ?? ""), on = OPEN.has(h);
+      return `<tr class="hrow" data-h="${esc(h)}" style="cursor:pointer">` +
+        `<td style="color:#8a94a3">${on ? "&#9662;" : "&#9656;"}</td>` +
+        r.map((v, i) => `<td${i ? ' class="n"' : ""}>${esc(String(dnum(v)))}</td>`).join("") +
+        `</tr>` +
+        (on ? `<tr class="hexp" data-for="${esc(h)}"><td></td>` +
+              `<td colspan="${cols.length}" style="padding:0 0 10px 0">` +
+              `<div class="scrollx" data-slot="${esc(h)}">` +
+              `<p class="muted small" style="padding:8px">Opening ${esc(h)}…</p>` +
+              `</div></td></tr>` : "");
+    }).join("") + `</tbody></table>`;
+}
+
+async function fillHole(h) {
+  const slot = document.querySelector(`[data-slot="${CSS.escape(h)}"]`);
+  if (!slot) return;
+  try {
+    let cols, rows;
+    if (D.src === "model" && D.table === "assays") {
+      const all = rowsFromModel(await getModel()) || [];
+      const mine = all.filter(r => String(r[0]) === h);
+      ({ columns: cols, rows } = pivot(mine));
+    } else {
+      const qs = new URLSearchParams({ table: D.table, hole: h, el: D.el, wide: "1" });
+      const r = await api(`/projects/${project.id}/data?${qs}`);
+      cols = r.columns; rows = r.rows;
+    }
+    slot.innerHTML = (rows && rows.length)
+      ? renderTable(cols, rows) +
+        `<p class="muted small" style="padding:6px 2px 0">${rows.length.toLocaleString()}`
+        + ` interval${rows.length === 1 ? "" : "s"} in ${esc(h)}.</p>`
+      : `<p class="muted small" style="padding:8px">No intervals on this hole.</p>`;
+  } catch (e) {
+    slot.innerHTML = `<p class="muted small" style="padding:8px">Could not open `
+      + `${esc(h)} <span class="muted">(${esc(String(e.message || e))})</span>.</p>`;
+  }
+}
+
+function wireHoleRows() {
+  document.querySelectorAll("#dtable tr.hrow").forEach(tr => {
+    tr.onclick = () => {
+      const h = tr.dataset.h;
+      if (OPEN.has(h)) OPEN.delete(h); else OPEN.add(h);
+      loadData();
+    };
+  });
+  OPEN.forEach(h => { if (document.querySelector(`[data-slot="${CSS.escape(h)}"]`)) fillHole(h); });
+}
+
 function renderTable(cols, rows) {
   // Every one of these has been undefined at least once today. A table that
   // cannot render is not worth a thrown exception the reader has to decode.
@@ -258,13 +388,27 @@ async function loadData() {
   const box = $("#dtable");
   box.innerHTML = `<p class="muted small" style="padding:10px">Loading…</p>`;
   try {
+    const grouped = D.view === "hole" && D.table !== "collars";
     if (D.src === "raw") {
       const qs = new URLSearchParams({ table: D.table, q: D.q, el: D.el,
                                        limit: D.limit, offset: D.offset });
+      if (grouped) qs.set("group", "hole");
       const r = (await api(`/projects/${project.id}/data?${qs}`)) || {};
-      box.innerHTML = renderTable(r.columns, r.rows);
-      $("#dcount").textContent = `${(r.total || 0).toLocaleString()} rows · raw uploaded file`;
-      paging(r.total || 0); return;
+      // the element list has to come from the response here: a project whose
+      // model is not written yet never reaches the model path that fills it,
+      // so "All elements" was the only choice it ever offered
+      const rsel = $("#d-el");
+      if (rsel && rsel.options.length <= 1 && (r.elements || []).length)
+        rsel.innerHTML = `<option value="">All elements</option>` +
+          r.elements.map(e => `<option>${esc(e)}</option>`).join("");
+      box.innerHTML = grouped ? renderHoleTable(r.columns, r.rows)
+                              : renderTable(r.columns, r.rows);
+      $("#dcount").textContent = grouped
+        ? `${(r.total || 0).toLocaleString()} holes · raw uploaded file`
+        : `${(r.total || 0).toLocaleString()} rows · raw uploaded file`;
+      paging(r.total || 0);
+      if (grouped) wireHoleRows();
+      return;
     }
     const m = await getModel();
     if (!m || typeof m !== "object" || !m.elements) {
@@ -278,13 +422,23 @@ async function loadData() {
       dsel.innerHTML = `<option value="">All elements</option>` +
         els.map(e => `<option>${esc(e)}</option>`).join("");
     }
-    const cols = COLS[D.table] || [];
     const all = rowsFromModel(m) || [];
     const ql = D.q.toLowerCase();
-    const sel = (ql ? all.filter(r => String(r && r[0]).toLowerCase().includes(ql)) : all) || [];
-    $("#dcount").textContent = `${sel.length.toLocaleString()} rows · as the model used them`;
-    box.innerHTML = renderTable(cols, sel.slice(D.offset, D.offset + D.limit));
-    paging(sel.length, sel, cols);
+    const flat = (ql ? all.filter(r => String(r && r[0]).toLowerCase().includes(ql)) : all) || [];
+    if (grouped) {
+      const hrows = groupByHole(flat, D.el);
+      const hcols = holeCols(D.el);
+      $("#dcount").textContent = `${hrows.length.toLocaleString()} holes · `
+        + `${flat.length.toLocaleString()} rows as the model used them`;
+      box.innerHTML = renderHoleTable(hcols, hrows.slice(D.offset, D.offset + D.limit));
+      paging(hrows.length, hrows, hcols);
+      wireHoleRows();
+      return;
+    }
+    const cols = COLS[D.table] || [];
+    $("#dcount").textContent = `${flat.length.toLocaleString()} rows · as the model used them`;
+    box.innerHTML = renderTable(cols, flat.slice(D.offset, D.offset + D.limit));
+    paging(flat.length, flat, cols);
   } catch (e) {
     if (D.src === "model") {          // one automatic retry against the raw parse
       D.src = "raw"; D.offset = 0; ROWS = null;
@@ -301,9 +455,21 @@ async function loadData() {
 
 document.querySelectorAll("#dtabs button").forEach(b => b.onclick = () => {
   document.querySelectorAll("#dtabs button").forEach(x => x.classList.toggle("on", x === b));
-  D.table = b.dataset.t; D.offset = 0; ROWS = null; loadData();
+  D.table = b.dataset.t; D.offset = 0; ROWS = null; OPEN.clear();
+  // a collar table is already one line per hole; there is nothing to group
+  const vw = document.getElementById("dview");
+  if (vw) vw.style.display = D.table === "collars" ? "none" : "";
+  loadData();
+});
+document.querySelectorAll("#dview button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("#dview button").forEach(x => x.classList.toggle("on", x === b));
+  D.view = b.dataset.v; D.offset = 0; OPEN.clear(); loadData();
 });
 $("#d-el").onchange = e => { D.el = e.target.value; D.offset = 0; ROWS = null; loadData(); };
+$("#dtable").addEventListener("click", e => {
+  // a click inside an opened hole's own table must not fold the hole shut
+  if (e.target.closest(".hexp")) e.stopPropagation();
+}, true);
 let dT = null;
 $("#dq").oninput = e => { clearTimeout(dT); const v = e.target.value.trim();
   dT = setTimeout(() => { D.q = v; D.offset = 0; loadData(); }, 200); };
@@ -312,7 +478,7 @@ $("#dnext").onclick = () => { D.offset += D.limit; loadData(); };
 {
   const b = $("#draw");
   if (b) b.onclick = () => {
-    D.src = D.src === "model" ? "raw" : "model"; D.offset = 0; ROWS = null;
+    D.src = D.src === "model" ? "raw" : "model"; D.offset = 0; ROWS = null; OPEN.clear();
     b.textContent = D.src === "model" ? "Show the raw uploaded file" : "Show what the model used";
     loadData();
   };

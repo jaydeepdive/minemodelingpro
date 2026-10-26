@@ -1229,6 +1229,52 @@ The pool prints "couldn't stop thread … within 5.0 seconds" at exit after the
 summary line; it is noise from psycopg's pool teardown, not a failure — grep for
 `passed,` rather than reading the tail.
 
+## A drill database is read hole by hole (2026-10-26)
+
+Jordan, looking at 144,774 rows of one-metre assays paged 200 at a time: "this is
+impossible to read. i need one line per drill hole, with the ability to expand the
+data on each hole."
+
+Right, and the shape was the whole problem. The table was one row per **element
+per metre**, so a 602-hole database assayed for four elements over 60 m is
+144,480 rows — 723 pages — to find out what is in one hole. A drill database is
+read hole by hole, and a metre of core assayed for twenty elements is ONE interval
+with twenty numbers on it, not twenty rows.
+
+**The hole list is now the default** for Assays and Surveys (Collars is already
+one line per hole, so its view control is hidden). Click a hole and its intervals
+open inline, **pivoted wide**: one row per from/to, a column per element with its
+unit. "Every row" keeps the flat table for anyone who wants it.
+
+      All elements   hole | samples | elements | from | to | assayed (m)
+      Ag picked      hole | samples | from | to | assayed (m) | max Ag | mean Ag
+
+- `GET .../data?group=hole` — one row per hole, vectorised over the interval
+  columns (`np.bincount`, `np.minimum.at`, `np.unique` on `(hole, from, to)`),
+  cached per (stored file, element) in `_HOLE_CACHE`. **Never builds a Row**, the
+  lesson from the first version of this endpoint.
+- `GET .../data?hole=X&wide=1` — that hole's intervals, pivoted.
+- **Assayed metres are CORE metres.** Summing interval lengths over a 20-element
+  package counts every metre twenty times; the length comes from distinct
+  `(hole, from, to)` triples. Both the server and the client grouping do this, and
+  both are tested for it.
+- The page groups client-side when it is reading the built model (those rows are
+  already in memory) and server-side for the raw parse. Two implementations
+  because they sit over two different sources; `groupByHole` / `pivot` in
+  `project.html` and `_read_holes` / `_read_one_hole` in `server.py`.
+
+*Caught by driving it in a browser:* on a project whose model is not written yet
+the page falls back to the raw parse, and the element dropdown was only ever
+filled from the model — so "All elements" was the only choice those projects ever
+offered. The raw path now fills it from the response's own `elements`.
+
+`scripts/test_data_api.py` is 68 tests. At 720,000 rows the hole list returns
+**600 holes** rather than 720,000 rows, a second call is served from the cache,
+and expanding one hole returns 60 rows with 23 columns rather than 1,200 rows.
+Browser-verified on both sources with no page errors: 39,600 model rows -> 220
+holes, expanding LM-16-001 gives 60 intervals as `48.6 | 49.6 | 1 | Ag 0.1 |
+Co 0 | Ni 0`.
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.
