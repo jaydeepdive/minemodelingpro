@@ -742,10 +742,13 @@ def _materialise(p, news_holes, news_ivs, ov, styled_reports=(), consume=False):
             # the caller owns this dataset and will not read it again
             r["intervals"] = None
         res = r.get("resource")
-        sources.append({"kind": ("imported data" if r.get("source") == "import"
-                                 else "NI 43-101 technical report"), "id": sid,
+        sources.append({"kind": (r.get("source_kind")
+                                 or ("imported data" if r.get("source") == "import"
+                                     else "NI 43-101 technical report")), "id": sid,
                         "title": _report_title(r),
-                        "url": _filing_url(r), "archive": r.get("archive_url"),
+                        # a source added by hand carries the link it came from
+                        "url": r.get("source_url") or _filing_url(r),
+                        "archive": r.get("archive_url"),
                         "listing": r.get("report_url"),
                         "date": r.get("date"), "collars": len(r.get("collars") or []),
                         "intervals": n_iv, "has_resource": bool(res)})
@@ -889,7 +892,8 @@ def _materialise(p, news_holes, news_ivs, ov, styled_reports=(), consume=False):
             "report_density": rp.get("density"),
             "updated": max(dates) if dates else None,
             "kinds": sorted({("report" if s["kind"].startswith("NI") else
-                              "import" if s["kind"] == "imported data" else "news") for s in sources})}
+                              "import" if s["kind"] == "imported data" else "news")
+                             for s in sources})}
 
 
 def _recency(r):

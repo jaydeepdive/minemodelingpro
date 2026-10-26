@@ -521,6 +521,16 @@ async def upload(pid: str, request: Request, files: list[UploadFile] = File(...)
 MAX_PASTE_BYTES = 4_000_000
 
 
+def _clean_url(u):
+    """A source link we are willing to store and show as a link."""
+    u = (u or "").strip()[:600]
+    if not u:
+        return None
+    if not re.match(r"^https?://[^\s<>\"']+$", u, re.I):
+        raise HTTPException(400, "that does not look like a link — it should start http:// or https://")
+    return u
+
+
 def _parse_pasted(text, project_name=None, company=None, opts=None, pid=None):
     """What a paste holds, without storing anything."""
     import tempfile
@@ -535,7 +545,7 @@ def _parse_pasted(text, project_name=None, company=None, opts=None, pid=None):
             [path], project=project_name, company=company,
             epsg=o.get("epsg"), utm_zone=o.get("utm_zone"),
             hemisphere=o.get("hemisphere", "N"), datum=o.get("datum", "WGS84"),
-            crs_mode=o.get("crs_mode", "auto"))
+            crs_mode=o.get("crs_mode", "auto"), source_url=o.get("source_url"))
         # a paste is an addition when the project already has drilling
         has = store.db().all(
             "select id from datasets where project_id = %s and status = 'ready'", pid) \
@@ -596,8 +606,9 @@ async def preview_source(pid: str, request: Request, u=Depends(require)):
     if not text.strip():
         raise HTTPException(400, "nothing pasted")
     try:
-        data, errors = _parse_pasted(text, p["name"], p.get("company"),
-                                     b.get("options"), pid=pid)
+        opts = dict(b.get("options") or {})
+        opts["source_url"] = _clean_url(b.get("url"))
+        data, errors = _parse_pasted(text, p["name"], p.get("company"), opts, pid=pid)
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -615,6 +626,8 @@ async def preview_source(pid: str, request: Request, u=Depends(require)):
     placed = new_c | known
     return {
         "counts": data.get("counts"),
+        "source_url": data.get("source_url"),
+        "source_kind": data.get("source_kind"),
         "crs": {k: v for k, v in (data.get("crs") or {}).items()
                 if k in ("kind", "epsg", "located", "zone")},
         "center": data.get("center"),
@@ -651,7 +664,8 @@ async def add_source(pid: str, request: Request, u=Depends(require)):
             "hemisphere": (o.get("hemisphere") or "N")[:1].upper(),
             "datum": o.get("datum") or "WGS84",
             "crs_mode": (o.get("crs_mode") or "auto").lower(),
-            "azimuth_ref": "auto", "pasted": True}
+            "azimuth_ref": "auto", "pasted": True,
+            "source_url": _clean_url(b.get("url"))}
     F = store.files()
     raw = text.encode("utf-8")
     key = f"{u['id']}/{pid}/uploads/{uuid.uuid4().hex[:8]}-{slugify(name, 'source')}.txt"

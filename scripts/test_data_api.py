@@ -474,5 +474,39 @@ if jb:
         check("and the project's own holes are still there",
               {"DDH-001", "DDH-002"} <= got, sorted(got))
 
+# --- the source's own link, kept and shown
+print("\nthe link a source came from")
+RU = "https://www.globenewswire.com/news-release/2026/10/06/337535"
+pv3 = c.post(pb + "/preview", json={"text": RELEASE, "url": RU}).json()
+check("the link is kept with the source", pv3.get("source_url") == RU, pv3.get("source_url"))
+check("and a release is labelled as one", pv3.get("source_kind") == "news release",
+      pv3.get("source_kind"))
+check("a link that is not a link is refused",
+      c.post(pb + "/preview", json={"text": RELEASE, "url": "ftp://x/y"}).status_code == 400)
+check("javascript: is refused",
+      c.post(pb + "/preview", json={"text": RELEASE, "url": "javascript:alert(1)"})
+       .status_code == 400)
+check("no link at all is fine",
+      c.post(pb + "/preview", json={"text": RELEASE}).json().get("source_url") is None)
+r5 = c.post(pb, json={"text": RELEASE, "name": "With a link", "url": RU})
+check("adding with a link succeeds", r5.status_code == 200, r5.text[:200])
+ds5 = d.one("select * from datasets where id = %s", (r5.json().get("dataset") or {}).get("id"))
+check("the link is stored on the dataset", (ds5["options"] or {}).get("source_url") == RU,
+      ds5["options"])
+# and it survives the import into what the model reads as its sources
+jb5 = d.one("select * from jobs where dataset_id = %s and kind = 'import' "
+            "order by created_at desc limit 1", ds5["id"])
+if jb5:
+    try:
+        _W.do_import(jb5)
+        nd5 = d.one("select * from datasets where id = %s", ds5["id"])
+        check("the import keeps the link", (nd5["summary"] or {}).get("source_url") == RU,
+              (nd5["summary"] or {}).get("source_url"))
+        check("and records it as a news release",
+              (nd5["summary"] or {}).get("source_kind") == "news release",
+              (nd5["summary"] or {}).get("source_kind"))
+    except Exception as e:
+        check("the import keeps the link", False, "%s: %s" % (type(e).__name__, e))
+
 print("\n%d passed, %d failed" % (len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

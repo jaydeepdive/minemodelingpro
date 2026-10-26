@@ -104,10 +104,14 @@
     <h3>Add a source</h3>
     <p class="note">Paste a news release, a report page, or a table of results.
       It is read the same way an uploaded file is and merged on hole id, so the
-      release's holes are modelled <b>with</b> your own rather than instead of them.</p>
+      release's holes are modelled <b>with</b> your own rather than instead of them.
+      Give the link too and it is kept as the source, the way a public model
+      credits the release it was built from. (The wires block automated fetching,
+      so the text has to be pasted — the link is the attribution, not the input.)</p>
     <textarea id="srctext" rows="7" placeholder="Paste the release text, including its results table and — if it has one — its collar table…" style="width:100%;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px"></textarea>
     <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
-      <input id="srcname" placeholder="What is this? e.g. Langis release, Feb 2026" style="flex:1;min-width:200px">
+      <input id="srcname" placeholder="What is this? e.g. Langis release, Feb 2026" style="flex:1;min-width:190px">
+      <input id="srcurl" placeholder="Link to it (optional)" style="flex:1;min-width:190px">
       <button class="btn ghost" id="srccheck">See what it holds</button>
       <button class="btn" id="srcadd" disabled>Add to the model</button>
     </div>
@@ -517,6 +521,10 @@ function srcReport(pv) {
     + (C.collars ? `, and <b>${fmt(C.collars)}</b> collar${C.collars === 1 ? "" : "s"}` : ""));
   if (H.already_here) bits.push(`<b>${fmt(H.already_here)}</b> of those holes are already in this project — the release adds to them`);
   if (H.new_to_this_project) bits.push(`<b>${fmt(H.new_to_this_project)}</b> ${H.new_to_this_project === 1 ? "is a hole" : "are holes"} this project does not have yet`);
+  if (pv.source_url)
+    bits.push(`read as a ${esc(pv.source_kind || "source")} from `
+      + `<a href="${esc(pv.source_url)}" target="_blank" rel="noopener">this link</a>`
+      + `, which is kept with it`);
   const crs = pv.crs || {};
   if (crs.epsg) bits.push(`collars placed in EPSG ${crs.epsg}`
     + (pv.center ? ` — ${(+pv.center[0]).toFixed(3)}, ${(+pv.center[1]).toFixed(3)}` : ""));
@@ -549,7 +557,7 @@ $("#srccheck").onclick = async () => {
     // api() stringifies the body itself — passing JSON.stringify here sends a
     // JSON string, and the server then reads a str where a dict should be
     const pv = await api(`/projects/${project.id}/sources/preview`,
-                         { method: "POST", body: { text } });
+                         { method: "POST", body: { text, url: $("#srcurl").value } });
     out.innerHTML = srcReport(pv);
     const got = (pv.counts || {}).intervals || (pv.counts || {}).collars || 0;
     if (!got) out.innerHTML = `<p class="small">Nothing in that reads as drill results.`
@@ -566,8 +574,9 @@ $("#srcadd").onclick = async () => {
   const btn = $("#srcadd"); btn.disabled = true; btn.textContent = "Adding…";
   try {
     await api(`/projects/${project.id}/sources`,
-              { method: "POST", body: { text: SRC, name: $("#srcname").value } });
-    $("#srctext").value = ""; $("#srcname").value = ""; SRC = null;
+              { method: "POST", body: { text: SRC, name: $("#srcname").value,
+                                        url: $("#srcurl").value } });
+    $("#srctext").value = ""; $("#srcname").value = ""; $("#srcurl").value = ""; SRC = null;
     $("#srcout").innerHTML = `<p class="small">Added. It is being read now, and the`
       + ` model rebuilds when it is in — the import log below shows what happened.</p>`;
     location.reload();

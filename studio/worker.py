@@ -230,7 +230,8 @@ def do_import(job):
         settings=proj.get("params") or {}, dataset_id="import:" + str(ds_row["id"]),
         owner=str(ds_row["owner"]), private=not proj.get("is_public"),
         source_name=ds_row.get("name") or ", ".join(os.path.basename(p) for p in paths),
-        crs_mode=o.get("crs_mode", "auto"), azimuth_ref=o.get("azimuth_ref", "auto"))
+        crs_mode=o.get("crs_mode", "auto"), azimuth_ref=o.get("azimuth_ref", "auto"),
+        source_url=o.get("source_url"))
     # A source ADDED to a project that already has drilling is not required to
     # be a whole drill database on its own: a release of six intervals on three
     # holes is a good addition and a bad standalone dataset. Judge it as what it
@@ -239,7 +240,8 @@ def do_import(job):
                    "and id <> %s", ds_row["project_id"], ds_row["id"])
     errors = IMP.validate(data, standalone=not others)
     summary = {"counts": data["counts"], "tables": data["tables"], "notes": data["notes"],
-               "crs": data["crs"], "center": data["center"], "errors": errors}
+               "crs": data["crs"], "center": data["center"], "errors": errors,
+               "source_url": data.get("source_url"), "source_kind": data.get("source_kind")}
     key = f"{ds_row['owner']}/{ds_row['project_id']}/datasets/{ds_row['id']}.json"
     F.put_json(key, IVT.to_store(data))
     d.run("update datasets set status = %s, summary = %s, data_key = %s, error = %s where id = %s",

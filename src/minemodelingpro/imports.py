@@ -1189,7 +1189,8 @@ def release_text(path, notes=None):
 
 def build_dataset(paths, project=None, company=None, epsg=None, utm_zone=None, hemisphere="N",
                   datum="WGS84", attach_to=None, settings=None, dataset_id=None, owner=None,
-                  private=True, source_name=None, crs_mode=None, azimuth_ref="auto"):
+                  private=True, source_name=None, crs_mode=None, azimuth_ref="auto",
+                  source_url=None):
     """Read every file, assemble one dataset, and return it with a report of what
     was understood. Nothing is written to disk — see `save`."""
     import pandas as pd
@@ -1332,6 +1333,11 @@ def build_dataset(paths, project=None, company=None, epsg=None, utm_zone=None, h
         "date": datetime.datetime.utcnow().strftime("%Y-%m-%d"),
         "imported": datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z",
         "source_name": source_name or ", ".join(os.path.basename(p) for p in paths)[:160],
+        # where this came from, so an added source is attributed in the Sources
+        # panel the way a public news release is, and a reader can open it
+        "source_url": (str(source_url)[:600] or None) if source_url else None,
+        "source_kind": ("news release"
+                        if any(t.get("kind") == "release" for t in tables) else None),
         "files": [os.path.basename(p) for p in paths],
         "collars": collars, "surveys": surveys, "intervals": iv,
         "lithology": lithology,

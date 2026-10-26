@@ -1344,6 +1344,89 @@ yields nothing — it needs a hole id, a from and a to, and a grade column. That
 the same gap ranked third under "Still open" above, and the card says so rather
 than failing silently.
 
+## This container's corpus is REPORTS-ONLY unless the drill bank is synced (2026-10-26)
+
+**Read this before claiming MMP holds nothing for a property.** I told Jordan
+"there is no public Langis data in the corpus", having checked `assemble()` here.
+There is: `langis-brixton-metals`, Brixton Metals, 125 holes, 179 intervals, **10
+sources, every one a news release with a URL** — and its page has been committed
+since the 2026-10-25 nightly build.
+
+The cause: `data/keep/drillbank.sqlite` is **gitignored** and synced from
+Closeology at build time, so a fresh container has `load_news()` returning **0
+holes**. Every project whose drilling comes from releases is simply absent —
+673 projects here against **758** once the bank is in place. Any measurement run
+without it is over reports only, and any statement of the form "MMP has nothing
+for X" is unsound.
+
+Fix it before measuring. `closeology_sync` lists files through the **GitHub API**,
+which this container's proxy refuses with 403 — but `git clone` works:
+
+```bash
+git clone --depth 1 https://github.com/jaydeepdive/closeology.git ~/closeology
+cd ~/mmp && CLOSEOLOGY_REPO=$HOME/closeology PYTHONPATH=src \
+  python3 -m minemodelingpro.closeology_sync      # places drillbank.sqlite
+```
+
+(759 MB clone, 21 MB drill bank, ~1 minute.) The corpus sweeps earlier in this
+file were run reports-only; that is the right population for filed-statement
+scoring, which comes from reports — but it is not the whole gallery.
+
+## Every public model page was black (2026-10-26)
+
+Jordan: "what is going on with the public modeling. its just black."
+
+One line. A model page is a **baked artifact** — its shell is whatever the
+nightly build wrote that day — while `/models/viewer.js` is served from the
+package and is this deployment's **current** code. The deposit-shape layer added
+`L-body`; pages baked before it have no such element; and
+
+    $("L-body").onchange = fn
+
+on a null is a TypeError thrown at **module level**. The renderer stopped before
+it sized the canvas: canvas 300x150, every panel dead, the whole page black. On
+every page in the gallery, over one optional toggle.
+
+This file already stated the rule — *"every new panel lookup guards on a null
+element"* — and I did not follow it. `ctl(id)` makes it structural now: the
+element, or a sink that swallows writes and reads back empty. **19 sites across
+9 controls** an older shell can lack go through it (`L-body`, `L-zlabels`,
+`body-op`, `body-op-v`, `body-note`, `checknote`, `iv-n`, `ivnote`, `zone-n`,
+`zones`), and the audit that found them — ids viewer.js writes to, minus ids a
+deployed page has — now returns nothing.
+
+**`scripts/test_viewer_render.py` is the guard.** It renders real committed pages
+AND one stripped of every optional control, against the renderer as it stands,
+and fails on a page error or a canvas still at its default 300x150. Verified to
+catch this exact bug: with the guard removed, three of three real pages fail with
+the original message. It skips cleanly where playwright is absent.
+
+**The general shape of this failure will recur**, because the renderer is live
+and the pages are not. Anything the renderer touches that a page might not have
+goes through `ctl()`.
+
+*Also worth knowing:* `/models/*` is gated unless `MMP_PUBLIC_GALLERY=1`
+(`PUBLIC_GALLERY` in server.py, default off), so a signed-out visitor to a model
+page is redirected to sign-in. That is a deliberate setting, not a bug — but it
+means "the public gallery" on minemodelingpro.com is not public today.
+
+## Where an added source came from (2026-10-26)
+
+Jordan: "i want to be able to provide the source url."
+
+A public model credits the release it was built from — Langis lists ten, each
+with its link. An added source now does the same: the Add a source card takes a
+link beside the text, `build_dataset(source_url=...)` carries it onto the
+dataset, and `projects.assemble` prefers it over `_filing_url`, so it appears in
+the Sources panel as a link like any news release. A dataset read through
+`release_text` is also labelled `source_kind="news release"` rather than
+"imported data", so it reads as what it is.
+
+**Fetching the URL was considered and is not worth building:** globenewswire
+returns **403** to an automated request, and that is where these releases live.
+The card says so — the link is the attribution, not the input.
+`_clean_url` accepts http(s) only (`javascript:` and `ftp:` are refused, tested).
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.
