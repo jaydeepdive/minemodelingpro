@@ -197,3 +197,121 @@ def region_geom(name):
         return None
     from shapely.ops import unary_union
     return unary_union(geoms)
+
+
+def from_collars(xs, ys, zs, n_max=200, pad_frac=0.15, k=12):
+    """A ground surface interpolated from the collars themselves.
+
+    A drill collar is a surveyed point ON the topography — the one thing every
+    drill database has, whether or not its grid can be placed on a map. Where no
+    DEM is reachable (a local mine grid, an ambiguous UTM zone) the collars still
+    describe the ground, and without a surface every intercept is drawn against a
+    flat datum, which misplaces the whole deposit in depth.
+
+    Inverse-square distance over the `k` nearest collars, on a lattice about half
+    the collar spacing, with a small smoothing floor so three holes on one pad do
+    not spike the ground between them. Local rather than global on purpose: a
+    weighted mean of every collar reverts to the property's average elevation
+    wherever the drilling thins, which flattens exactly the relief this exists to
+    show. Returns the shape `grid` returns plus from="collars", or None if there
+    is nothing to fit.
+    """
+    import numpy as _np
+    x = _np.asarray(xs, float); y = _np.asarray(ys, float); z = _np.asarray(zs, float)
+    ok = _np.isfinite(x) & _np.isfinite(y) & _np.isfinite(z)
+    x, y, z = x[ok], y[ok], z[ok]
+    # Four collars spread over a township describe no surface — measured at
+    # 4,500 m a cell, the interpolation is a guess between four points. Eight is
+    # where a drill pattern starts to have a shape.
+    if len(x) < 8 or float(z.max() - z.min()) <= 0.0:
+        return None                      # too few collars, or a flat datum
+    try:
+        from scipy.spatial import cKDTree
+        tree = cKDTree(_np.c_[x, y])
+    except Exception:
+        tree = None
+    # the collar spacing sets both the lattice and the smoothing: closer than
+    # half a spacing and the surface chases individual holes, much coarser and
+    # real relief is averaged away
+    if tree is not None and len(x) > 1:
+        d, _i = tree.query(_np.c_[x, y], k=2)
+        near = float(_np.median(d[:, 1]))
+    else:
+        near = 0.0
+    w = max(float(x.max() - x.min()), float(y.max() - y.min()), 100.0)
+    if near <= 0.0:
+        near = w / 20.0
+    # A collar elevation can be wrong, and one wrong one bends the ground around
+    # it: Goldboro has two collars 1.6 m apart whose stated elevations differ by
+    # 75 m, and South Mountain two 21 m apart differing by 431 m. Neither is a
+    # hillside. Judge each collar against its neighbours and drop the ones no
+    # plausible surface can pass through, keeping the count so the build can say
+    # so rather than quietly smoothing over a bad record.
+    dropped = 0
+    if tree is not None and len(x) >= 12:
+        kk0 = int(min(9, len(x)))
+        dd, ii = tree.query(_np.c_[x, y], k=kk0)
+        dn, iN = dd[:, 1:], ii[:, 1:]                       # exclude self
+        wn = 1.0 / (dn * dn + (0.3 * near) ** 2)
+        loo = (wn * z[iN]).sum(1) / wn.sum(1)               # leave-one-out fit
+        r = _np.abs(z - loo)
+        # Judge the miss against the ground's own gradient over the baseline the
+        # neighbours give it, not against a fixed number of metres: a fold on a
+        # 200 m pattern is tens of metres of real relief, while 75 m between two
+        # collars 1.6 m apart is a 47:1 slope and a bad record. A flat allowance
+        # cannot tell those apart, and threw away real hillsides.
+        base = dn.mean(1)
+        lim = _np.maximum(_np.maximum(10.0, 2.0 * base), 6.0 * float(_np.median(r)))
+        keep = r <= lim
+        if keep.sum() >= max(3, int(0.5 * len(x))) and (~keep).any():
+            dropped = int((~keep).sum())
+            x, y, z = x[keep], y[keep], z[keep]
+            try:
+                tree = cKDTree(_np.c_[x, y])
+            except Exception:
+                tree = None
+    # after cleaning, how well do the collars agree with each other at all? A
+    # project whose holes come from several reports on different datums can have
+    # elevations that no surface fits, and inventing a kilometre of relief out of
+    # that disagreement is worse than the flat datum it replaces.
+    misfit = 0.0
+    if tree is not None and len(x) >= 12:
+        kk0 = int(min(9, len(x)))
+        dd, ii = tree.query(_np.c_[x, y], k=kk0)
+        dn, iN = dd[:, 1:], ii[:, 1:]
+        wn = 1.0 / (dn * dn + (0.3 * near) ** 2)
+        misfit = float(_np.median(_np.abs(z - (wn * z[iN]).sum(1) / wn.sum(1))))
+    pad = max(near, pad_frac * w)
+    x0, y0 = float(x.min()) - pad, float(y.min()) - pad
+    x1, y1 = float(x.max()) + pad, float(y.max()) + pad
+    step = max(near / 2.0, max(x1 - x0, y1 - y0) / (n_max - 1))
+    nx = min(n_max, int((x1 - x0) / step) + 2)
+    ny = min(n_max, int((y1 - y0) / step) + 2)
+    gx = x0 + _np.arange(nx) * step
+    gy = y0 + _np.arange(ny) * step
+    X, Y = _np.meshgrid(gx, gy)
+    # smooth over about half a cell: at this resolution a node stands for the
+    # average ground across it, not for whichever collar fell nearest the node
+    soft = (0.5 * max(near, step)) ** 2
+    kk = int(min(k, len(x)))
+    flatX, flatY = X.ravel(), Y.ravel()
+    res = _np.empty(flatX.size, float)
+    CH = 20_000
+    for s_ in range(0, flatX.size, CH):
+        px, py = flatX[s_:s_ + CH], flatY[s_:s_ + CH]
+        if tree is not None:
+            dd, ii = tree.query(_np.c_[px, py], k=kk)
+            if dd.ndim == 1:
+                dd = dd[:, None]; ii = ii[:, None]
+            wgt = 1.0 / (dd * dd + soft)
+            res[s_:s_ + CH] = (wgt * z[ii]).sum(1) / wgt.sum(1)
+        else:
+            dx = px[:, None] - x[None, :]
+            dy = py[:, None] - y[None, :]
+            wgt = 1.0 / (dx * dx + dy * dy + soft)
+            res[s_:s_ + CH] = (wgt * z[None, :]).sum(1) / wgt.sum(1)
+    out = res.reshape(ny, nx).astype(_np.float32)
+    return {"nx": nx, "ny": ny, "x0": x0, "y0": y0, "dx": step, "dy": step,
+            "z": out, "from": "collars", "n": int(len(x)), "dropped": dropped,
+            "misfit_m": round(misfit, 2),
+            "relief_m": round(float(z.max() - z.min()), 1)}

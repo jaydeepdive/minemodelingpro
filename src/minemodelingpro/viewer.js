@@ -179,24 +179,20 @@ function buildBody(){
       // ground the model drew and then did not fill. Asked repeatedly because the
       // two layers look nothing alike on screen — and they look nothing alike
       // because the BLOCKS are filtered to the cut-off and the SHAPE is not.
-      setTimeout(()=>{try{
-        if(BD&&BD.n&&BK){
-          const C=blockCells();let inside=0;
-          const [bx,by,bz]=B.size,o2=B.origin;
-          for(let i=0;i<BD.n;i++){
-            // BD.pos is scene space; back to the grid the blocks live on
-            const sx=BD.pos[i*3],sy=BD.pos[i*3+1],sz=BD.pos[i*3+2];
-            const wx=sx, wy=-sz, wz=sy+zRef;
-            if(blockAt(wx,wy,wz)!==undefined)inside++;}
-          const pc=Math.round(100*inside/BD.n);
-          const d2=document.createElement("div");
-          d2.style.cssText="margin-top:4px;font-weight:700;color:"+(pc<80?"#c0392b":"#1d2530");
-          d2.textContent="The estimate fills "+pc+"% of this shape ("+fmtN(inside)+" of "
-            +fmtN(BD.n)+" cells). Blocks shown are only those above the cut-off.";
-          d2.title="The shape is drawn whole; the block layer is filtered to the "
-            +"cut-off slider, which is why the two look different on screen.";
-          why.appendChild(d2);}
-      }catch(e){}},0);
+      // Counted at build time against EVERY estimated block. The page only
+      // carries the blocks above the display threshold, so counting here would
+      // compare a whole shape against a cut-off slice — which is how a shape
+      // that the estimate fills almost entirely came to read as 31% full.
+      if(B.filled!=null&&B.n){
+        const pc=Math.round(100*B.filled/B.n);
+        const d2=document.createElement("div");
+        d2.style.cssText="margin-top:4px;font-weight:700;color:"+(pc<80?"#c0392b":"#1d2530");
+        d2.textContent="The estimate fills "+pc+"% of this shape ("+fmtN(B.filled)+" of "
+          +fmtN(B.n)+" cells).";
+        d2.title="Every estimated block, not just the ones above the cut-off slider: "
+          +"the block layer on screen is filtered and this is not, which is why the "
+          +"two look different.";
+        why.appendChild(d2);}
       setTimeout(()=>{try{
         const R=reconcile();if(!R||!R.ore)return;
         const pc=Math.round(100*R.mod/R.ore);
@@ -429,7 +425,10 @@ let terrain=null;
   terrain=new THREE.Mesh(g,mat);terrain.renderOrder=5;scene.add(terrain);
   const on=store.get("terrain",true);$("L-terrain").checked=on;terrain.visible=on;
   const op=store.get("terop",45);$("ter-op").value=op;mat.uniforms.uOp.value=op/100;$("ter-op-v").textContent=op+"%";
-  $("ter-note").textContent=Math.round(rel)+" m relief · "+ci+" m contours";})();
+  const src=(T.from==="collars")?" · from collar elevations":"";
+  $("ter-note").textContent=Math.round(rel)+" m relief · "+ci+" m contours"+src;
+  if(T.note)$("L-terrain").parentNode.title=T.note+
+    " It is the shape of the drilled ground, not of the hills beyond it.";})();
 
 /* ---------------- element chips, legend, grade panel ---------------- */
 /* ---------------- zones: one project, body by body ---------------- */

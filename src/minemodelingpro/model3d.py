@@ -74,7 +74,9 @@ _VIEWER_TMPL = os.path.join(_HERE, "model3d_viewer.html")
 #      grade of whichever segment its midpoint happened to land in
 # 11 — detection-limit fill is read as not-detected instead of as grade (a metal
 #      reported at "<10" and exported as 10 was being modelled as 10 g/t ore)
-MODEL_VERSION = 11
+# 12 — a project with no map position gets its ground surface interpolated from
+#      the collar elevations instead of being drawn against a flat datum
+MODEL_VERSION = 12
 # the most domain cells to send to a browser; beyond this the envelope is drawn
 # on a coarser lattice, which is a picture of the same shape
 BODY_MAX_CELLS = 120_000
@@ -1723,8 +1725,22 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                                         "name": ("unzoned" if zid == 0 else "Zone %d" % zid),
                                         "cells": int(w.sum()),
                                         "centre": [round(float(v), 1) for v in c]}
+                    # How much of this shape the estimate actually fills, counted
+                    # HERE because only the build has every block: the viewer
+                    # carries the blocks above the display threshold, so a ratio
+                    # computed there compares a whole shape against a cut-off
+                    # slice and reads as a wireframe three times too big.
+                    filled = None
+                    try:
+                        bk = set(map(tuple, ijk.tolist()))
+                        filled = int(sum(1 for c in map(tuple, dijk.tolist()) if c in bk))
+                    except Exception:
+                        filled = None
                     el_out["body"] = {
                         "origin": [round(float(v), 2) for v in lo], "size": list(bsz),
+                        # cells of the shape that got an estimated grade, over all
+                        # blocks rather than the ones currently on screen
+                        "filled": filled,
                         "ijk": _b64(dijk.astype(np.uint16)), "n": int(len(dijk)),
                         # one zone id per cell, so the envelope reads body by body
                         "zone": _b64(np.clip(dz, 0, 255).astype(np.uint8)),
@@ -1772,9 +1788,39 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
             if t:
                 terr = {k: v for k, v in t.items() if k != "z"}
                 terr["z"] = _b64(t["z"].astype(np.float32))
+                terr["from"] = "dem"
         except Exception as e:
             if verbose:
                 print("  terrain failed", e)
+    if terr is None:
+        # No map position (a local mine grid, an ambiguous UTM zone) or no DEM
+        # tile. The collars are still surveyed points ON the topography, so the
+        # ground can be interpolated from their own elevations. Without this the
+        # deposit is drawn against a flat datum, which misplaces every intercept
+        # in depth — the one thing a reader checks first.
+        try:
+            from minemodelingpro import terrain
+            t = terrain.from_collars(xs, ys, [h["z"] for h in H])
+            if t:
+                terr = {k: v for k, v in t.items() if k != "z"}
+                terr["z"] = _b64(t["z"].astype(np.float32))
+                # say what it is and what it cost, because a collar elevation can
+                # be wrong and dropping one silently hides a bad record
+                note = (f"Ground interpolated from {t['n']} collar elevations "
+                        f"({t['relief_m']:.0f} m of relief) — this grid has no map "
+                        f"position, so no elevation model could be read for it.")
+                if t.get("dropped"):
+                    note += (f" {t['dropped']} collar"
+                             f"{'s' if t['dropped'] != 1 else ''} whose stated elevation "
+                             f"no surface could pass through were left out.")
+                terr["note"] = note
+                if verbose:
+                    print(f"  terrain from {t['n']} collar elevations "
+                          f"({t['nx']}x{t['ny']} at {t['dx']:.0f} m, "
+                          f"{t['dropped']} dropped)")
+        except Exception as e:
+            if verbose:
+                print("  collar terrain failed", e)
     region = ds.get("region")
     if geo:
         try:
