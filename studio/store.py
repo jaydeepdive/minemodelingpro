@@ -134,8 +134,9 @@ class DB:
                         "where id = %s",
                         # attempts counts the one that just died, not the next one
                         ("attempt %d stopped responding after %g minutes and was "
-                         "restarted — most often the modeler ran out of memory and "
-                         "the kernel stopped it without a message"
+                         "restarted. The build itself reports its own peak memory "
+                         "in the log below — if that is well under the limit, the "
+                         "worker was interrupted (a deploy or a restart), not starved"
                          % (max(1, r["attempts"] or 1), timeout_min), r["id"]))
             return requeued, dead
 

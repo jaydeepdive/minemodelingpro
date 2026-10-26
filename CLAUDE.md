@@ -1040,6 +1040,30 @@ sorted smallest-project-first showed the opposite and was noise: those are the
 "resource published without its drilling" projects where every ratio is 0.1x.
 **Sample the population where the comparison is valid, or measure nothing.**
 
+## The assay table was broken by a duplicate id (2026-10-25)
+
+Hours of this, and the cause was two characters. The project page already had
+`<button id="del">Delete project</button>`. I added `<select id="del">` for the
+element filter. **`querySelector` returns the first match**, so every `$("#del")`
+resolved to the Delete button, and `.options.length` threw
+*"Cannot read properties of undefined (reading 'length')"* on page load — before
+a single row could render.
+
+It survived because the symptom pointed everywhere except at the markup: the
+endpoint answers 926,478 rows in 0.17 s and 50 MB, the route is live, the static
+assets are current, the server is fast. **All of that was true and none of it was
+the bug.** What found it was putting the first stack frame into the error message
+and counting lines: `project.html:275:30` is exactly `.length` on line 275 of the
+deployed commit.
+
+The filter is now `#d-el`, and `test_public_assets.py` fails on a duplicate id in
+any page under `site/` — verified to flag `del` when the duplicate is put back.
+
+**Lesson, and it cost a day: when a page throws, read the stack frame before
+theorising about the server.** I blamed deploys, object storage, memory and row
+counts in turn, shipped four changes against those theories, and the browser had
+been naming the line all along.
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.

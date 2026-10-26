@@ -11,6 +11,7 @@ that would have caught it.
 """
 import os
 import re
+import glob
 import sys
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -85,6 +86,19 @@ _paths = [getattr(r, "path", "") for r in S.app.routes]
 if "/models/viewer.js" in _paths:
     check("the renderer route is registered before the static mount",
           _paths.index("/models/viewer.js") < (_paths.index("/") if "/" in _paths else 10**9))
+
+# No page may use an id twice. querySelector returns the FIRST match, so a
+# duplicate id silently hands your code the wrong element — a <select id="del">
+# added beside an existing <button id="del">Delete project</button> meant every
+# `$("#del")` resolved to the button, and `.options.length` threw
+# "Cannot read properties of undefined (reading 'length')" on page load.
+_ID = re.compile(r'\sid="([A-Za-z0-9_-]+)"')
+for rel in sorted(glob.glob(os.path.join(_ROOT, "site", "**", "*.html"), recursive=True)):
+    if os.sep + "models" + os.sep in rel:
+        continue                                   # generated model pages
+    ids = _ID.findall(open(rel, encoding="utf-8").read())
+    dupes = sorted({i for i in ids if ids.count(i) > 1})
+    check("%s has no duplicate id" % os.path.relpath(rel, _ROOT), not dupes, dupes)
 
 print("\n%d passed, %d failed" % (len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

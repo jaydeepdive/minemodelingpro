@@ -80,7 +80,7 @@
       <div class="seg" id="dtabs">
         <button class="on" data-t="assays">Assays</button><button data-t="collars">Collars</button><button data-t="surveys">Surveys</button>
       </div>
-      <select id="del" style="min-width:120px"><option value="">All elements</option></select>
+      <select id="d-el" style="min-width:120px"><option value="">All elements</option></select>
       <input id="dq" placeholder="Filter by hole…" style="flex:1;min-width:150px">
       <span class="muted small" id="dcount"></span>
     </div>
@@ -201,7 +201,8 @@ async function getModel() {
 
 function rowsFromModel(m) {
   const key = D.table + "|" + D.el;
-  if (ROWS && ROWKEY === key) return ROWS;
+  if (Array.isArray(ROWS) && ROWKEY === key) return ROWS;
+  if (!m || typeof m !== "object") return [];
   const H = m.holes || [];
   const rows = [];
   if (D.table === "collars") {
@@ -271,19 +272,25 @@ async function loadData() {
       // fall through to the raw parse rather than failing
       D.src = "raw"; return loadData();
     }
-    const dsel = $("#del");
+    const dsel = $("#d-el");
     if (dsel && dsel.options.length <= 1) {
       const els = Object.keys(m.elements || {});
       dsel.innerHTML = `<option value="">All elements</option>` +
         els.map(e => `<option>${esc(e)}</option>`).join("");
     }
-    const cols = COLS[D.table], all = rowsFromModel(m);
+    const cols = COLS[D.table] || [];
+    const all = rowsFromModel(m) || [];
     const ql = D.q.toLowerCase();
-    const sel = ql ? all.filter(r => String(r[0]).toLowerCase().includes(ql)) : all;
+    const sel = (ql ? all.filter(r => String(r && r[0]).toLowerCase().includes(ql)) : all) || [];
     $("#dcount").textContent = `${sel.length.toLocaleString()} rows · as the model used them`;
     box.innerHTML = renderTable(cols, sel.slice(D.offset, D.offset + D.limit));
     paging(sel.length, sel, cols);
   } catch (e) {
+    if (D.src === "model") {          // one automatic retry against the raw parse
+      D.src = "raw"; D.offset = 0; ROWS = null;
+      const b = $("#draw"); if (b) b.textContent = "Show what the model used";
+      return loadData();
+    }
     box.innerHTML = `<p class="muted small" style="padding:10px">Could not read the data`
       + ` <span class="muted">(${esc(String(e.message || e))}${
             e.stack ? " — " + esc(String(e.stack).split("\n")[1] || "").trim() : ""})</span>.`
@@ -296,7 +303,7 @@ document.querySelectorAll("#dtabs button").forEach(b => b.onclick = () => {
   document.querySelectorAll("#dtabs button").forEach(x => x.classList.toggle("on", x === b));
   D.table = b.dataset.t; D.offset = 0; ROWS = null; loadData();
 });
-$("#del").onchange = e => { D.el = e.target.value; D.offset = 0; ROWS = null; loadData(); };
+$("#d-el").onchange = e => { D.el = e.target.value; D.offset = 0; ROWS = null; loadData(); };
 let dT = null;
 $("#dq").oninput = e => { clearTimeout(dT); const v = e.target.value.trim();
   dT = setTimeout(() => { D.q = v; D.offset = 0; loadData(); }, 200); };
