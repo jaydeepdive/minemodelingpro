@@ -1,6 +1,35 @@
 "use strict";
 const M=window.MMP_MODEL||JSON.parse(document.getElementById("model").textContent);
 const $=id=>document.getElementById(id);
+
+/* A control this page may simply not have.
+
+   A model page is a BAKED artifact — its shell is whatever the build wrote that
+   day — while viewer.js is served from the package and is this deployment's
+   CURRENT code. So a control added since a page was baked is not in the DOM, and
+   `ctl("L-body").onchange = fn` on a null is a TypeError thrown at module level:
+   the renderer stops before it sizes the canvas and the whole page goes black,
+   every panel dead, over one optional toggle. That is what happened to the
+   public gallery on 2026-10-26.
+
+   `ctl(id)` is the element, or a sink that swallows writes and reads back empty.
+   Anything a page might not have is reached through it; `scripts/
+   test_viewer_render.py` renders real committed pages, and one stripped of every
+   optional control, against the renderer as it stands. */
+const _SINKS = {};
+function ctl(id){
+  const e = $(id);
+  if (e) return e;
+  return _SINKS[id] || (_SINKS[id] = {
+    style:{}, dataset:{}, options:[], value:"", checked:false, disabled:true,
+    textContent:"", innerHTML:"", title:"", parentNode:{style:{},title:""},
+    classList:{add(){},remove(){},toggle(){},contains(){return false;}},
+    appendChild(){}, insertBefore(){}, removeChild(){}, remove(){},
+    addEventListener(){}, removeEventListener(){}, focus(){}, blur(){}, click(){},
+    querySelector(){return null;}, querySelectorAll(){return [];},
+    getBoundingClientRect(){return {width:0,height:0,top:0,left:0,right:0,bottom:0};}
+  });
+}
 const MOBILE=matchMedia("(max-width:760px)").matches;
 const store={get(k,d){try{const v=localStorage.getItem("mmp:"+k);return v===null?d:JSON.parse(v);}catch(e){return d;}},
              set(k,v){try{localStorage.setItem("mmp:"+k,JSON.stringify(v));}catch(e){}}};
@@ -165,7 +194,7 @@ function buildBody(){
   const E=M.elements[EL],B=E&&E.body;
   const cb=$("L-body"),row=$("body-op-row"),why=$("body-why");
   if(cb)cb.disabled=!B;
-  if($("body-note"))$("body-note").textContent=B?(fmtN(B.n)+" cells"):"not built";
+  if($("body-note"))ctl("body-note").textContent=B?(fmtN(B.n)+" cells"):"not built";
   if(row)row.style.display=B?"":"none";
   if(why){
     if(B){why.style.display="";
@@ -449,10 +478,10 @@ function drawZones(){
   if(!sec)return;
   if(!Z.length){sec.style.display="none";curZone=0;return;}
   sec.style.display="";
-  $("zone-n").textContent="· "+Z.length;
+  ctl("zone-n").textContent="· "+Z.length;
   const dot=id=>`<i style="display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;vertical-align:1px;background:${zoneColor(id)}"></i>`;
   const chip=(id,label)=>`<button class="chip${curZone===id?" on":""}" data-z="${id}">${id?dot(id):""}${label}</button>`;
-  $("zones").innerHTML=chip(0,"Whole project")+Z.map(z=>chip(z.id,z.name)).join("");
+  ctl("zones").innerHTML=chip(0,"Whole project")+Z.map(z=>chip(z.id,z.name)).join("");
   [...$("zones").querySelectorAll("button")].forEach(b=>b.onclick=()=>{
     const id=+b.dataset.z;curZone=(curZone===id?0:id);drawZones();applyCut();applyBody();drawZoneBox();
     if(curZone)flyToZone(Z.find(z=>z.id===curZone));});
@@ -930,10 +959,10 @@ function drawIvs(){
   else if(ivFilter==="out")rows=rows.filter(x=>{const r=(cov[x.h.id]||{})[x.f+"|"+x.t];
     return x.g>=curCut&&r&&r.cov<r.len*0.5;});
   const LIM=400,shown=rows.slice(0,LIM);
-  $("iv-n").textContent="· "+fmtN(rows.length)+(rows.length>LIM?" — first "+LIM+" shown":"")
+  ctl("iv-n").textContent="· "+fmtN(rows.length)+(rows.length>LIM?" — first "+LIM+" shown":"")
     +(selHole?" · "+selHole:"");
   if(!shown.length){box.innerHTML=`<p class="note" style="padding:8px">No interval matches.</p>`;
-    $("ivnote").textContent="";return;}
+    ctl("ivnote").textContent="";return;}
   box.innerHTML=`<table><colgroup><col style="width:26%"><col style="width:14%"><col style="width:14%"><col style="width:12%"><col style="width:17%"><col style="width:17%"></colgroup>`+
     `<thead><tr><th>Hole</th><th class="n">From</th><th class="n">To</th><th class="n">Length</th>`+
     `<th class="n">${esc(EL)}</th><th class="n" title="the grade the block model put at this interval">Block</th></tr></thead><tbody>`+
@@ -950,7 +979,7 @@ function drawIvs(){
     const mid=at(h,(h.depth||0)/2),L=Math.max(h.depth||100,120);
     fly({x:mid.x,y:mid.y,z:mid.z,dist:L*1.8},600);toast("Pivoting on "+h.id);});
   const miss=shown.filter(x=>{const r=(cov[x.h.id]||{})[x.f+"|"+x.t];return r&&r.cov<r.len*0.5;}).length;
-  $("ivnote").textContent = ivFilter==="all"
+  ctl("ivnote").textContent = ivFilter==="all"
     ? "Every interval the model was given, including the ones below the cut-off. “Block” is the grade the block model holds at that interval's own position."
     : (miss? miss+" of these sit mostly outside the estimated blocks (shaded). Click a hole above to narrow this to that hole."
            : "Every interval here sits inside the model. Click a hole above to narrow this to that hole.");}
@@ -963,7 +992,7 @@ function drawIvs(){
 function drawCheck(){
   const box=$("checkbox");if(!box)return;
   const E=M.elements[EL],C=E.check,B=E.blocks,unit=E.unit;
-  if(!C||!B){box.innerHTML="";$("checknote").textContent=
+  if(!C||!B){box.innerHTML="";ctl("checknote").textContent=
     "This check is reported for the deposit's primary metal.";return;}
   const bs=B.size||[0,0,0],bmin=Math.min(...bs);
   const lens=IV.map(x=>x.t-x.f).filter(v=>v>0).sort((a,b)=>a-b);
@@ -982,7 +1011,7 @@ function drawCheck(){
         bmin+" m vs "+medw.toFixed(2)+" m"
         +(ratio>1.5?` <span style="color:var(--red);font-weight:700">(${ratio.toFixed(0)}×)</span>`:""),
         "how much wider a block is than the intercepts that fill it"):"");
-  $("checknote").innerHTML = !medw ? "" :
+  ctl("checknote").innerHTML = !medw ? "" :
     (ratio>1.5
       ? `A block is <b>${ratio.toFixed(0)}×</b> wider than a typical intercept here, so the model cannot
          show the body at its true width: ${medw.toFixed(2)} m of ${fmtG(C.assay_mean,unit)} is carried as
@@ -1173,7 +1202,7 @@ function glide(){if(drag)return;
    <button class="nb sq" id="n-home" title="Reset view">⌂</button>`;
   document.body.appendChild(n);
   n.querySelectorAll("[data-nav]").forEach(b=>b.onclick=()=>setNav(b.dataset.nav));
-  $("n-in").onclick=()=>zoomAt(0.72);$("n-out").onclick=()=>zoomAt(1.38);$("n-home").onclick=()=>view("3d",1);
+  ctl("n-in").onclick=()=>zoomAt(0.72);ctl("n-out").onclick=()=>zoomAt(1.38);ctl("n-home").onclick=()=>view("3d",1);
   setNav(navMode);})();
 
 /* tooltip */
@@ -1205,14 +1234,14 @@ $("L-terrain").onchange=e=>{if(terrain)terrain.visible=e.target.checked;store.se
 $("ter-op").oninput=e=>{const v=+e.target.value;$("ter-op-v").textContent=v+"%";if(terrain){terrain.material.uniforms.uOp.value=v/100;terrain.material.depthWrite=v>=100;}store.set("terop",v);};
 $("blk-op").oninput=e=>{const v=+e.target.value;$("blk-op-v").textContent=v+"%";if(blockMesh){blockMesh.material.opacity=v/100;blockMesh.material.transparent=v<100;blockMesh.material.depthWrite=v>=100;blockMesh.material.needsUpdate=true;}store.set("blkop",v);};
 {const v=store.get("blkop",35);$("blk-op").value=v;$("blk-op-v").textContent=v+"%";$("L-blocks").checked=store.get("blocks",true);}
-$("L-body").onchange=e=>{if(bodyMesh)bodyMesh.visible=e.target.checked;store.set("body",e.target.checked);
+ctl("L-body").onchange=e=>{if(bodyMesh)bodyMesh.visible=e.target.checked;store.set("body",e.target.checked);
   const r=$("zlab-row");if(r)r.style.display=e.target.checked?"":"none";drawLabels();};
-$("L-zlabels").onchange=e=>{store.set("zlabels",e.target.checked);drawLabels();};
+ctl("L-zlabels").onchange=e=>{store.set("zlabels",e.target.checked);drawLabels();};
 {const v=store.get("zlabels",false);const c=$("L-zlabels");if(c)c.checked=v;}
-$("body-op").oninput=e=>{const v=+e.target.value;$("body-op-v").textContent=v+"%";
+ctl("body-op").oninput=e=>{const v=+e.target.value;ctl("body-op-v").textContent=v+"%";
   if(bodyMesh){bodyMesh.material.opacity=v/100;bodyMesh.material.needsUpdate=true;}store.set("bodyop",v);};
-{const v=store.get("bodyop",18);$("body-op").value=v;$("body-op-v").textContent=v+"%";
- $("L-body").checked=store.get("body",false);}
+{const v=store.get("bodyop",18);ctl("body-op").value=v;ctl("body-op-v").textContent=v+"%";
+ ctl("L-body").checked=store.get("body",false);}
 /* hole labels (nearest ~80 to screen centre) */
 const LBL=$("labels");let lblOn=false;$("L-labels").onchange=e=>{lblOn=e.target.checked;LBL.innerHTML="";drawLabels();};
 function drawLabels(){
