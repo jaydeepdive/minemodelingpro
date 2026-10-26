@@ -72,7 +72,10 @@ class DB:
             cur.execute("""
                 with j as (
                   select id from jobs where status = 'queued'
-                  order by created_at limit 1 for update skip locked)
+                  -- a person waiting on their own build goes before any
+                  -- automatic refresh, however long the refresh has queued
+                  order by (source = 'refresh'), created_at
+                  limit 1 for update skip locked)
                 update jobs set status = 'running', started_at = now(),
                        heartbeat_at = now(), attempts = attempts + 1
                  where id in (select id from j)

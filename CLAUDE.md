@@ -1199,6 +1199,36 @@ kilometre apart stay two bodies, that triangulating them together does span the
 gap (the failure, pinned), that lone intercepts are kept, and that clustering
 happens in the deposit's own frame.
 
+## A client's own build does not queue behind the auto-refresh (2026-10-26)
+
+`refresh_stale_models` queues `REFRESH_BATCH` (3) rebuilds on a version bump, and
+there is **one worker** — so a client pressing "Rebuild model" sat behind all of
+them, which is part of "why are rebuilds taking so fucking long". `jobs.source`
+(idempotent ALTER, default `'user'`) marks what the sweep queues as `'refresh'`,
+and `claim_job` orders by `(source = 'refresh'), created_at`: a person waiting on
+their own build goes first however long a refresh has been queued, and among jobs
+of the same kind oldest still wins. Five more tests in `test_jobs.py` (31 total),
+including that the sweep actually tags its own jobs — without the tag the
+ordering is a no-op.
+
+**Running the Postgres tests in this container:** the log path must be writable by
+the postgres user, which is why `pg_ctl -l /tmp/...` fails and
+`-l /var/lib/postgresql/pg.log` works:
+
+```bash
+mkdir -p /var/run/postgresql && chown postgres /var/run/postgresql
+su postgres -c "/usr/lib/postgresql/16/bin/pg_ctl -D /var/lib/postgresql/t \
+  -o '-p 5433 -k /var/run/postgresql' -l /var/lib/postgresql/pg.log start"
+su postgres -c "/usr/lib/postgresql/16/bin/psql -p 5433 -h /var/run/postgresql \
+  -c 'create database mmptest' postgres"
+DATABASE_URL='postgresql://postgres@/mmptest?host=/var/run/postgresql&port=5433' \
+  PYTHONPATH=src python3 scripts/test_jobs.py
+```
+
+The pool prints "couldn't stop thread … within 5.0 seconds" at exit after the
+summary line; it is noise from psycopg's pool teardown, not a failure — grep for
+`passed,` rather than reading the tail.
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.

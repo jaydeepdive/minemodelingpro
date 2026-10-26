@@ -167,5 +167,35 @@ row = d.one("select log, notes from jobs where id=%s", jn["id"])
 check("the success log does not erase the failure note",
       row["log"] == "built 602 holes" and bool(row["notes"]))
 
+# --- a person waiting on their own build goes before an automatic refresh
+print("\na client's own build does not queue behind the auto-refresh")
+d.run("delete from jobs")
+# the refresh queued three rebuilds first; the client pressed Rebuild after
+r1 = d.one("insert into jobs (kind, owner, project_id, source, created_at) "
+           "values ('build',%s,%s,'refresh', now() - interval '5 minutes') returning *",
+           owner, proj)
+d.run("insert into jobs (kind, owner, project_id, source, created_at) "
+      "values ('build',%s,%s,'refresh', now() - interval '4 minutes')", owner, proj)
+mine = d.one("insert into jobs (kind, owner, project_id) values ('build',%s,%s) returning *",
+             owner, proj)
+check("a new job is a person's by default", mine["source"] == "user", mine["source"])
+first = d.claim_job()
+check("the client's build is claimed first", first and first["id"] == mine["id"],
+      "got the refresh queued 5 minutes earlier")
+second = d.claim_job()
+check("then the oldest refresh", second and second["id"] == r1["id"])
+# and among jobs of the same kind, oldest still wins
+d.run("delete from jobs")
+a = d.one("insert into jobs (kind, owner, project_id, created_at) "
+          "values ('build',%s,%s, now() - interval '2 minutes') returning *", owner, proj)
+d.one("insert into jobs (kind, owner, project_id) values ('build',%s,%s) returning *",
+      owner, proj)
+check("two client builds are still first-come", d.claim_job()["id"] == a["id"])
+# the refresh sweep must tag what it queues, or this ordering does nothing
+import inspect
+from studio import worker as _w
+check("the refresh sweep tags its own jobs",
+      "'refresh'" in inspect.getsource(_w.refresh_stale_models))
+
 print("\n%d passed, %d failed" % (len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

@@ -111,6 +111,11 @@ alter table jobs add column if not exists heartbeat_at timestamptz;
 -- showed "attempt 2" and no reason at all.
 alter table jobs add column if not exists notes text;
 create index if not exists jobs_running on jobs (status, heartbeat_at);
+-- who asked for this job. A version bump queues REFRESH_BATCH rebuilds, and on a
+-- single worker a client pressing "Rebuild model" then sat behind all of them.
+-- An automatic refresh always yields to a job a person is waiting on.
+alter table jobs add column if not exists source text not null default 'user';
+create index if not exists jobs_claim on jobs (status, source, created_at);
 
 -- so the app can say "the modeler is not responding" instead of spinning
 create table if not exists workers (

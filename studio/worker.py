@@ -164,8 +164,8 @@ def refresh_stale_models(verbose=True):
         return 0
     for r in rows:
         try:
-            d.run("insert into jobs (kind, owner, project_id) values ('build',%s,%s)",
-                  r["owner"], r["id"])
+            d.run("insert into jobs (kind, owner, project_id, source) "
+                  "values ('build',%s,%s,'refresh')", r["owner"], r["id"])
         except Exception as e:
             print(f"[worker] could not queue refresh for {r['id']}: {str(e)[:120]}", flush=True)
             continue
