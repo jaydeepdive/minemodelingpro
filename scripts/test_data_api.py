@@ -11,6 +11,7 @@ readable.
 import os
 import sys
 import uuid
+import json
 import tempfile
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -105,8 +106,28 @@ other = d.one("insert into users (email, pw, role) values (%s,%s,%s) returning *
               "x-" + uuid.uuid4().hex[:8] + "@example.com", "x", "user")["id"]
 op = d.one("insert into projects (owner, slug, name) values (%s,%s,%s) returning *",
            other, "other-" + uuid.uuid4().hex[:6], "Not mine")
-check("another account's data is refused",
-      c.get(f"/api/projects/{op['id']}/data").status_code in (403, 404))
+# This account may be an admin (the invite-only fallback above makes one), and
+# an admin CAN read any project — so a 404 here would mean "that project has no
+# data", not "not yours". Check refusal with a plain user and a project that
+# does have data, or the test passes for the wrong reason.
+ok2 = f"{other}/{op['id']}/data.json"
+F.put_json(ok2, {"collars": [{"hole": "O-1", "e": 1.0, "n": 2.0, "z": 3.0}],
+                 "surveys": [], "intervals": [
+                     {"hole": "O-1", "from": 1.0, "to": 2.0, "el": "Ag",
+                      "grade": 9.0, "unit": "g/t"}]})
+d.run("insert into datasets (project_id, owner, status, data_key) values (%s,%s,'ready',%s)",
+      op["id"], other, ok2)
+pem = "p-" + uuid.uuid4().hex[:8] + "@example.com"
+ppw = "pw-" + uuid.uuid4().hex[:10]
+d.one("insert into users (email, pw, role) values (%s,%s,%s) returning *",
+      pem, S.hash_pw(ppw), "user")
+pc = TestClient(S.app)
+pc.post("/api/auth/login", json={"email": pem, "password": ppw})
+check("a plain user is signed in", (pc.get("/api/me").json().get("user") or {}).get("id"))
+check("another account's data is refused even though it has data",
+      pc.get(f"/api/projects/{op['id']}/data").status_code in (403, 404))
+check("and an admin can still read it (that is what the role is for)",
+      c.get(f"/api/projects/{op['id']}/data").status_code == 200)
 
 # a project with no parsed data says so rather than erroring
 empty = d.one("insert into projects (owner, slug, name) values (%s,%s,%s) returning *",
@@ -307,6 +328,151 @@ sw = c.get(sb + "?table=assays&hole=SM-001&wide=1").json()
 check("and expands on the stored shape", sw["total"] == 2, sw)
 check("a missing grade in a wide row is empty, not shifted",
       sw["rows"][0][3] == 310.0 and sw["rows"][0][4] is None, sw["rows"][0])
+
+# --- A SOURCE PASTED, NOT UPLOADED.
+# Jordan: "i need a way to add additional sources to the model (i.e. data pulled
+# from a news release or whatever) to better assemble the model." A release
+# states its numbers in a space-aligned table nobody exports as a file.
+print("\na source pasted out of a news release")
+
+RELEASE = """Canada Silver Cobalt Works Intersects 845 g/t Silver at Langis
+
+Hole ID        From (m)    To (m)    Length (m)    Ag (g/t)    Co (%)
+DDH-001          120.50    124.00          3.50      845.00      0.31
+DDH-003           75.00     78.20          3.20      312.50      0.18
+
+Table 2. Collar locations (NAD83 UTM Zone 17N)
+
+Hole ID        Easting     Northing    Elevation    Azimuth    Dip    Depth (m)
+DDH-003        574190      5253460          309        135    -55        220.0
+"""
+
+pb = f"/api/projects/{proj['id']}/sources"
+r = c.post(pb + "/preview", json={"text": RELEASE})
+check("a pasted release previews", r.status_code == 200, r.text[:300])
+pv = r.json() if r.status_code == 200 else {}
+check("its intervals are read", (pv.get("counts") or {}).get("intervals") == 4, pv.get("counts"))
+check("its collars are read", (pv.get("counts") or {}).get("collars") == 1, pv.get("counts"))
+check("both elements are found",
+      sorted((pv.get("counts") or {}).get("elements", {})) == ["Ag", "Co"],
+      (pv.get("counts") or {}).get("elements"))
+check("the grid the release states is used", (pv.get("crs") or {}).get("epsg") == 26917,
+      pv.get("crs"))
+check("and it places where the release says",
+      pv.get("center") and 47.0 < pv["center"][0] < 48.0 and -81.0 < pv["center"][1] < -79.0,
+      pv.get("center"))
+# the counts that decide whether this source reaches the model
+H = pv.get("holes") or {}
+check("it says how many holes the project already has", H.get("project_holes") == 2, H)
+check("a hole already here is recognised as the same hole", H.get("already_here") == 1, H)
+check("a hole new to the project is counted", H.get("new_to_this_project") == 1, H)
+check("intervals on a hole with no collar anywhere are named",
+      H.get("intervals_with_no_collar") == 0, H)
+
+# a release whose hole names do not join: the silent failure this exists to show
+LOST = """Hole ID        From (m)    To (m)    Ag (g/t)
+ZZ-99-001         10.00     12.00      500.00
+ZZ-99-002         20.00     22.00      400.00
+"""
+pv2 = c.post(pb + "/preview", json={"text": LOST}).json()
+L = pv2.get("holes") or {}
+check("a release that joins nothing says so loudly",
+      L.get("already_here") == 0 and L.get("intervals_with_no_collar") == 2, L)
+check("and names them as the release wrote them, not as normalised keys",
+      (L.get("unplaceable") or [])[:2] == ["ZZ-99-001", "ZZ-99-002"], L.get("unplaceable"))
+
+check("an empty paste is refused", c.post(pb + "/preview", json={"text": "   "}).status_code == 400)
+# the browser's api() stringifies the body itself; passing JSON.stringify as well
+# sends a JSON *string*, and .get on a str is a bare 500 that says nothing
+check("a double-encoded body is named, not a 500",
+      c.post(pb + "/preview", json=json.dumps({"text": RELEASE})).status_code == 400,
+      c.post(pb + "/preview", json=json.dumps({"text": RELEASE})).status_code)
+check("and it says what arrived",
+      "double-encoded" in c.post(pb + "/preview",
+                                 json=json.dumps({"text": RELEASE})).json().get("detail", ""))
+check("a paste bigger than a paste is refused",
+      c.post(pb + "/preview", json={"text": "x" * 5_000_000}).status_code == 413)
+check("another account's project cannot be pasted into",
+      pc.post(f"/api/projects/{op['id']}/sources/preview",
+              json={"text": RELEASE}).status_code in (403, 404))
+check("preview stores nothing",
+      d.one("select count(*) as n from datasets where project_id = %s",
+            proj["id"])["n"] == 1)
+
+# --- adding it really does make it a dataset like any other
+r = c.post(pb, json={"text": RELEASE, "name": "Langis release, Feb 2026"})
+# A release is a good ADDITION and a bad standalone database. Judging it as the
+# latter rejects exactly what the person is adding — and do_import RAISES on a
+# validation error, so this is the difference between the feature working and
+# every added source failing.
+check("a release is not held to whole-database minimums",
+      pv.get("errors") == [], pv.get("errors"))
+check("but a paste holding no drill data at all is still refused",
+      c.post(pb + "/preview", json={"text": "The company announces a $5,000,000 financing."})
+       .json().get("errors"))
+check("adding a source succeeds", r.status_code == 200, r.text[:300])
+got = r.json() if r.status_code == 200 else {}
+check("it becomes a dataset", bool((got.get("dataset") or {}).get("id")), got)
+check("named as the person named it",
+      (got.get("dataset") or {}).get("name") == "Langis release, Feb 2026", got.get("dataset"))
+check("and an import job is queued", (got.get("job") or {}).get("kind") == "import", got.get("job"))
+check("the project is now parsing",
+      d.one("select status from projects where id = %s", proj["id"])["status"] == "parsing")
+rows = d.all("select * from datasets where project_id = %s order by created_at", proj["id"])
+check("the project now has two datasets", len(rows) == 2, len(rows))
+new = rows[-1]
+check("the paste is kept as the file it is, so it can be re-read",
+      len(new["files"] or []) == 1 and new["files"][0]["filename"].endswith(".txt"),
+      new["files"])
+check("the stored text is the text pasted",
+      F.get(new["files"][0]["key"]).decode("utf-8").startswith("Canada Silver Cobalt"))
+check("it is marked as a paste", (new["options"] or {}).get("pasted") is True, new["options"])
+
+# the standalone rule still applies to a project's first dataset
+from minemodelingpro import imports as _IMP
+thin = {"counts": {"collars": 1, "intervals": 6, "linked": 1}}
+check("a project's first dataset must still be a whole database",
+      len(_IMP.validate(thin, standalone=True)) == 3, _IMP.validate(thin))
+check("and the same data is fine as an addition",
+      _IMP.validate(thin, standalone=False) == [], _IMP.validate(thin, standalone=False))
+check("an addition with nothing in it is still refused",
+      _IMP.validate({"counts": {"collars": 0, "intervals": 0, "linked": 0}},
+                    standalone=False) != [])
+
+# --- the worker must actually read it back and merge it
+print("\nthe added source reaches the model")
+from studio import worker as _W
+import importlib
+pj = d.one("select * from projects where id = %s", proj["id"])
+before = {r["id"] for r in d.all("select id from datasets where project_id = %s and status='ready'",
+                                 proj["id"])}
+jb = d.one("select * from jobs where project_id = %s and kind = 'import' "
+           "and status = 'queued' order by created_at desc limit 1", proj["id"])
+check("the import job is waiting", bool(jb))
+if jb:
+    try:
+        _W.do_import(jb)
+        ran = True
+    except Exception as e:
+        ran = False
+        check("the pasted source imports without raising", False, "%s: %s" % (type(e).__name__, e))
+    if ran:
+        check("the pasted source imports without raising", True)
+        nd = d.one("select * from datasets where id = %s", jb["dataset_id"])
+        check("its dataset is ready, not error", nd["status"] == "ready",
+              (nd["status"], nd.get("error")))
+        check("and it was read as a release",
+              any(t.get("kind") == "release" for t in ((nd["summary"] or {}).get("tables") or [])),
+              (nd["summary"] or {}).get("tables"))
+        check("its intervals are stored",
+              ((nd["summary"] or {}).get("counts") or {}).get("intervals") == 4,
+              (nd["summary"] or {}).get("counts"))
+        # and the data endpoint now shows the release's holes beside the upload's
+        hl = c.get(base + "?table=assays&group=hole").json()
+        got = {x[0] for x in hl["rows"]}
+        check("the release's new hole appears in the hole list", "DDH-003" in got, sorted(got))
+        check("and the project's own holes are still there",
+              {"DDH-001", "DDH-002"} <= got, sorted(got))
 
 print("\n%d passed, %d failed" % (len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

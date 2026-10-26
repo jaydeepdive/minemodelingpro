@@ -98,6 +98,22 @@
     </div>
   </div>
 
+  <!-- A drill database is not the only way drilling arrives. A news release
+       states its results in a table nobody exports as a file. -->
+  <div class="card" style="margin-top:18px" id="srccard">
+    <h3>Add a source</h3>
+    <p class="note">Paste a news release, a report page, or a table of results.
+      It is read the same way an uploaded file is and merged on hole id, so the
+      release's holes are modelled <b>with</b> your own rather than instead of them.</p>
+    <textarea id="srctext" rows="7" placeholder="Paste the release text, including its results table and — if it has one — its collar table…" style="width:100%;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px"></textarea>
+    <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
+      <input id="srcname" placeholder="What is this? e.g. Langis release, Feb 2026" style="flex:1;min-width:200px">
+      <button class="btn ghost" id="srccheck">See what it holds</button>
+      <button class="btn" id="srcadd" disabled>Add to the model</button>
+    </div>
+    <div id="srcout" style="margin-top:10px"></div>
+  </div>
+
   <div class="card" style="margin-top:18px">
     <h3>Import log</h3>
     <p class="note">What each file was read as, and anything worth checking.</p>
@@ -484,6 +500,83 @@ $("#dnext").onclick = () => { D.offset += D.limit; loadData(); };
   };
 }
 loadData();
+
+/* ---- a source pasted, not uploaded ------------------------------------
+   The counts that matter are not the row counts. They are whether this
+   source's holes JOIN the ones already here: a release naming LM-26-101
+   against a collar table that says LM26101 lands nowhere, and silently. */
+let SRC = null;
+function srcReport(pv) {
+  const H = pv.holes || {}, C = pv.counts || {};
+  const els = Object.keys(C.elements || {});
+  const lost = H.intervals_with_no_collar || 0;
+  const bits = [];
+  bits.push(`<b>${fmt(C.intervals || 0)}</b> interval${(C.intervals || 0) === 1 ? "" : "s"}`
+    + (els.length ? ` of ${els.map(esc).join(", ")}` : "")
+    + ` on <b>${fmt(H.with_intervals || 0)}</b> hole${(H.with_intervals || 0) === 1 ? "" : "s"}`
+    + (C.collars ? `, and <b>${fmt(C.collars)}</b> collar${C.collars === 1 ? "" : "s"}` : ""));
+  if (H.already_here) bits.push(`<b>${fmt(H.already_here)}</b> of those holes are already in this project — the release adds to them`);
+  if (H.new_to_this_project) bits.push(`<b>${fmt(H.new_to_this_project)}</b> ${H.new_to_this_project === 1 ? "is a hole" : "are holes"} this project does not have yet`);
+  const crs = pv.crs || {};
+  if (crs.epsg) bits.push(`collars placed in EPSG ${crs.epsg}`
+    + (pv.center ? ` — ${(+pv.center[0]).toFixed(3)}, ${(+pv.center[1]).toFixed(3)}` : ""));
+  let html = `<ul class="small" style="margin:0 0 8px 18px">`
+    + bits.map(b => `<li>${b}</li>`).join("") + `</ul>`;
+  if (lost) {
+    html += `<p class="small" style="color:#c0392b"><b>${fmt(lost)}</b> hole`
+      + `${lost === 1 ? "" : "s"} carry results but have no collar here or in the paste, so`
+      + ` ${lost === 1 ? "its intervals" : "their intervals"} cannot be placed in 3D`
+      + (H.unplaceable && H.unplaceable.length
+         ? `: ${H.unplaceable.map(esc).join(", ")}${lost > H.unplaceable.length ? "…" : ""}` : "")
+      + `. Paste the release's collar table too, or add those collars to your upload.</p>`;
+  }
+  if ((pv.errors || []).length)
+    html += `<p class="small" style="color:#c0392b">${pv.errors.map(esc).join("; ")}</p>`;
+  const notes = (pv.notes || []).filter(n => !/^joined on hole id/.test(n));
+  if (notes.length)
+    html += `<details class="small"><summary>How it was read</summary><ul style="margin:6px 0 0 18px">`
+      + notes.map(n => `<li>${esc(n)}</li>`).join("") + `</ul></details>`;
+  return html;
+}
+
+$("#srccheck").onclick = async () => {
+  const text = $("#srctext").value;
+  const out = $("#srcout"), add = $("#srcadd");
+  SRC = null; add.disabled = true;
+  if (!text.trim()) { out.innerHTML = `<p class="muted small">Nothing pasted yet.</p>`; return; }
+  out.innerHTML = `<p class="muted small">Reading it…</p>`;
+  try {
+    // api() stringifies the body itself — passing JSON.stringify here sends a
+    // JSON string, and the server then reads a str where a dict should be
+    const pv = await api(`/projects/${project.id}/sources/preview`,
+                         { method: "POST", body: { text } });
+    out.innerHTML = srcReport(pv);
+    const got = (pv.counts || {}).intervals || (pv.counts || {}).collars || 0;
+    if (!got) out.innerHTML = `<p class="small">Nothing in that reads as drill results.`
+      + ` A results table needs a hole id, a from and a to, and at least one grade column.`
+      + ` Prose — "845 g/t silver over 3.5 metres" — is not read yet.</p>`;
+    else { SRC = text; add.disabled = false; }
+  } catch (e) {
+    out.innerHTML = `<p class="small" style="color:#c0392b">${esc(String(e.message || e))}</p>`;
+  }
+};
+
+$("#srcadd").onclick = async () => {
+  if (!SRC) return;
+  const btn = $("#srcadd"); btn.disabled = true; btn.textContent = "Adding…";
+  try {
+    await api(`/projects/${project.id}/sources`,
+              { method: "POST", body: { text: SRC, name: $("#srcname").value } });
+    $("#srctext").value = ""; $("#srcname").value = ""; SRC = null;
+    $("#srcout").innerHTML = `<p class="small">Added. It is being read now, and the`
+      + ` model rebuilds when it is in — the import log below shows what happened.</p>`;
+    location.reload();
+  } catch (e) {
+    $("#srcout").innerHTML = `<p class="small" style="color:#c0392b">${esc(String(e.message || e))}</p>`;
+  } finally { btn.textContent = "Add to the model"; }
+};
+$("#srctext").oninput = () => { SRC = null; $("#srcadd").disabled = true; };
+
 // parameters start from the project's most recent technical report, else from
 // what is typical for its region and commodity; the form shows where each came from
 const auto = await defaults({ region: project.region, commodity: project.commodity, attach_to: project.attach_to });

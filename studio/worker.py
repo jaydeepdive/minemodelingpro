@@ -231,7 +231,13 @@ def do_import(job):
         owner=str(ds_row["owner"]), private=not proj.get("is_public"),
         source_name=ds_row.get("name") or ", ".join(os.path.basename(p) for p in paths),
         crs_mode=o.get("crs_mode", "auto"), azimuth_ref=o.get("azimuth_ref", "auto"))
-    errors = IMP.validate(data)
+    # A source ADDED to a project that already has drilling is not required to
+    # be a whole drill database on its own: a release of six intervals on three
+    # holes is a good addition and a bad standalone dataset. Judge it as what it
+    # is, or adding a source fails on the minimums every time.
+    others = d.all("select id from datasets where project_id = %s and status = 'ready' "
+                   "and id <> %s", ds_row["project_id"], ds_row["id"])
+    errors = IMP.validate(data, standalone=not others)
     summary = {"counts": data["counts"], "tables": data["tables"], "notes": data["notes"],
                "crs": data["crs"], "center": data["center"], "errors": errors}
     key = f"{ds_row['owner']}/{ds_row['project_id']}/datasets/{ds_row['id']}.json"

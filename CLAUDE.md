@@ -1275,6 +1275,75 @@ Browser-verified on both sources with no page errors: 39,600 model rows -> 220
 holes, expanding LM-16-001 gives 60 intervals as `48.6 | 49.6 | 1 | Ag 0.1 |
 Co 0 | Ni 0`.
 
+## Adding a source that was never a file (2026-10-26)
+
+Jordan: "it seems my assay data is missing some details that werent provided for
+the langis project. i need a way to add additional sources to the model (i.e.
+data pulled from a news release or whatever) to better assemble the model."
+
+Two mechanisms already existed and neither reached: a project merges every
+dataset on it by normalised hole id (so a second upload already adds drilling),
+and `attach_to` folds a PUBLIC MMP project in. **There is no public Langis data
+in the corpus** — checked — so attaching could not help. What was missing is the
+way drilling actually arrives when there is no file: a news release, which states
+its numbers in a space-aligned table nobody exports.
+
+`drill_tables` already reads exactly that — it is the extractor behind four
+thousand technical reports. So the work was plumbing, not parsing:
+
+- `imports.release_text()` runs it over a text file and returns the importer's
+  OWN collar and interval shapes. `build_dataset` calls it when a text file
+  yielded no table a reader could see, so **a paste is an ordinary dataset** —
+  merged by hole id, shown in the import log, present in the hole list. There is
+  no second kind of source in the model, only a second way in.
+- A release names its grid in the words above its table ("NAD83 UTM Zone 17N")
+  and `detect_crs` reads it. Without that the collars fall back to a local grid,
+  which the importer's own note says "cannot merge with other sources for the
+  same project" — the one thing an added source exists to do. With it, the
+  Langis-style fixture places at EPSG 26917, 47.430 N 80.016 W: Cobalt, Ontario.
+- `POST /api/projects/{id}/sources/preview` reads a paste and stores nothing.
+  `POST .../sources` keeps it as the .txt it is, so "Read the files again"
+  re-reads it like any upload.
+
+**The preview is the feature.** The row counts are not what decides whether a
+source reaches the model — whether its holes JOIN does. A release naming
+`LM-26-101` against a collar table that says `LM26101` lands nowhere, silently.
+The card reports, before anything is stored: how many of its holes are already in
+the project, how many are new, and **how many carry results but have no collar
+anywhere** — naming them *as the release wrote them*, never as normalised keys,
+because nobody recognises `ZZ-99-1` as their own `ZZ-99-001`.
+
+**`validate` now takes `standalone`.** A release of six intervals on three holes
+is a good addition and a bad standalone database, and `do_import` RAISES on a
+validation error — so holding an added source to "at least 3 collars, at least 8
+intervals, collars sharing hole ids with its own assays" made every added source
+fail. The minimums apply to a project's FIRST dataset; an addition only has to
+hold something. Whether it joins is answered against the project's holes, at
+preview time, which is the right place and the right question.
+
+*Caught by driving the page:* `app.js`'s `api()` stringifies the body itself, so
+`body: JSON.stringify({...})` sends a JSON **string** and `.get` on a `str` is a
+bare 500. `_body(request)` now says "the body looks double-encoded" instead.
+**And the helper must sit ABOVE the `@app.post` decorator** — defined between the
+decorator and its function, the route binds to the helper, and every call fails
+with "Field required: query.request".
+
+*Also caught, in an existing test:* "another account's data is refused" was
+passing on a 404 that meant "that project has no data". The test account is an
+admin (the invite-only fallback makes one) and an admin may read any project. It
+now checks with a plain user against a project that does have data, and asserts
+separately that an admin still can.
+
+`scripts/test_data_api.py` is 109 tests, including the full round trip: the paste
+imports without raising, its dataset is `ready` and marked as read from a release,
+and its new hole appears in the hole list beside the upload's. Browser-verified
+with no page errors.
+
+**Still not read: prose.** "returned 845 g/t silver over 3.5 metres from 210.1 m"
+yields nothing — it needs a hole id, a from and a to, and a grade column. That is
+the same gap ranked third under "Still open" above, and the card says so rather
+than failing silently.
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.

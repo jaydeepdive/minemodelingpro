@@ -33,6 +33,7 @@ import base64
 import hashlib
 import secrets
 import datetime
+import shutil
 import mimetypes
 import urllib.parse
 
@@ -507,6 +508,162 @@ async def upload(pid: str, request: Request, files: list[UploadFile] = File(...)
     d.run("update projects set status = 'parsing', error = null, updated_at = now() where id = %s", pid)
     j = queue("import", u["id"], pid, ds["id"])
     event(u["id"], "dataset.upload", project=pid, files=len(saved), bytes=total)
+    return {"dataset": jsonable(ds), "job": jsonable(j)}
+
+
+# ------------------------------------------------- a source pasted, not uploaded
+# A drill database is not the only way drilling arrives. A news release states
+# its results in a table nobody exports as a file, and a property is better
+# modelled WITH those holes than without them. Pasted text becomes an ordinary
+# dataset, so it merges by normalised hole id exactly like an upload and shows in
+# the import log and the hole list — there is no second kind of source in the
+# model, only a second way in.
+MAX_PASTE_BYTES = 4_000_000
+
+
+def _parse_pasted(text, project_name=None, company=None, opts=None, pid=None):
+    """What a paste holds, without storing anything."""
+    import tempfile
+    from minemodelingpro import imports as IMP
+    o = opts or {}
+    tmp = tempfile.mkdtemp(prefix="mmp-paste-")
+    path = os.path.join(tmp, "pasted-source.txt")
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    try:
+        data = IMP.build_dataset(
+            [path], project=project_name, company=company,
+            epsg=o.get("epsg"), utm_zone=o.get("utm_zone"),
+            hemisphere=o.get("hemisphere", "N"), datum=o.get("datum", "WGS84"),
+            crs_mode=o.get("crs_mode", "auto"))
+        # a paste is an addition when the project already has drilling
+        has = store.db().all(
+            "select id from datasets where project_id = %s and status = 'ready'", pid) \
+            if pid else []
+        return data, IMP.validate(data, standalone=not has)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _known_holes(pid):
+    """Normalised hole ids this project already has, so a paste can say whether
+    its holes JOIN. A release naming LM-26-101 against a collar table that says
+    LM26101 lands nowhere, and silently."""
+    from minemodelingpro import holeid
+    d = store.db()
+    out = set()
+    for r in d.all("select data_key from datasets where project_id = %s and status = 'ready'", pid):
+        if not r.get("data_key"):
+            continue
+        try:
+            t, collars, _s = _dataset(r["data_key"])
+        except Exception:
+            continue
+        for c in collars or []:
+            h = c.get("hole") or c.get("id")
+            if h:
+                out.add(holeid.key(str(h)))
+    return out
+
+
+async def _body(request):
+    """The JSON object a POST should carry. A client that stringifies its body
+    twice sends a JSON *string*, and reading .get on it is a bare 500 that says
+    nothing — this says what arrived instead."""
+    try:
+        b = await request.json()
+    except Exception:
+        raise HTTPException(400, "this endpoint takes a JSON object")
+    if not isinstance(b, dict):
+        raise HTTPException(400, "expected a JSON object, got %s — the body looks "
+                                 "double-encoded" % type(b).__name__)
+    return b
+
+
+@app.post("/api/projects/{pid}/sources/preview")
+async def preview_source(pid: str, request: Request, u=Depends(require)):
+    """Read a paste and say what is in it — before anything is stored.
+
+    The counts that matter are not the row counts: they are how many of this
+    source's holes JOIN the ones already here, and how many intervals arrive on
+    holes with no collar, because those cannot be placed in 3D at all."""
+    from minemodelingpro import holeid
+    p = project_or_404(u, pid)
+    b = await _body(request)
+    text = (b.get("text") or "")
+    if len(text.encode("utf-8")) > MAX_PASTE_BYTES:
+        raise HTTPException(413, "that is more text than a paste should carry — upload it as a file")
+    if not text.strip():
+        raise HTTPException(400, "nothing pasted")
+    try:
+        data, errors = _parse_pasted(text, p["name"], p.get("company"),
+                                     b.get("options"), pid=pid)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(400, "could not read that: %s: %s" % (type(e).__name__, str(e)[:200]))
+    known = _known_holes(pid)
+    new_c = {holeid.key(str(c.get("hole") or "")) for c in (data.get("collars") or [])}
+    # keep the name the release wrote beside the normalised key: a person
+    # cannot recognise "ZZ-99-1" as their own hole ZZ-99-001
+    names = {}
+    for r in (data.get("intervals") or []):
+        nm = str(r.get("hole") or "")
+        if nm:
+            names.setdefault(holeid.key(nm), nm)
+    iv_h = set(names)
+    placed = new_c | known
+    return {
+        "counts": data.get("counts"),
+        "crs": {k: v for k, v in (data.get("crs") or {}).items()
+                if k in ("kind", "epsg", "located", "zone")},
+        "center": data.get("center"),
+        "notes": data.get("notes"),
+        "tables": data.get("tables"),
+        "errors": errors,
+        "holes": {
+            "collars": len(new_c),
+            "with_intervals": len(iv_h),
+            "already_here": len(iv_h & known),
+            "new_to_this_project": len(iv_h - known),
+            # the one that decides whether this source reaches the model
+            "intervals_with_no_collar": len(iv_h - placed),
+            "unplaceable": sorted(names[k] for k in (iv_h - placed))[:12],
+            "project_holes": len(known),
+        },
+    }
+
+
+@app.post("/api/projects/{pid}/sources")
+async def add_source(pid: str, request: Request, u=Depends(require)):
+    """Keep a pasted source and model with it. It is stored as the text file it
+    is, so "Read the files again" re-reads it like any other upload."""
+    p = project_or_404(u, pid)
+    b = await _body(request)
+    text = (b.get("text") or "")
+    if len(text.encode("utf-8")) > MAX_PASTE_BYTES:
+        raise HTTPException(413, "that is more text than a paste should carry — upload it as a file")
+    if not text.strip():
+        raise HTTPException(400, "nothing pasted")
+    name = (b.get("name") or "").strip()[:120] or "pasted source"
+    o = b.get("options") or {}
+    opts = {"epsg": o.get("epsg"), "utm_zone": o.get("utm_zone"),
+            "hemisphere": (o.get("hemisphere") or "N")[:1].upper(),
+            "datum": o.get("datum") or "WGS84",
+            "crs_mode": (o.get("crs_mode") or "auto").lower(),
+            "azimuth_ref": "auto", "pasted": True}
+    F = store.files()
+    raw = text.encode("utf-8")
+    key = f"{u['id']}/{pid}/uploads/{uuid.uuid4().hex[:8]}-{slugify(name, 'source')}.txt"
+    F.put(key, raw, "text/plain")
+    saved = [{"filename": slugify(name, "source") + ".txt", "key": key, "bytes": len(raw)}]
+    d = store.db()
+    ds = d.one("insert into datasets (project_id, owner, name, files, options, bytes) "
+               "values (%s,%s,%s,%s,%s,%s) returning *",
+               pid, u["id"], name, json.dumps(saved), json.dumps(opts), len(raw))
+    d.run("update projects set status = 'parsing', error = null, updated_at = now() where id = %s", pid)
+    j = queue("import", u["id"], pid, ds["id"])
+    event(u["id"], "dataset.paste", project=pid, bytes=len(raw))
     return {"dataset": jsonable(ds), "job": jsonable(j)}
 
 

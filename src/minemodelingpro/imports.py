@@ -1116,6 +1116,77 @@ def read_for_modelling(path, notes=None):
         return read_tables(path)
 
 
+# Text pasted out of a news release is the other way drill data arrives. A
+# release states its numbers in a table whose columns are aligned with runs of
+# spaces -- which no CSV reader can see, and which `drill_tables` reads directly,
+# because that is the same extractor that reads four thousand technical reports.
+_TEXTY = (".txt", ".text", ".md", ".log", ".csv", ".tsv", ".dat")
+
+
+def release_text(path, notes=None):
+    """Collars and intervals out of release text, in the importer's own shapes.
+
+    Returned rows are exactly what `parse_collars` and `parse_assays` produce, so
+    a pasted release is merged by normalised hole id like any uploaded file --
+    there is no second kind of source in the model, only a second way in."""
+    notes = notes if notes is not None else []
+    from minemodelingpro import drill_tables as DT
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            text = fh.read(4_000_000)
+    except OSError as e:
+        notes.append("%s: could not be read — %s" % (os.path.basename(path), str(e)[:100]))
+        return [], [], None
+    if not text.strip():
+        return [], [], None
+    try:
+        cols, ivs = DT.extract_tables(DT.TextDoc([text]))
+    except Exception as e:
+        notes.append("%s: could not be read as a release — %s: %s"
+                     % (os.path.basename(path), type(e).__name__, str(e)[:100]))
+        return [], [], None
+    collars = []
+    for c in (cols or []):
+        hid = str(c.get("hole") or c.get("id") or "").strip()
+        if not hid:
+            continue
+        rec = {"hole": hid, "e": c.get("e"), "n": c.get("n"), "z": c.get("z"),
+               "az": c.get("az"), "dip": c.get("dip"), "depth": c.get("depth")}
+        if rec.get("e") is None and c.get("lat") is not None:
+            rec["lat"], rec["lon"] = c.get("lat"), c.get("lon")
+        if rec.get("e") is None and rec.get("lat") is None:
+            continue                       # a collar with no position places nothing
+        if rec.get("dip") is not None and rec["dip"] > 0:
+            rec["dip"] = -rec["dip"]       # positive-down, as everywhere else
+        collars.append(rec)
+    intervals = []
+    for r in (ivs or []):
+        hid = str(r.get("hole") or "").strip()
+        fr, to, g = r.get("from"), r.get("to"), r.get("grade")
+        if not hid or fr is None or to is None or g is None or not r.get("el"):
+            continue
+        try:
+            fr, to, g = float(fr), float(to), float(g)
+        except (TypeError, ValueError):
+            continue
+        if to <= fr:
+            continue
+        intervals.append({"hole": hid, "from": fr, "to": to, "el": str(r["el"]),
+                          "grade": round(g, 5), "unit": r.get("unit") or "", "sub": 0})
+    # the release usually names its own grid in the words above the table
+    crs = None
+    try:
+        crs = DT.detect_crs([text])
+    except Exception:
+        pass
+    if collars or intervals:
+        notes.append("%s: read as release text — %d collar(s) and %d assay interval(s) "
+                     "from its own tables%s"
+                     % (os.path.basename(path), len(collars), len(intervals),
+                        (", stated grid %s" % crs.get("epsg")) if crs and crs.get("epsg") else ""))
+    return collars, intervals, crs
+
+
 def build_dataset(paths, project=None, company=None, epsg=None, utm_zone=None, hemisphere="N",
                   datum="WGS84", attach_to=None, settings=None, dataset_id=None, owner=None,
                   private=True, source_name=None, crs_mode=None, azimuth_ref="auto"):
@@ -1124,15 +1195,16 @@ def build_dataset(paths, project=None, company=None, epsg=None, utm_zone=None, h
     import pandas as pd
     notes, tables = [], []
     collars, surveys, intervals, lithology = [], [], [], []
+    rel_crs = None
     for path in paths:
         try:
             got = read_for_modelling(path, notes)
         except Exception as e:
             notes.append(f"{os.path.basename(path)}: could not be read — {str(e)[:120]}")
-            continue
-        if not got:
-            notes.append(f"{os.path.basename(path)}: no tables found")
-        for name, df in got.items():
+            got = {}
+        recognised = 0
+        n0 = len(notes)                      # so a line disproved below can go
+        for name, df in (got or {}).items():
             df = df.dropna(how="all").dropna(axis=1, how="all")
             if df.empty:
                 continue
@@ -1145,17 +1217,34 @@ def build_dataset(paths, project=None, company=None, epsg=None, utm_zone=None, h
                            "roles": {k: str(v) for k, v in prof["roles"].items()},
                            "elements": [[c, e, u] for c, e, u in prof["elements"]]})
             if prof["kind"] == "collar":
-                collars += parse_collars(df, prof["roles"], notes)
+                collars += parse_collars(df, prof["roles"], notes); recognised += 1
             elif prof["kind"] == "survey":
-                surveys += parse_surveys(df, prof["roles"], notes, azimuth_ref)
+                surveys += parse_surveys(df, prof["roles"], notes, azimuth_ref); recognised += 1
             elif prof["kind"] == "assay":
-                intervals += parse_assays(df, prof, notes)
+                intervals += parse_assays(df, prof, notes); recognised += 1
             elif prof["kind"] == "lithology":
-                lithology += parse_lithology(df, prof["roles"], notes)
+                lithology += parse_lithology(df, prof["roles"], notes); recognised += 1
             else:
                 notes.append(f"{name}: not recognised as collars, surveys, assays "
                              f"or logged geology "
                              f"(columns: {', '.join(map(str, df.columns[:8]))})")
+        # Nothing a table reader could see. A news release states its numbers in
+        # a space-aligned table, so try the extractor that reads those before
+        # telling the person their file holds nothing.
+        if not recognised and os.path.splitext(path)[1].lower() in _TEXTY:
+            rc, ri, rcrs = release_text(path, notes)
+            if rc or ri:
+                # the table reader's complaint about this file is wrong now
+                notes[n0:] = [x for x in notes[n0:] if "not recognised as collars" not in x]
+                collars += rc
+                intervals += ri
+                rel_crs = rel_crs or rcrs
+                tables.append({"table": os.path.basename(path), "kind": "release",
+                               "rows": len(rc) + len(ri), "roles": {},
+                               "elements": sorted({r["el"] for r in ri})})
+                recognised += 1
+        if not recognised:
+            notes.append(f"{os.path.basename(path)}: no tables found")
     # de-duplicate
     seen, c2 = set(), []
     for c in collars:
@@ -1173,6 +1262,16 @@ def build_dataset(paths, project=None, company=None, epsg=None, utm_zone=None, h
     intervals = i2
     clean_settings, errs = PARAMS.validate(settings or {})
     intervals, elements_seen = carry_elements(intervals, clean_settings.get("elements"), notes)
+    # A release names its own grid in the words above its table ("NAD83 UTM Zone
+    # 17N"), and without it the collars fall back to a local grid — which the
+    # importer's own note says "cannot merge with other sources for the same
+    # project", the one thing an added source exists to do.
+    if rel_crs and not epsg and not utm_zone and rel_crs.get("zone"):
+        utm_zone = rel_crs["zone"]
+        hemisphere = rel_crs.get("hemi") or hemisphere
+        datum = rel_crs.get("datum") or datum
+        notes.append("coordinates: the release states UTM zone %s%s (%s), and that is used"
+                     % (utm_zone, hemisphere, datum))
     crs, center = georeference(collars, epsg, utm_zone, hemisphere, datum, notes,
                                crs_mode=crs_mode)
     if lithology:
@@ -1249,10 +1348,24 @@ def build_dataset(paths, project=None, company=None, epsg=None, utm_zone=None, h
     return ds
 
 
-def validate(ds):
-    """Blocking problems (the model cannot be built) vs warnings."""
+def validate(ds, standalone=True):
+    """Blocking problems (the model cannot be built) vs warnings.
+
+    `standalone` is whether this dataset has to be a whole drill database on its
+    own. It does when it is the only thing a project has. It does NOT when it is
+    a source ADDED to a project that already has drilling: a news release
+    reporting six intervals on three holes is a perfectly good addition, and
+    holding it to "at least 3 collars, at least 8 intervals, and collars that
+    share hole ids with its own assays" rejects exactly the thing the person is
+    trying to add. Whether an added source actually joins is a real question, and
+    it is answered against the PROJECT's holes before it is stored, not against
+    the source's own."""
     errors = []
     c = ds["counts"]
+    if not standalone:
+        if not c["collars"] and not c["intervals"]:
+            errors.append("nothing in this source reads as collars or assay intervals")
+        return errors
     if c["collars"] < 3:
         errors.append(f"only {c['collars']} collar(s) with coordinates — need at least 3")
     if c["intervals"] < 8:
