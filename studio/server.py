@@ -34,6 +34,7 @@ import hashlib
 import secrets
 import datetime
 import shutil
+import threading
 import mimetypes
 import urllib.parse
 
@@ -198,19 +199,69 @@ def throttle(key, limit=8, window=300):
 
 
 # ------------------------------------------------------------------- startup
+# Whether the database is answering. The web service serves the entire public
+# gallery, which needs no database at all, so this is a degraded state and not a
+# reason to refuse to start — see `_db_ready`.
+DBSTATE = {"ok": False, "error": None, "schema": False}
+
+
+def _db_ready():
+    """Attach to the database, apply the schema, create the bootstrap admin.
+
+    Returns the handle, or None if the database is not answering. Safe to call
+    repeatedly: the schema is idempotent and the admin is only made once."""
+    d = store.wait_for_db(tries=6, delay=2, fatal=False)
+    if d is None:
+        DBSTATE.update(ok=False, error=store.LAST_DB_ERROR.get("text"))
+        return None
+    try:
+        d.init_schema()
+        em = (os.environ.get("MMP_ADMIN_EMAIL") or "").strip().lower()
+        pw = os.environ.get("MMP_ADMIN_PASSWORD") or ""
+        if em and pw and not d.one("select id from users where lower(email) = %s", em):
+            d.run("insert into users (email, pw, role, name, quota_bytes) "
+                  "values (%s,%s,'admin',%s,%s)", em, hash_pw(pw), "Administrator", 21474836480)
+            print(f"[server] created admin {em}", flush=True)
+        DBSTATE.update(ok=True, error=None, schema=True)
+        return d
+    except Exception as e:                                   # noqa: BLE001
+        store.drop_db()
+        DBSTATE.update(ok=False, error=str(e)[:300])
+        return None
+
+
+def _db_retry_forever(delay=15):
+    while not DBSTATE["ok"]:
+        time.sleep(delay)
+        if _db_ready():
+            print("[server] database is answering again", flush=True)
+            return
+
+
+@app.exception_handler(store.DBUnavailable)
+def _db_down(request, exc):
+    """A route that needs Postgres says so, rather than returning a 500.
+
+    The gallery and the sign-in page do not need it and keep working."""
+    return JSONResponse(
+        {"detail": "the database is not reachable right now — the site is up but "
+                   "sign-in and models are unavailable until it returns"},
+        status_code=503)
+
+
 @app.on_event("startup")
 def startup():
     if not SECRET and os.environ.get("MMP_ENV") == "production":
         raise SystemExit("MMP_SECRET must be set in production")
-    d = store.wait_for_db()
-    d.init_schema()
-    em = (os.environ.get("MMP_ADMIN_EMAIL") or "").strip().lower()
-    pw = os.environ.get("MMP_ADMIN_PASSWORD") or ""
-    if em and pw:
-        if not d.one("select id from users where lower(email) = %s", em):
-            d.run("insert into users (email, pw, role, name, quota_bytes) "
-                  "values (%s,%s,'admin',%s,%s)", em, hash_pw(pw), "Administrator", 21474836480)
-            print(f"[server] created admin {em}", flush=True)
+    # A late or absent database must not stop the app starting. It used to:
+    # wait_for_db raised SystemExit after 60 seconds, App Platform restarted the
+    # process, and it exited again — a crash loop that serves 503 on every route,
+    # the public gallery and /api/health included, so the one page that could
+    # have said what was wrong was down too. With one instance and no replica,
+    # starting degraded beats not starting.
+    if _db_ready() is None:
+        print(f"[server] starting WITHOUT a database: {DBSTATE['error']}", flush=True)
+        threading.Thread(target=_db_retry_forever, daemon=True).start()
     # the published gallery comes from object storage when it is there, so a new
     # build reaches the site without a deployment
     try:
@@ -242,13 +293,22 @@ def health():
     The worker line is here because an app whose background worker has died looks
     perfectly healthy from the outside, and that is exactly the failure that leaves
     an upload saying "parsing" for three hours."""
-    d = store.db()
+    # 200 whenever the process is answering, because it is: it serves the
+    # gallery with or without Postgres. Reporting the database by HTTP status
+    # instead made App Platform pull a working instance out of rotation.
+    ok = False
+    d = None
     try:
+        d = store.db()
         d.one("select 1")
         ok = True
-    except Exception:
-        ok = False
+    except Exception as e:                                   # noqa: BLE001
+        store.drop_db()
+        DBSTATE.update(ok=False, error=str(e)[:300])
     out = {"ok": ok, "version": VERSION}
+    if not ok:
+        out["db"] = "unreachable"
+        out["db_error"] = DBSTATE.get("error")
     if ok:
         age, note = d.worker_seen("modeler")
         out["worker_seen_s"] = round(age) if age is not None else None

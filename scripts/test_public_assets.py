@@ -100,5 +100,47 @@ for rel in sorted(glob.glob(os.path.join(_ROOT, "site", "**", "*.html"), recursi
     dupes = sorted({i for i in ids if ids.count(i) > 1})
     check("%s has no duplicate id" % os.path.relpath(rel, _ROOT), not dupes, dupes)
 
+
+
+
+# --------------------------------------------------------------------------
+# The app must start when Postgres does not answer.
+#
+# It used to not: `wait_for_db` raised SystemExit after 60 seconds, App Platform
+# restarted the process, and it exited again. A crash loop serves 503 on every
+# route — the public gallery, which needs no database at all, and /api/health,
+# which is the one page that could have said what was wrong. With one instance
+# and no replica, refusing to start is a total outage rather than a safe
+# failure, so the app now starts degraded and says so.
+print("\n== with no database")
+_saved = os.environ.pop("DATABASE_URL", None)
+try:
+    from fastapi.testclient import TestClient                   # noqa: E402
+    from studio import store                                    # noqa: E402
+
+    store.drop_db()
+    S.DBSTATE.update(ok=False, error=None, schema=False)
+    with TestClient(S.app, raise_server_exceptions=False) as c:
+        r = c.get("/api/health")
+        check("the app starts and answers its health check", r.status_code == 200,
+              r.status_code)
+        body = r.json() if r.status_code == 200 else {}
+        check("which reports the database as down rather than pretending",
+              body.get("ok") is False and body.get("db") == "unreachable", body)
+        check("and says what the matter is", bool(body.get("db_error")), body)
+        for path in ("/", "/nav.js"):
+            check("%s still serves — it needs no database" % path,
+                  c.get(path).status_code == 200, c.get(path).status_code)
+        r = c.post("/api/auth/login", json={"email": "a@b.c", "password": "x"})
+        check("a route that needs the database says so, with a sentence",
+              r.status_code == 503 and "database" in (r.text or ""),
+              (r.status_code, (r.text or "")[:80]))
+except Exception as e:                                          # noqa: BLE001
+    check("the app starts with no database", False, "%s: %s" % (type(e).__name__, e))
+finally:
+    if _saved is not None:
+        os.environ["DATABASE_URL"] = _saved
+    store.drop_db()
+
 print("\n%d passed, %d failed" % (len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

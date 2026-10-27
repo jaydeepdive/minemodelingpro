@@ -24,12 +24,21 @@ import threading
 SCHEMA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "schema_pg.sql")
 
 
+class DBUnavailable(RuntimeError):
+    """The database cannot be reached right now.
+
+    A normal exception on purpose. `DB.__init__` used to raise SystemExit for a
+    missing DATABASE_URL, and SystemExit is a BaseException: `wait_for_db`
+    catches Exception, so it never caught that one, and inside a request handler
+    it would take the process down rather than return an error."""
+
+
 # --------------------------------------------------------------------- Postgres
 class DB:
     def __init__(self, url=None, minconn=1, maxconn=4):
         self.url = url or os.environ.get("DATABASE_URL") or ""
         if not self.url:
-            raise SystemExit("DATABASE_URL is not set")
+            raise DBUnavailable("DATABASE_URL is not set")
         if self.url.startswith("postgres://"):            # psycopg wants postgresql://
             self.url = "postgresql://" + self.url[len("postgres://"):]
         import psycopg
@@ -278,14 +287,32 @@ class Files:
 _LOCK = threading.Lock()
 _DB = None
 _FILES = None
+LAST_DB_ERROR = {"text": None}
 
 
 def db():
+    """The connection pool, made on first use.
+
+    A failure to build it leaves `_DB` None so the next caller tries again —
+    before this, a pool that failed to open was never retried, and the error it
+    raised was not one anything caught."""
     global _DB
     with _LOCK:
         if _DB is None:
-            _DB = DB()
+            try:
+                _DB = DB()
+            except DBUnavailable:
+                raise
+            except Exception as e:                        # noqa: BLE001
+                raise DBUnavailable(str(e)[:300]) from e
     return _DB
+
+
+def drop_db():
+    """Forget the pool, so the next `db()` builds a fresh one."""
+    global _DB
+    with _LOCK:
+        _DB = None
 
 
 def files():
@@ -296,8 +323,13 @@ def files():
     return _FILES
 
 
-def wait_for_db(tries=30, delay=2):
-    """App Platform can start the app before the database finishes attaching."""
+def wait_for_db(tries=30, delay=2, fatal=True):
+    """App Platform can start the app before the database finishes attaching.
+
+    `fatal=False` returns None instead of killing the process. The web service
+    uses that: it serves the whole public gallery, which needs no database at
+    all, and with one instance and no replica, refusing to start is a total
+    outage rather than a safe failure."""
     last = None
     for _ in range(tries):
         try:
@@ -306,7 +338,9 @@ def wait_for_db(tries=30, delay=2):
             return d
         except Exception as e:                 # noqa: BLE001
             last = e
-            global _DB
-            _DB = None
+            drop_db()
             time.sleep(delay)
+    if not fatal:
+        LAST_DB_ERROR["text"] = str(last)[:300]
+        return None
     raise SystemExit(f"database unreachable: {last}")
