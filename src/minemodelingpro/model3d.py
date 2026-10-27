@@ -78,13 +78,17 @@ _VIEWER_TMPL = os.path.join(_HERE, "model3d_viewer.html")
 #      the collar elevations instead of being drawn against a flat datum
 # 13 — mineralisation belonging to no named zone is drawn as the separate bodies
 #      it is, instead of as one sheet triangulated across the whole property
+# 16 — the alpha criterion is tested in the ROCK and in the deposit's own
+#      anisotropic frame, not in the body's two-dimensional shadow: a vein
+#      system was being welded into one sheet across the barren ground between
+#      its veins, and the estimator was clipped to that shape
 # 15 — the model says where the next hole goes: the rim of the body, stepped out
 #      one drill spacing onto ground no existing hole passes through
 # 14 — the wireframe's own geometry is carried to the viewer: the triangulated
 #      surface at the thickness each intercept shows, instead of that shape
 #      sampled to points and snapped to the block lattice, which flattened every
 #      pinch and swell a vein has into the same row of boxes
-MODEL_VERSION = 15
+MODEL_VERSION = 16
 # the most domain cells to send to a browser; beyond this the envelope is drawn
 # on a coarser lattice, which is a picture of the same shape
 BODY_MAX_CELLS = 120_000
@@ -1499,9 +1503,14 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
             dom_pts, dom_info, dom_zone = (None, None, None)
             dom_mesh = []
 
+            dom_thick = []
+
             def _keep_mesh(inf, zid):
                 """Lift a body's geometry out of its info block, under its own id."""
                 mv = (inf or {}).pop("_mesh", None)
+                tv = (inf or {}).pop("_thick", None)
+                if tv is not None and len(tv):
+                    dom_thick.append(np.asarray(tv, float))
                 if mv is not None and len(mv[1]):
                     dom_mesh.append((mv[0], mv[1], int(zid)))
             rot_d, an_d = None, None
@@ -1899,6 +1908,12 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                         "bodies": int(len(groups)),
                         "groups": groups,
                     }
+                    if dom_thick:
+                        tv = np.concatenate(dom_thick)
+                        el_out["surface"]["thickness_m"] = {
+                            "n": int(len(tv)), "min": round(float(tv.min()), 1),
+                            "median": round(float(np.median(tv)), 1),
+                            "max": round(float(tv.max()), 1)}
                 except Exception as exc:                 # geometry is a bonus layer
                     if verbose:
                         print("    surface skipped: %s" % exc)

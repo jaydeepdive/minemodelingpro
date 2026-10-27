@@ -318,7 +318,8 @@ function buildSurface(){
     depthWrite:false,side:THREE.DoubleSide}));
   surfMesh.renderOrder=2;
   scene.add(surfMesh);
-  SF={tris:S.tris,groups:groups,total:IX.length,dropped:S.dropped||0,bodies:S.bodies||0};
+  SF={tris:S.tris,groups:groups,total:IX.length,dropped:S.dropped||0,bodies:S.bodies||0,
+      thick:S.thickness_m||null};
   applySurface();}
 
 /* One subdivision, then the inserted points relax toward their neighbours.
@@ -373,16 +374,42 @@ function applySurface(){
 function bodyNote(){
   const B=(M.elements[EL]||{}).body;
   if(!$("body-note"))return;
+  // A two-metre vein across four hundred metres of strike is a few pixels, so
+  // the thickness the model actually holds is stated rather than left to the eye.
+  let t="";
+  if(SF&&SF.thick){const k=SF.thick;
+    t=" · "+(k.min===k.max?k.median+" m thick"
+      :k.min+"–"+k.max+" m thick (median "+k.median+")");}
   ctl("body-note").textContent=
-    (SF&&bodyStyle==="shape")?(fmtN(SF.tris)+" triangles")
-      :(B?(fmtN(B.n)+" cells"):(SF?fmtN(SF.tris)+" triangles":"not built"));}
+    (SF&&bodyStyle==="shape")?(fmtN(SF.tris)+" triangles"+t)
+      :(B?(fmtN(B.n)+" cells"):(SF?fmtN(SF.tris)+" triangles"+t:"not built"));}
 
 function bodyVis(){
-  const on=!!(ctl("L-body").checked),shape=SF&&bodyStyle==="shape";
-  if(surfMesh)surfMesh.visible=on&&!!shape;
+  // The chosen view, where the model has it; the other one where it does not,
+  // so the layer is never silently empty because of which button is lit.
+  const on=!!(ctl("L-body").checked);
+  const shape=bodyStyle==="shape" ? !!SF : !BD;
+  if(surfMesh)surfMesh.visible=on&&shape;
   if(bodyMesh)bodyMesh.visible=on&&!shape;
   const r=$("zlab-row");if(r)r.style.display=on?"":"none";
-  const sw=$("body-style");if(sw)sw.style.display=(SF&&BD)?"":"none";}
+  // The switch is shown whenever there is an envelope at all — hiding it left a
+  // reader unable to tell "this model has only one view" from "this control
+  // does not exist". A view the model does not carry is disabled and says why.
+  const sw=$("body-style");
+  if(sw){
+    sw.style.display=(SF||BD)?"":"none";
+    const why={shape:SF?"":"This model has no surface: a body needs three "
+                 +"intercepts to triangulate one. Showing the cells instead.",
+               cells:BD?"":"This model carries no block-lattice envelope."};
+    sw.querySelectorAll("[data-bs]").forEach(b=>{
+      const have=b.dataset.bs==="shape"?!!SF:!!BD;
+      b.disabled=!have;
+      b.style.opacity=have?"":"0.45";
+      b.style.cursor=have?"":"default";
+      if(!have)b.title=why[b.dataset.bs];});
+    const note=sw.querySelector(".bs-note");
+    if(note)note.textContent=(bodyStyle==="shape"&&!SF)?why.shape
+      :((bodyStyle==="cells"&&!BD)?why.cells:"");}}
 
 /* Which of the envelope is drawn: everything, or one body when a zone is picked.
    Same rule as the blocks, so the two always show the same deposit. */
@@ -1360,12 +1387,15 @@ ctl("L-body").onchange=e=>{store.set("body",e.target.checked);bodyVis();drawLabe
    d.innerHTML='<button class="chip" data-bs="shape" title="The surface through the '
      +'intercepts, at the thickness each one shows">Shape</button>'
      +'<button class="chip" data-bs="cells" title="The same body on the block '
-     +'lattice, cell by cell">Cells</button>';
+     +'lattice, cell by cell">Cells</button>'
+     +'<div class="bs-note" style="color:var(--mut,#6b7684);font-size:10.5px;'
+     +'margin:3px 0 0;line-height:1.3"></div>';
    d.style.cssText+=";padding-left:18px";
    row.parentNode.insertBefore(d,row.nextSibling);
    const mark=()=>d.querySelectorAll("[data-bs]").forEach(
      x=>x.classList.toggle("on",x.dataset.bs===bodyStyle));
    d.querySelectorAll("[data-bs]").forEach(b=>b.onclick=()=>{
+     if(b.disabled)return;
      bodyStyle=b.dataset.bs;store.set("bodystyle",bodyStyle);mark();bodyVis();bodyNote();});
    mark();}}
 ctl("L-zlabels").onchange=e=>{store.set("zlabels",e.target.checked);drawLabels();};
@@ -1729,46 +1759,129 @@ function targetLabels(){
       +`background:#d71920;color:#fff;font-weight:700;border:0">T${i+1}</span>`);});
   return out;}
 
+/* Where to drill is a drill plan, not a line in a layer panel. It needs the
+   collar, the azimuth, the dip and the planned length, and a driller needs it as
+   a file — so it gets a panel of its own, like Bodies, built at runtime because
+   every model page bakes its own markup and only the renderer is shared.
+
+   What it deliberately does NOT lead with is a grade. The intercept beside each
+   target is the EVIDENCE for ranking it, not a prediction of what the hole will
+   cut, and putting it in the same row as the hole to drill read as a forecast.
+   It sits under "why here", in words that say whose assay it is. */
+function wirePanel(p){
+  const h=p.querySelector(".phead");if(!h)return;
+  const btn=h.querySelector(".pbtn");
+  const upd=()=>{if(btn)btn.textContent=MOBILE?"×":(p.classList.contains("min")?"+":"–");};
+  upd();
+  h.addEventListener("click",()=>{
+    if(MOBILE){p.classList.remove("open");
+      document.querySelectorAll("#mtools button").forEach(b=>b.classList.remove("on"));return;}
+    p.classList.toggle("min");store.set("min:"+p.id,p.classList.contains("min"));upd();});
+  const tools=$("mtools");
+  if(tools&&tools.appendChild&&!tools.querySelector('[data-open="'+p.id+'"]')){
+    const b=document.createElement("button");b.dataset.open=p.id;b.textContent="Targets";
+    b.addEventListener("click",()=>{const was=p.classList.contains("open");
+      document.querySelectorAll(".panel").forEach(x=>x.classList.remove("open"));
+      document.querySelectorAll("#mtools button").forEach(x=>x.classList.remove("on"));
+      if(!was){p.classList.add("open");b.classList.add("on");}});
+    const after=tools.querySelector('[data-open="pZones"]');
+    if(after&&after.nextSibling)tools.insertBefore(b,after.nextSibling);else tools.appendChild(b);}}
+
+function targetPanel(){
+  let p=$("pTargets");
+  if(p&&p.remove)return p;
+  p=document.createElement("section");
+  p.id="pTargets";p.className="panel min";p.style.display="none";
+  p.innerHTML='<div class="phead"><h2>Drill targets <small id="tgt-n" '
+    +'style="font-weight:400;color:var(--mut)"></small></h2>'
+    +'<button class="pbtn" aria-label="Minimise">+</button></div>'
+    +'<div class="pbody"><div class="sec" id="tgt-body"></div></div>';
+  const col=$("leftcol"),zones=$("pZones"),model=$("pModel");
+  if(col&&col.appendChild)col.appendChild(p);
+  else if(zones&&zones.parentNode)zones.parentNode.insertBefore(p,zones.nextSibling);
+  else if(model&&model.parentNode)model.parentNode.insertBefore(p,model.nextSibling);
+  else document.body.appendChild(p);
+  wirePanel(p);
+  return p;}
+
+function fmtXY(v){return Math.round(v).toLocaleString();}
+
 function drawTargetList(){
-  const host2=$("pModel");if(!host2||!host2.appendChild)return;
-  let box=$("tgtbox");
-  if(!TG){if(box)box.remove();return;}
-  if(!box){box=document.createElement("div");box.id="tgtbox";
-    box.style.cssText="margin-top:14px;border-top:1px solid var(--line,#e6e9ee);padding-top:10px";
-    host2.appendChild(box);}
+  const old=$("tgtbox");if(old&&old.remove)old.remove();   // it used to live in Model
+  const p=targetPanel();
+  const box=$("tgt-body");
+  if(!TG||!box||!box.appendChild){if(p&&p.style)p.style.display="none";return;}
+  p.style.display="";
   const unit=M.elements[EL].unit;
+  const F=M.frame||{},geo=F.lat0!=null&&F.lon0!=null;
+  const ll=(x,y)=>{if(!geo)return null;
+    return [F.lat0+y/111320,F.lon0+x/(111320*Math.cos(F.lat0*Math.PI/180)||1)];};
+  const attitude=c=>!c?"no collar placed"
+    :(Math.abs(c.dip)>85?"vertical":`${Math.round(c.az)}° / ${Math.round(c.dip)}°`);
+  const n=$("tgt-n");if(n)n.textContent="· "+TG.rows.length;
   box.innerHTML=
-    `<h3 style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut,#6b7684);margin:0 0 2px">`
-    +`Where the next hole goes</h3>`
-    +`<label class="tg" style="margin:2px 0 6px"><input type="checkbox" id="L-targets"`
-    +(tgtMesh&&tgtMesh.visible?" checked":"")+`>Show on the model`
-    +`<small>${TG.rows.length} step-out${TG.rows.length>1?"s":""}</small></label>`
-    +`<table style="width:100%;border-collapse:collapse;font-size:11.5px">`
-    +`<thead><tr><th style="text-align:left;padding:2px 0;color:var(--mut,#6b7684)">From</th>`
-    +`<th style="text-align:right;padding:2px 0;color:var(--mut,#6b7684)">It cut</th>`
-    +`<th style="text-align:right;padding:2px 0;color:var(--mut,#6b7684)">Hole</th></tr></thead><tbody>`
-    +TG.rows.map((t,i)=>`<tr data-t="${i}" style="cursor:pointer">`
-      +`<td style="padding:2px 0"><b style="color:#d71920">T${i+1}</b> ${esc(t.from_hole)}</td>`
-      +`<td style="padding:2px 0;text-align:right">${t.width_m} m @ ${fmtG(t.grade,unit)}</td>`
-      +`<td style="padding:2px 0;text-align:right;color:var(--mut,#6b7684)">`
-      +(t.collar?`${Math.round(t.collar.depth_m)} m · `
-        +(Math.abs(t.collar.dip)>85?"vertical"
-          :`${Math.round(t.collar.az)}°/${Math.round(t.collar.dip)}°`):"–")
-      +`</td></tr>`).join("")
-    +`</tbody></table>`
-    +`<p class="note" style="margin:6px 0 0">Each is one ${TG.step_m} m step-out — the `
-    +`drill spacing this pattern already uses — from a hole that cut mineralisation at `
-    +`the edge of the model, onto ground no existing hole passes through. `
-    +(TG.oriented?"Holes are angled to the attitude the report states."
-      :"Holes are angled square to the body's own plane; no report states its attitude.")
-    +` Nothing here is an estimate: the model stops where the drilling stops, and so does this.</p>`;
+    `<label class="tg" style="margin:0 0 8px"><input type="checkbox" id="L-targets"`
+    +(tgtMesh&&tgtMesh.visible?" checked":"")+`>Show on the model</label>`
+    +`<div id="tgt-rows"></div>`
+    +`<button id="tgt-csv" class="chip" style="margin-top:8px">Download drill plan (CSV)</button>`
+    +`<p class="note" style="margin:8px 0 0">Each is one ${TG.step_m} m step-out — the `
+    +`spacing this pattern already drills — from a hole that cut mineralisation at the `
+    +`edge of the model, onto ground no existing hole passes through. `
+    +(TG.oriented?"Angled to the attitude the report states."
+      :"Angled square to the body's own plane; no report states its attitude.")
+    +` The model stops where the drilling stops, and so does this: nothing here `
+    +`estimates what a hole would cut.</p>`;
+  const rows=$("tgt-rows");
+  rows.innerHTML=TG.rows.map((t,i)=>{
+    const c=t.collar;
+    const q=ll(t.x,t.y);
+    return `<div class="tgt" data-t="${i}" style="padding:6px 0;border-top:1px solid var(--line,#eceff3);cursor:pointer">`
+      +`<div style="display:flex;gap:8px;align-items:baseline">`
+      +`<b style="color:#d71920;flex:none">T${i+1}</b>`
+      +`<span style="flex:1">${c?Math.round(c.depth_m)+" m":"—"} · ${esc(attitude(c))}</span>`
+      +`<span style="color:var(--mut,#6b7684);flex:none">${t.step_m} m out</span></div>`
+      +(c?`<div style="color:var(--mut,#6b7684);font-size:11px;margin-top:1px">`
+          +(q?`collar ${q[0].toFixed(5)}, ${q[1].toFixed(5)} · ${Math.round(c.z)} m`
+             :`collar ${fmtXY(c.x)}, ${fmtXY(c.y)} local · ${Math.round(c.z)} m`)
+          +`</div>`:"")
+      +`<div class="tgt-more" style="display:none;font-size:11px;margin-top:5px;`
+      +`padding:6px 8px;background:#f7f8fa;border-radius:6px;color:#3a434f">`
+      +(c?`<div><b>Collar</b> `+(q?`${q[0].toFixed(5)}, ${q[1].toFixed(5)}`:"")
+          +`${q?" · ":""}${fmtXY(c.x)}, ${fmtXY(c.y)} in the model's own grid`
+          +` · ${Math.round(c.z)} m RL</div>`
+         +`<div><b>Azimuth</b> ${Math.round(c.az)}° · <b>Dip</b> ${Math.round(c.dip)}°`
+         +` · <b>Length</b> ${Math.round(c.depth_m)} m</div>`:"")
+      +`<div><b>Cuts the body at</b> ${fmtXY(t.x)}, ${fmtXY(t.y)} `
+      +`(model grid) · ${Math.round(t.z)} m RL</div>`
+      +`<div style="margin-top:4px"><b>Why here</b> — it steps ${t.step_m} m `
+      +`${Math.round(t.bearing)}° from hole ${esc(t.from_hole)}, which cut `
+      +`${t.width_m} m at ${fmtG(t.grade,unit)} ${esc(EL)} where the body reaches its edge. `
+      +`That is <i>that hole's assay</i>, not a forecast for this one.</div>`
+      +(t.nearest_drilling_m!=null?`<div style="margin-top:3px">Nearest existing `
+        +`drilling ${Math.round(t.nearest_drilling_m)} m.</div>`:"")
+      +`</div></div>`;}).join("");
   ctl("L-targets").onchange=e=>{if(tgtMesh)tgtMesh.visible=e.target.checked;
     store.set("targets",e.target.checked);drawLabels();};
-  box.querySelectorAll("tr[data-t]").forEach(tr=>tr.onclick=()=>{
-    const t=TG.rows[+tr.dataset.t];if(!t)return;
-    const p=V(t.x,t.y,t.z);
-    fly({x:p.x,y:p.y,z:p.z,dist:Math.max(TG.step_m*6,200)},600);
-    toast("T"+(+tr.dataset.t+1)+" — "+t.width_m+" m at "+fmtG(t.grade,unit)+" in "+t.from_hole);});}
+  rows.querySelectorAll(".tgt").forEach(d=>d.onclick=()=>{
+    const i=+d.dataset.t,t=TG.rows[i];if(!t)return;
+    const m=d.querySelector(".tgt-more");
+    const open=m.style.display!=="none";
+    rows.querySelectorAll(".tgt-more").forEach(x=>{x.style.display="none";});
+    if(!open){m.style.display="";
+      const v=V(t.x,t.y,t.z);
+      fly({x:v.x,y:v.y,z:v.z,dist:Math.max(TG.step_m*6,200)},600);}});
+  const b=$("tgt-csv");
+  if(b)b.onclick=()=>{
+    const out=[["target","collar_x_local_m","collar_y_local_m","collar_elevation_m",
+                "collar_latitude","collar_longitude","azimuth","dip","planned_length_m",
+                "target_x_local_m","target_y_local_m","target_elevation_m",
+                "step_out_m","step_out_bearing","nearest_drilling_m",
+                "from_hole","from_hole_interval_m","from_hole_grade","element","unit"]];
+    TG.rows.forEach((t,i)=>{const c=t.collar||{},q=ll(c.x,c.y)||["",""];
+      out.push(["T"+(i+1),c.x??"",c.y??"",c.z??"",q[0],q[1],c.az??"",c.dip??"",c.depth_m??"",
+                t.x,t.y,t.z,t.step_m,t.bearing,t.nearest_drilling_m??"",
+                t.from_hole,t.width_m,t.grade,EL,unit]);});
+    download(M.slug+"-drill-targets.csv",csv(out));};}
 
 /* ---------------- start ---------------- */
 drawEls();buildIntervals();drawLegend();drawSources();drawGround();buildTargets();buildBlocks();buildBody();setupGT();drawData();drawBreakdown();drawSize();drawZones();

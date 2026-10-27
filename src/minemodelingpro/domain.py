@@ -26,6 +26,8 @@ between holes stop at the end of the drilling, so a deposit cannot sprawl into
 ground nobody has tested — and in the anisotropic frame a link follows a vein along
 strike without bridging to the next vein across it.
 """
+import os
+
 import numpy as np
 
 
@@ -344,7 +346,7 @@ def boundary_of(cent, rot, reach):
     pointing away from the body — which is the direction the next hole goes."""
     R = rot if rot is not None else np.eye(3)
     Q = cent @ R.T
-    faces = _alpha_faces(Q[:, :2], reach)
+    faces = _alpha_faces(Q[:, :2], reach, xyz=cent)
     if not len(faces):
         return np.zeros(0, int), np.zeros((0, 3))
     e = np.vstack([faces[:, [0, 1]], faces[:, [1, 2]], faces[:, [2, 0]]])
@@ -378,13 +380,29 @@ def boundary_of(cent, rot, reach):
     return np.asarray(idx, int), np.asarray(dirs, float)
 
 
-def _alpha_faces(uv, reach):
+def _alpha_faces(uv, reach, xyz=None):
     """Delaunay triangles small enough to be real ground between holes.
 
     This is the alpha-shape criterion, and it is what keeps a wireframe honest: a
     triangle whose circumcircle is wider than the drill pattern is not a piece of
-    the body, it is the hull closing over ground nobody tested. Dropping those
-    leaves the sheet ending where the drilling ends."""
+    the body, it is the hull closing over ground nobody tested.
+
+    The triangulation is done in the body's own plane, because that is what
+    gives a sheet its topology. The TEST is done on the real coordinates, and
+    that distinction was missing for as long as this function has existed: a
+    criterion applied to the projection measures the body's SHADOW, where the
+    across-strike separation between two parallel veins is flattened to nothing.
+    On a vein system drilled 25 m apart with two veins 60 m apart across strike,
+    77% of the accepted triangles joined one vein to the other — edges measuring
+    35 m in projection and 70 m in the rock — and the wireframe came out as one
+    crumpled sheet welded across the barren ground between them, which is also
+    ground the estimator then filled with grade.
+
+    `xyz` is measured in the DEPOSIT'S OWN FRAME, stretched by the style's
+    anisotropy, which is the second half of the same fault. An isotropic reach
+    cannot tell 60 m along strike — ordinary continuity — from 60 m across it,
+    which is the next vein. `links()` has always compared distances in that
+    warped frame; this did not."""
     from scipy.spatial import Delaunay
     if len(uv) < 3:
         return np.zeros((0, 3), int)
@@ -392,13 +410,18 @@ def _alpha_faces(uv, reach):
         tri = Delaunay(uv)
     except Exception:
         return np.zeros((0, 3), int)
+    # MMP_ALPHA=projected restores the old test — measured in the body's shadow,
+    # isotropically — so the change stays A/B-able against the filed statements.
+    if os.environ.get("MMP_ALPHA") == "projected":
+        xyz = None
+    P = np.asarray(xyz if xyz is not None else uv, float)
     keep = []
     for sx in tri.simplices:
-        a, b, c = uv[sx[0]], uv[sx[1]], uv[sx[2]]
+        a, b, c = P[sx[0]], P[sx[1]], P[sx[2]]
         la = np.linalg.norm(b - c); lb = np.linalg.norm(a - c); lc = np.linalg.norm(a - b)
         s = (la + lb + lc) / 2.0
         ar = max(s * (s - la) * (s - lb) * (s - lc), 1e-12) ** 0.5
-        R = la * lb * lc / (4.0 * ar)              # circumradius
+        R = la * lb * lc / (4.0 * ar)              # circumradius, in the rock
         if R <= reach and max(la, lb, lc) <= 2.0 * reach:
             keep.append(sx)
     return np.asarray(keep, int) if keep else np.zeros((0, 3), int)
@@ -472,7 +495,11 @@ def wireframe(pts, g, hid, threshold, rot=None, aniso=None, reach=120.0, step=8.
     pts_out = [cent]
     mesh = None                                     # the same shape, kept as geometry
     if tabular:
-        faces = _alpha_faces(Q[:, :2], reach)
+        # the triangulation is in the body's plane; the test is in its own
+        # stretched frame, so a long link along strike is allowed and the same
+        # distance across strike — where the next vein is — is not
+        W = (R / np.asarray(aniso, float)[:, None]) if aniso is not None else R
+        faces = _alpha_faces(Q[:, :2], reach, xyz=cent @ W.T)
         info["mode"] = "sheet"
         info["faces"] = int(len(faces))
         nrm = R[2]                                  # across-thickness direction
@@ -483,6 +510,14 @@ def wireframe(pts, g, hid, threshold, rot=None, aniso=None, reach=120.0, step=8.
             pts_out.append(_fill_triangle(cent[f], [th[i] for i in f], step, layers, nrm))
         if len(faces):
             mesh = sheet_mesh(cent, faces, nrm, th)
+            # how thick the body is where the drilling actually measured it.
+            # A vein two metres wide across four hundred metres of strike is a
+            # few pixels on screen, so the number has to be stated rather than
+            # left to the eye. Only the intercepts the surface was built from.
+            used = sorted({int(i) for f in faces for i in f})
+            if used:
+                tv = np.asarray([th[i] for i in used], float)
+                info["_thick"] = tv
         if not len(faces):
             # the intercepts lie on one line — a single drill section, or a body
             # tested down one fence of holes. There is no surface to triangulate,

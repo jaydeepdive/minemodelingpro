@@ -140,6 +140,74 @@ if m3 is not None:
     check("its triangles face outwards (it is not inside out)",
           signed_volume(V3 - c, F3) > 0, signed_volume(V3 - c, F3))
 
+print("\n== two veins are not one sheet")
+# The fault this pins: the alpha criterion decided whether a triangle was real
+# ground by measuring it in the body's SHADOW — its own plane, where the
+# across-strike distance between two parallel veins is flattened to nothing —
+# and isotropically, so one number had to serve for "along strike, which is
+# continuity" and "across strike, which is the next vein". Measured on this
+# fixture before the fix: 147 of 192 accepted triangles welded one vein to the
+# other, and 70% of the domain points landed in the barren rock between them.
+
+
+def two_veins(gap=60.0, pitch=25.0, width=2.0):
+    """Two parallel 2 m veins, `gap` apart across strike, on a 25 m pattern."""
+    pts, g, hid, k = [], [], [], 0
+    for v, xoff in enumerate((0.0, gap)):
+        for y in np.arange(-150, 151, pitch):
+            for z in np.arange(-200, 1, pitch):
+                k += 1
+                for j in range(int(width)):
+                    pts.append([xoff + j * 1.0, y, z])
+                    g.append(5.0)
+                    hid.append("V%d_%03d" % (v, k))
+    return np.asarray(pts), np.asarray(g), np.asarray(hid)
+
+
+pv, gv, hv = two_veins()
+rotv, anv = anisotropy(pv, gv, [1.0, 0.8, 0.25])
+Sv, iv = DOM.wireframe(pv, gv, hv, 1.0, rot=rotv, aniso=anv, reach=30.0, step=8.0)
+mv = iv.get("_mesh")
+check("the two veins still produce a surface", mv is not None and len(mv[1]), iv.get("faces"))
+if mv is not None:
+    Vv, Fv = mv
+    span = Vv[Fv][:, :, 0].max(1) - Vv[Fv][:, :, 0].min(1)
+    check("no triangle is welded across the barren ground between them",
+          int((span > 30).sum()) == 0, int((span > 30).sum()))
+    half = len(Vv) // 2
+    thv = np.linalg.norm(Vv[:half] - Vv[half:], axis=1)
+    check("and the vein keeps the thickness the holes measured",
+          abs(float(np.median(thv)) - 2.0) < 0.6, float(np.median(thv)))
+inner = int(((Sv[:, 0] > 5) & (Sv[:, 0] < 55)).sum())
+check("no part of the domain sits in the rock between the veins", inner == 0,
+      (inner, len(Sv)))
+
+# and the old rule is kept A/B-able, which is also how this is pinned: with it
+# the same fixture welds, so the test is checking the fix and not the fixture
+os.environ["MMP_ALPHA"] = "projected"
+try:
+    Sold, iold = DOM.wireframe(pv, gv, hv, 1.0, rot=rotv, aniso=anv, reach=30.0, step=8.0)
+    old_inner = int(((Sold[:, 0] > 5) & (Sold[:, 0] < 55)).sum())
+    check("MMP_ALPHA=projected still reproduces the fault it replaced",
+          old_inner > len(Sold) // 2, (old_inner, len(Sold)))
+finally:
+    os.environ.pop("MMP_ALPHA", None)
+
+# A single vein must be untouched: the test refuses welds, it does not refuse sheets.
+p1, g1, h1 = [], [], []
+for i, y in enumerate(np.arange(-150, 151, 25.0)):
+    for j, z in enumerate(np.arange(-200, 1, 25.0)):
+        for q in range(3):
+            p1.append([q * 1.0, y, z]); g1.append(5.0); h1.append("S%03d_%03d" % (i, j))
+p1, g1, h1 = np.asarray(p1), np.asarray(g1), np.asarray(h1)
+r1, a1 = anisotropy(p1, g1, [1.0, 0.8, 0.25])
+S1, i1 = DOM.wireframe(p1, g1, h1, 1.0, rot=r1, aniso=a1, reach=30.0, step=8.0)
+check("one vein on its own is still triangulated in full", (i1.get("faces") or 0) > 100,
+      i1.get("faces"))
+check("and carries its own thickness to the page",
+      i1.get("_thick") is not None and len(i1["_thick"]) > 0,
+      None if i1.get("_thick") is None else len(i1["_thick"]))
+
 print("\n== what the page carries")
 pages = [p for p in sorted(glob.glob(os.path.join(ROOT, "site", "models", "*.html")))
          if not os.path.basename(p).startswith("_")]

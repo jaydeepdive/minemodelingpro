@@ -186,7 +186,7 @@ async function interact(p) {
      a page built before this carries no targets, and the renderer has to cope
      both with having them and with not. */
   out.targets = await p.evaluate(() => {
-    const before = !!document.getElementById("tgtbox");
+    const before = !!document.getElementById("pTargets");
     M.elements[EL].targets = {step_m: 50, rim: 12, oriented: false, with_collar: 1,
       rows: [{x: HO[0].x + 50, y: HO[0].y, z: HO[0].z - 100, from_hole: HO[0].id,
               grade: 5.1, width_m: 12, gram_metres: 61.2, step_m: 50, bearing: 90,
@@ -194,8 +194,11 @@ async function interact(p) {
               collar: {x: HO[0].x + 50, y: HO[0].y, z: HO[0].z, az: 90, dip: -60,
                        depth_m: 115}}]};
     buildTargets();
-    const b = document.getElementById("tgtbox");
+    const b = document.getElementById("pTargets");
     return {before, drawn: !!b, mesh: !!tgtMesh,
+            rows: document.querySelectorAll("#tgt-rows .tgt").length,
+            csv: !!document.getElementById("tgt-csv"),
+            tool: !!document.querySelector('#mtools [data-open="pTargets"]'),
             txt: b ? b.textContent.replace(/\s+/g, " ") : ""};
   });
 
@@ -243,7 +246,22 @@ srv.listen(8766, async () => {
                  surfTris: surfMesh ? surfMesh.geometry.getIndex().count / 3 : 0,
                  payloadTris: E.surface ? E.surface.tris : 0,
                  styleSwitch: !!document.getElementById('body-style'),
-                 hasBodyToggle: !!document.getElementById('L-body') };
+                 hasBodyToggle: !!document.getElementById('L-body'),
+                 /* Either view, on any model: picking the one this model does
+                    not carry must fall back to the one it does, never leave
+                    the layer silently empty. */
+                 styleFallback: (() => {
+                   const cb = document.getElementById('L-body');
+                   if (!cb || (!SF && !BD)) return null;
+                   cb.checked = true; cb.onchange({target: cb});
+                   const seen = [];
+                   for (const st of ['shape', 'cells']) {
+                     bodyStyle = st; bodyVis();
+                     seen.push(!!((surfMesh && surfMesh.visible) ||
+                                  (bodyMesh && bodyMesh.visible)));
+                   }
+                   return seen;
+                 })() };
       });
       const act = await interact(p);
       out.push({ name, ...st, act, errors: errs });
@@ -276,16 +294,19 @@ for res in results:
           (res["w"], res["h"]))
     check("%s draws its panels" % nm, res["panels"] >= 2, res["panels"])
 
+    fb = res.get("styleFallback")
+    if fb is not None:
+        check("%s shows an envelope whichever view is picked" % nm, fb == [True, True], fb)
+        check("%s offers the switch wherever there is an envelope at all" % nm,
+              res.get("styleSwitch"), res.get("styleSwitch"))
+
     if res.get("wantSurf"):
         check("%s draws the deposit's geometry, not only its cells" % nm,
               res.get("gotSurf") and res.get("surfTris", 0) >= res.get("payloadTris", 0),
               (res.get("gotSurf"), res.get("surfTris"), res.get("payloadTris")))
         # a shell with no envelope toggle at all gets no switch, which is the
         # rule the stripped page exists to prove
-        if res.get("hasBodyToggle"):
-            check("%s offers the shape/cells switch" % nm, res.get("styleSwitch"),
-                  res.get("styleSwitch"))
-        else:
+        if not res.get("hasBodyToggle"):
             check("%s adds no switch to a shell with no envelope toggle" % nm,
                   not res.get("styleSwitch"), res.get("styleSwitch"))
 
@@ -328,12 +349,18 @@ for res in results:
     if tg:
         check("%s shows no targets when the page carries none" % nm,
               tg.get("before") is False, tg.get("before"))
-        check("%s lists where the next hole goes when it has them" % nm,
-              tg.get("drawn") and tg.get("mesh")
-              and "step-out" in tg.get("txt", ""), tg.get("txt", "")[:160])
-        check("%s says a target is not an estimate" % nm,
-              "Nothing here is an estimate" in tg.get("txt", ""),
-              tg.get("txt", "")[-200:])
+        check("%s gives drill targets a panel of their own" % nm,
+              tg.get("drawn") and tg.get("mesh") and tg.get("rows", 0) >= 1,
+              (tg.get("drawn"), tg.get("mesh"), tg.get("rows")))
+        check("%s puts it in the tool strip beside the others" % nm, tg.get("tool"),
+              tg.get("tool"))
+        check("%s states the hole to drill — length, azimuth, dip, collar" % nm,
+              all(w in tg.get("txt", "") for w in ("Azimuth", "Dip", "Collar")),
+              tg.get("txt", "")[:200])
+        check("%s offers the plan as a file" % nm, tg.get("csv"), tg.get("csv"))
+        check("%s says the grade beside a target is that hole's, not a forecast" % nm,
+              "not a forecast for this one" in tg.get("txt", ""),
+              tg.get("txt", "")[-220:])
 
     check("%s clears the selection and the measurement on Escape" % nm,
           a.get("cleared") == "null|none", a.get("cleared"))
