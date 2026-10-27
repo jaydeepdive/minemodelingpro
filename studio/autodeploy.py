@@ -13,9 +13,20 @@ Needs, as app-level environment variables:
     MMP_REPO          owner/repo to watch (default jaydeepdive/minemodelingpro)
     MMP_AUTODEPLOY    "0" to switch the whole thing off
 
+This is the FALLBACK, not the primary. `.github/workflows/do-deploy.yml` asks for
+a deployment within seconds of a push; this exists for the case that job cannot
+cover — a push that never reaches Actions, or an Actions outage. Both deploying
+at once is actively harmful: DigitalOcean cancels an in-progress deployment when
+a newer one is created for the same app, so whichever asked second silently
+killed the other's deployment and the loser reported a failure for an app that
+had deployed fine (ab370d8, 2026-10-27). So this waits MMP_AUTODEPLOY_GRACE
+seconds after a commit appears before acting on it, by which time the workflow
+has either deployed it or has not.
+
 Safeguards: it only ever deploys when the watched commit differs from the one it
-last asked for, never while a deployment is already running, and at most once per
-MMP_AUTODEPLOY_MIN minutes.
+last asked for, never while a deployment is already running, never until the
+commit has had its grace period to be deployed by anyone else, and at most once
+per MMP_AUTODEPLOY_MIN minutes.
 """
 import os
 import json
@@ -30,6 +41,8 @@ APP_ID = os.environ.get("DO_APP_ID", "")
 TOKEN = os.environ.get("DO_DEPLOY_TOKEN", "")
 EVERY = float(os.environ.get("MMP_AUTODEPLOY_SECONDS", "300"))
 MIN_GAP = float(os.environ.get("MMP_AUTODEPLOY_MIN", "10")) * 60
+# How long a commit gets to be deployed by the workflow before this steps in.
+GRACE = float(os.environ.get("MMP_AUTODEPLOY_GRACE", "900"))
 API = "https://api.digitalocean.com/v2/apps"
 
 
@@ -46,15 +59,28 @@ def _get(url, token=None, timeout=25):
 CONTENT = ("site/", "data/")
 
 
+def _age(d):
+    """Seconds since the commit was made, or 0.0 if the date cannot be read."""
+    t = (((d.get("commit") or {}).get("committer") or {}).get("date")
+         or ((d.get("commit") or {}).get("author") or {}).get("date"))
+    if not t:
+        return 0.0
+    try:
+        when = datetime.datetime.strptime(t, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        return 0.0
+    return max(0.0, (datetime.datetime.utcnow() - when).total_seconds())
+
+
 def head_commit():
-    """The tip of the watched branch: (sha, subject, needs_deploy)."""
+    """The tip of the watched branch: (sha, subject, needs_deploy, age_s)."""
     d = _get(f"https://api.github.com/repos/{REPO}/commits/{BRANCH}")
     sha = d.get("sha")
     msg = ((d.get("commit") or {}).get("message") or "").split("\n")[0][:120]
     files = [f.get("filename", "") for f in d.get("files") or []]
     code = [f for f in files if not f.startswith(CONTENT)]
     # no file list (very large commits) -> deploy, rather than miss a code change
-    return sha, msg, (bool(code) or not files)
+    return sha, msg, (bool(code) or not files), _age(d)
 
 
 def app_state():
@@ -89,12 +115,13 @@ def _last_mark(db):
 
 
 def loop(db):
-    print(f"[autodeploy] watching {REPO}@{BRANCH} every {EVERY:g}s", flush=True)
+    print(f"[autodeploy] watching {REPO}@{BRANCH} every {EVERY:g}s, "
+          f"acting on a commit after {GRACE:g}s if nothing else has", flush=True)
     last_try = 0.0
     while True:
         time.sleep(EVERY)
         try:
-            sha, msg, needs = head_commit()
+            sha, msg, needs, age = head_commit()
             if not sha:
                 continue
             busy, live = app_state()
@@ -104,6 +131,11 @@ def loop(db):
             if not needs:
                 _mark(db, sha)            # content only — sitesync carries it
                 print(f"[autodeploy] {sha[:7]} touches only published content — no deploy", flush=True)
+                continue
+            if age and age < GRACE:
+                # The workflow deploys within seconds of a push. Asking as well
+                # cancels whichever deployment started first, which is how a
+                # healthy deploy came to be reported as a failure.
                 continue
             if time.time() - last_try < MIN_GAP:
                 continue

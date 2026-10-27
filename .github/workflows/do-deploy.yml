@@ -10,6 +10,17 @@
 #
 # If the repo is connected to DigitalOcean through its GitHub integration, this
 # workflow is unnecessary — DO deploys on push by itself.
+#
+# THIS IS THE PRIMARY DEPLOYER. The app also watches main itself
+# (studio/autodeploy.py), which is the fallback for the case this job cannot
+# cover — a push that never reaches Actions — and which now waits out a grace
+# period so it does not race this job. The race is not theoretical: DO cancels
+# an in-progress deployment when a newer one is created for the same app, so
+# whichever of the two asked second silently killed the other's deployment and
+# the loser emailed Jordan a failure for an app that deployed fine. That is what
+# happened to ab370d8 on 2026-10-27. Hence the two rules below: a deployment
+# superseded by another is not this job's failure, and a build that errors once
+# is retried before anyone is told.
 name: mmp-do-deploy
 
 on:
@@ -50,18 +61,62 @@ jobs:
           if [ "$phase" != "IDLE" ]; then
             echo "A deployment is already $phase — leaving it alone."; exit 0
           fi
-          id=$(curl -fsS -X POST -H "$AUTH" -H "Content-Type: application/json" \
-               "$API/deployments" -d '{"force_build":true}' | python3 -c \
-               "import sys,json;print(json.load(sys.stdin)['deployment']['id'])")
-          echo "Deployment $id started."
-          for i in $(seq 1 60); do
-            sleep 20
-            p=$(curl -fsS -H "$AUTH" "$API/deployments/$id" | python3 -c \
-                "import sys,json;print(json.load(sys.stdin)['deployment']['phase'])")
-            echo "  $p"
-            case "$p" in
-              ACTIVE) echo "Deployed."; exit 0 ;;
-              ERROR|CANCELED) echo "Deployment $p"; exit 1 ;;
-            esac
-          done
-          echo "Still deploying after 20 minutes — check the DO console."; exit 1
+          # Did something else deploy this very commit while we were asking?
+          live() {
+            curl -fsS -H "$AUTH" "$API" | python3 -c \
+              "import sys,json; a=json.load(sys.stdin)['app']; d=a.get('active_deployment') or {}; \
+               c=[x for p in ('services','workers','static_sites','jobs') for x in (d.get(p) or [])]; \
+               print('BUSY' if a.get('in_progress_deployment') else 'IDLE', \
+                     ([x.get('source_commit_hash') for x in c if x.get('source_commit_hash')] or [''])[-1])"
+          }
+          attempt() {
+            id=$(curl -fsS -X POST -H "$AUTH" -H "Content-Type: application/json" \
+                 "$API/deployments" -d '{"force_build":true}' | python3 -c \
+                 "import sys,json;print(json.load(sys.stdin)['deployment']['id'])")
+            echo "Deployment $id started."
+            for i in $(seq 1 60); do
+              sleep 20
+              p=$(curl -fsS -H "$AUTH" "$API/deployments/$id" | python3 -c \
+                  "import sys,json;print(json.load(sys.stdin)['deployment']['phase'])")
+              echo "  $p"
+              case "$p" in
+                ACTIVE) echo "Deployed."; return 0 ;;
+                ERROR) echo "Deployment ERROR"; return 2 ;;
+                CANCELED) echo "Deployment CANCELED"; return 3 ;;
+              esac
+            done
+            echo "Still deploying after 20 minutes — check the DO console."; return 1
+          }
+
+          # `attempt; rc=$?` would never run the assignment: Actions runs this
+          # with `-e`, so a function returning non-zero ends the step there. In
+          # an if-condition the status is being TESTED, so -e stands aside.
+          if attempt; then rc=0; else rc=$?; fi
+          if [ "$rc" = 3 ]; then
+            # DO cancels a deployment when a newer one supersedes it. If the app
+            # is deploying again, or is already serving this commit, the app got
+            # where it needed to go and this job has nothing to report.
+            set -- $(live)
+            if [ "$1" = "BUSY" ]; then
+              echo "Superseded by a newer deployment, which is still running — not a failure here."
+              exit 0
+            fi
+            if [ "$2" = "$GITHUB_SHA" ]; then
+              echo "Superseded, and the app is already serving $GITHUB_SHA — not a failure here."
+              exit 0
+            fi
+            echo "Cancelled, and the app is on ${2:-an unknown commit} rather than $GITHUB_SHA."
+            exit 1
+          fi
+          if [ "$rc" = 2 ]; then
+            # A build that fails once is usually a registry or network hiccup, and
+            # a retry costs four minutes against emailing a failure for an app
+            # that is fine. A build that fails twice is a real one.
+            echo "Retrying once before calling it a failure."
+            if attempt; then
+              exit 0
+            fi
+            echo "Failed twice — this is a real build failure."
+            exit 1
+          fi
+          exit $rc
