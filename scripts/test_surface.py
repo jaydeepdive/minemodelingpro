@@ -244,6 +244,33 @@ for p in pages:
                   S["groups"][i]["start"] + S["groups"][i]["count"]
                   == S["groups"][i + 1]["start"] for i in range(len(S["groups"]) - 1)),
               starts[:6])
+        # The contacts the surface is fitted through. They travel with it, so a
+        # reader can tell a wall that was measured from a wall that was guessed.
+        C = S.get("contacts")
+        if C:
+            P = np.frombuffer(base64.b64decode(C["p"]), np.uint16).reshape(-1, 3)
+            check("%s: the contact count matches the buffer" % nm,
+                  len(P) == C["n"], (len(P), C["n"]))
+            check("%s: the contacts come in wall pairs" % nm, C["n"] % 2 == 0, C["n"])
+            ctot = sum(gp["count"] for gp in C["groups"])
+            check("%s: the bodies cover every contact exactly once" % nm,
+                  ctot == C["n"], (ctot, C["n"]))
+            cst = [gp["start"] for gp in C["groups"]]
+            check("%s: the contacts are contiguous per body" % nm,
+                  cst == sorted(cst) and all(
+                      C["groups"][i]["start"] + C["groups"][i]["count"]
+                      == C["groups"][i + 1]["start"]
+                      for i in range(len(C["groups"]) - 1)), cst[:6])
+            # a contact is a point on a drillhole, so it must sit inside the
+            # model, not in the air beside it
+            lo = np.asarray(C["origin"], float)
+            hi = lo + np.asarray(C["scale"], float) * 65535.0
+            sv = np.asarray(S["origin"], float)
+            sh = sv + np.asarray(S["scale"], float) * 65535.0
+            pad = np.maximum(sh - sv, 1.0) * 0.25
+            check("%s: the contacts sit within the surface's own extent" % nm,
+                  bool((lo >= sv - pad).all() and (hi <= sh + pad).all()),
+                  (lo.round(1).tolist(), sv.round(1).tolist()))
         zids = {z["id"] for z in ((E.get("body") or {}).get("zones") or [])}
         if zids:
             check("%s: every body in the surface is one the envelope names" % nm,

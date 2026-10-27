@@ -223,6 +223,46 @@ async function interact(p) {
   return out;
 }
 
+/* A phone shows one panel at a time as a bottom sheet. On 2026-10-27 that sheet
+   computed position:static — an id rule in the shell beat the phone rule on the
+   one property it had not marked !important — and a static box ignores z-index,
+   so the sheet and every label on it painted under the fixed canvas. All that
+   reached the screen was a column of bare switch pills, because a switch is
+   position:relative and paints above. The page looked alive and said nothing.
+   So: open each sheet at phone size and check its own text is the thing you
+   would touch, not the canvas behind it. */
+async function phone(p) {
+  await p.setViewportSize({width: 360, height: 780});
+  await p.waitForTimeout(700);
+  const names = await p.evaluate(() =>
+    [...document.querySelectorAll('#mtools button')].map(b => b.textContent.trim()));
+  const bad = [];
+  let opened = 0;
+  for (const n of names) {
+    await p.evaluate(t => { const x = [...document.querySelectorAll('#mtools button')]
+      .find(b => b.textContent.trim() === t); if (x) x.click(); }, n);
+    await p.waitForTimeout(220);
+    const r = await p.evaluate(nm => {
+      const e = document.querySelector('.panel.open');
+      if (!e || !e.getBoundingClientRect().width) return null;
+      const cv = document.querySelector('canvas');
+      const txt = [...e.querySelectorAll('.tg,.lab,h2,td,.chip,p,button')]
+        .filter(x => { const q = x.getBoundingClientRect(); return q.width > 20 && q.height > 6; })
+        .slice(0, 8);
+      const hidden = txt.filter(x => { const q = x.getBoundingClientRect();
+        const at = document.elementFromPoint(q.left + Math.min(40, q.width / 2), q.top + q.height / 2);
+        return at === cv; }).length;
+      return { nm, pos: getComputedStyle(e).position, probed: txt.length, hidden };
+    }, n);
+    if (!r) continue;                       // a panel this model has nothing for
+    opened++;
+    if (r.hidden || r.pos === 'static') bad.push(r);
+  }
+  await p.setViewportSize({width: 1280, height: 720});
+  await p.waitForTimeout(300);
+  return { opened, bad };
+}
+
 srv.listen(8766, async () => {
   const b = await chromium.launch();
   const out = [];
@@ -247,6 +287,16 @@ srv.listen(8766, async () => {
                  payloadTris: E.surface ? E.surface.tris : 0,
                  styleSwitch: !!document.getElementById('body-style'),
                  hasBodyToggle: !!document.getElementById('L-body'),
+                 /* the wall contacts: drawn where the page carries them,
+                    and never a dead switch where it does not */
+                 wantCont: !!(E.surface && E.surface.contacts
+                              && E.surface.contacts.n),
+                 gotCont: !!contMesh,
+                 contPts: contMesh ? contMesh.geometry.getAttribute('position').count : 0,
+                 payloadCont: (E.surface && E.surface.contacts
+                               && E.surface.contacts.n) || 0,
+                 contRowShown: (() => { const r = document.getElementById('cont-row');
+                   return r ? getComputedStyle(r).display !== 'none' : null; })(),
                  /* Either view, on any model: picking the one this model does
                     not carry must fall back to the one it does, never leave
                     the layer silently empty. */
@@ -264,7 +314,8 @@ srv.listen(8766, async () => {
                  })() };
       });
       const act = await interact(p);
-      out.push({ name, ...st, act, errors: errs });
+      const ph = await phone(p);
+      out.push({ name, ...st, act, phone: ph, errors: errs });
     } catch (e) {
       out.push({ name, canvas:false, w:0, h:0, panels:0, act:null,
                  errors: errs.concat([String(e.message||e)]) });
@@ -288,6 +339,18 @@ check("every page was rendered", len(results) == len(names), (len(results), len(
 for res in results:
     nm = res["name"]
     check("%s throws nothing" % nm, not res["errors"], res["errors"][:2])
+    if res.get("wantCont"):
+        check("%s draws the contacts the surface is fitted through" % nm,
+              res.get("gotCont") and res.get("contPts") == res.get("payloadCont"),
+              (res.get("gotCont"), res.get("contPts"), res.get("payloadCont")))
+    else:
+        check("%s offers no contacts switch on a page that carries none" % nm,
+              not res.get("gotCont") and not res.get("contRowShown"),
+              (res.get("gotCont"), res.get("contRowShown")))
+    ph = res.get("phone") or {}
+    check("%s opens its panels on a phone" % nm, ph.get("opened", 0) >= 2, ph.get("opened"))
+    check("%s keeps a phone panel's own labels on top of the canvas" % nm,
+          not ph.get("bad"), ph.get("bad"))
     # the canvas keeps its default 300x150 when the renderer dies before sizing it
     check("%s sizes its canvas (not the 300x150 of a dead renderer)" % nm,
           res["canvas"] and res["w"] > 400 and res["h"] > 300,

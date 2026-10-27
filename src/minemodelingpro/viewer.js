@@ -85,6 +85,23 @@ $("s-src").textContent=fmtN((M.sources||[]).length);
   document.head.appendChild(css);
 })();
 
+/* Every page that has `#leftcol` — baked here or by the shell — also has
+   `#leftcol>.panel{position:static}`, an id rule that beats the phone rule's
+   `.panel{...}` on every property that is not !important, and `position` is not
+   one of them. A static box ignores z-index, so on a phone the panel's white
+   sheet and all of its label text painted UNDER the fixed canvas and the only
+   thing left on screen was a column of unlabelled switch pills: the switches
+   are position:relative, so they alone paint above it. Reported 2026-10-27 as
+   "how am I supposed to know what each toggle is for".
+
+   This is injected rather than left to the shell because the shell is baked:
+   the gallery carries whatever CSS was written that day, so the fix has to ride
+   in with the renderer to reach pages that are already out there. */
+(function mobilePanels(){const s=document.createElement("style");
+  s.textContent=`@media (max-width:760px){#leftcol>.panel{position:fixed;max-height:58vh}}
+   @media (max-height:560px) and (orientation:landscape){#leftcol>.panel{position:fixed;max-height:none}}`;
+  document.head.appendChild(s);})();
+
 /* ---------------- panels (minimise / mobile sheets) ---------------- */
 document.querySelectorAll(".phead").forEach(h=>{const p=h.parentElement,id=p.id;
   if(!MOBILE&&store.get("min:"+id,false))p.classList.add("min");
@@ -188,11 +205,12 @@ const ZCOL=["#8d98a7","#2f7ed8","#d94f3d","#1f9d55","#8e5bd1","#d99a00","#0f9fb0
             "#c2447a","#6b8e23","#4a5bbd","#b5651d","#2aa198"];
 function zoneColor(id){return id?ZCOL[((id-1)%(ZCOL.length-1))+1]:ZCOL[0];}
 
-let bodyMesh=null,BD=null,surfMesh=null,SF=null;
+let bodyMesh=null,BD=null,surfMesh=null,SF=null,contMesh=null,CT=null;
 let bodyStyle=store.get("bodystyle","shape");
 function buildBody(){
   if(bodyMesh){scene.remove(bodyMesh);bodyMesh.geometry.dispose();bodyMesh.material.dispose();bodyMesh=null;}
   if(surfMesh){scene.remove(surfMesh);surfMesh.geometry.dispose();surfMesh.material.dispose();surfMesh=null;SF=null;}
+  if(contMesh){scene.remove(contMesh);contMesh.geometry.dispose();contMesh.material.dispose();contMesh=null;CT=null;}
   buildSurface();
   const E=M.elements[EL],B=E&&E.body;
   const cb=$("L-body"),row=$("body-op-row"),why=$("body-why");
@@ -320,7 +338,33 @@ function buildSurface(){
   scene.add(surfMesh);
   SF={tris:S.tris,groups:groups,total:IX.length,dropped:S.dropped||0,bodies:S.bodies||0,
       thick:S.thickness_m||null,method:S.method||null};
+  buildContacts(S.contacts);
   applySurface();}
+
+/* The wall contacts the surface is fitted through: hangingwall and footwall,
+   one pair per intercept. A surface on its own says nothing about where it is
+   measured and where it is interpolated, and "there's no connection points"
+   is exactly that complaint. Older pages carry none, so this does nothing
+   rather than assuming. */
+function buildContacts(C){
+  if(!C||!C.n)return;
+  const Q=b64(C.p,Uint16Array),o=C.origin,sc=C.scale,n=C.n;
+  const pos=new Float32Array(n*3),col=new Float32Array(n*3),_c=new THREE.Color();
+  for(let i=0;i<n;i++){
+    const p=V(o[0]+Q[i*3]*sc[0],o[1]+Q[i*3+1]*sc[1],o[2]+Q[i*3+2]*sc[2]);
+    pos[i*3]=p.x;pos[i*3+1]=p.y;pos[i*3+2]=p.z;}
+  for(const gp of (C.groups||[])){_c.set(zoneColor(gp.id));
+    for(let k=gp.start;k<gp.start+gp.count;k++){
+      col[k*3]=_c.r;col[k*3+1]=_c.g;col[k*3+2]=_c.b;}}
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute("position",new THREE.BufferAttribute(pos,3));
+  geo.setAttribute("color",new THREE.BufferAttribute(col,3));
+  geo.computeBoundingSphere();
+  contMesh=new THREE.Points(geo,new THREE.PointsMaterial({
+    vertexColors:true,size:3.2,sizeAttenuation:false,depthWrite:false}));
+  contMesh.renderOrder=3;
+  scene.add(contMesh);
+  CT={groups:C.groups||[],total:n};}
 
 /* One subdivision, then the inserted points relax toward their neighbours.
    The triangulation is one face per three intercepts, so a body arrives as a
@@ -364,6 +408,11 @@ function refineSurface(pos,col,idx){
    triangles arrive grouped by body, so this is a draw range rather than a
    rebuild. */
 function applySurface(){
+  if(contMesh&&CT){
+    if(!curZone)contMesh.geometry.setDrawRange(0,CT.total);
+    else{const cg=CT.groups.find(x=>x.id===curZone);
+      if(cg)contMesh.geometry.setDrawRange(cg.start,cg.count);
+      else contMesh.geometry.setDrawRange(0,0);}}
   if(!surfMesh||!SF)return;
   if(!curZone){surfMesh.geometry.setDrawRange(0,SF.total);return;}
   const gp=SF.groups.find(x=>x.id===curZone);
@@ -394,7 +443,9 @@ function bodyVis(){
   const on=!!(ctl("L-body").checked);
   const shape=bodyStyle==="shape" ? !!SF : !BD;
   if(surfMesh)surfMesh.visible=on&&shape;
+  if(contMesh)contMesh.visible=on&&shape&&!!(ctl("L-contacts").checked);
   if(bodyMesh)bodyMesh.visible=on&&!shape;
+  const cr=$("cont-row");if(cr)cr.style.display=(on&&shape&&CT)?"":"none";
   const r=$("zlab-row");if(r)r.style.display=on?"":"none";
   // The switch is shown whenever there is an envelope at all — hiding it left a
   // reader unable to tell "this model has only one view" from "this control
@@ -1402,6 +1453,21 @@ ctl("L-body").onchange=e=>{store.set("body",e.target.checked);bodyVis();drawLabe
      if(b.disabled)return;
      bodyStyle=b.dataset.bs;store.set("bodystyle",bodyStyle);mark();bodyVis();bodyNote();});
    mark();}}
+/* "Show the contacts" — built here for the same reason as the switch above:
+   the page shell is baked and the renderer is not, so a control added today
+   has to reach the pages that are already out there. */
+{const cb=$("L-body");
+ const row=(cb&&cb.closest)?cb.closest("label"):null;
+ if(row&&row.parentNode&&row.parentNode.insertBefore&&!$("cont-row")){
+   const l=document.createElement("label");
+   l.className="tg";l.id="cont-row";l.style.cssText="display:none;padding-left:18px";
+   l.title="The hangingwall and footwall the surface is fitted through: two "
+     +"points per intercept. Where there are none, the surface is interpolated.";
+   l.innerHTML='<input type="checkbox" id="L-contacts">Contact points';
+   const anchor=$("body-style")||row;
+   row.parentNode.insertBefore(l,anchor.nextSibling);}}
+ctl("L-contacts").onchange=e=>{store.set("contacts",e.target.checked);bodyVis();};
+{const c=$("L-contacts");if(c)c.checked=store.get("contacts",true);}
 ctl("L-zlabels").onchange=e=>{store.set("zlabels",e.target.checked);drawLabels();};
 {const v=store.get("zlabels",false);const c=$("L-zlabels");if(c)c.checked=v;}
 ctl("body-op").oninput=e=>{const v=+e.target.value;ctl("body-op-v").textContent=v+"%";

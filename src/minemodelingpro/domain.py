@@ -381,14 +381,31 @@ def boundary_of(cent, rot, reach):
 
 
 def _vein(segments, at, threshold, rot, aniso, reach, thickness, info,
-          vein_nodes=240_000, max_points=600_000):
-    """The vein-modelling path: contacts, a reference surface, a thickness."""
+          vein_nodes=240_000, max_points=600_000, vein_reach=None):
+    """The vein-modelling path: contacts, a reference surface, a thickness.
+
+    `reach` is the link reach — the distance at which the old triangulation was
+    allowed to close a face. It is deliberately tight, because a triangulated
+    sheet that bridges a 100 m gap is a sheet over untested ground. The vein
+    builder does not work that way: it splits at gaps into separate veins, it
+    rejects a node where the two walls disagree, and it gives a node full reach
+    only where contacts surround it, falling back to a quarter of it where they
+    do not. So it can be told how far a vein is believed to continue —
+    `vein_reach`, the same distance the zone finder uses to decide two holes are
+    in one body — without the sheet running away. At the link reach it was doing
+    the opposite: splitting one 121-hole vein at Enchi into separate bodies the
+    zone finder had already joined. MMP_VEINREACH=link restores the old one."""
+    res = float(reach)                 # the data's own spacing: lattice resolution
+    if vein_reach and os.environ.get("MMP_VEINREACH") != "link":
+        reach = max(float(reach), float(vein_reach))
+    if os.environ.get("MMP_VEINRES") == "reach":
+        res = None                     # the old behaviour: resolution follows reach
     try:
         from minemodelingpro import veins as VEIN
         c = VEIN.contacts(segments, at, threshold)
         if not len(c["mid"]):
             return None
-        out = VEIN.build(c, rot=rot, aniso=aniso, reach=reach,
+        out = VEIN.build(c, rot=rot, aniso=aniso, reach=reach, res=res,
                          min_thick=0.3, max_thick=(float(thickness) * 3
                                                    if thickness else None),
                          max_nodes=int(max(vein_nodes, 2_000)))
@@ -501,7 +518,7 @@ def _fill_triangle(P, W, step, layers, normal):
 
 def wireframe(pts, g, hid, threshold, rot=None, aniso=None, reach=120.0, step=8.0,
               thickness=None, max_points=600_000, segments=None, at=None,
-              vein_nodes=240_000):
+              vein_nodes=240_000, vein_reach=None):
     """The body a qualified person would draw, as a cloud of points inside it.
 
     The skeleton this replaces joined intercepts with lines, and a line has no
@@ -529,7 +546,7 @@ def wireframe(pts, g, hid, threshold, rot=None, aniso=None, reach=120.0, step=8.
     # that made this necessary. MMP_DOMAIN=alpha restores the triangulation.
     if segments is not None and at is not None and os.environ.get("MMP_DOMAIN") != "alpha":
         got = _vein(segments, at, threshold, rot, aniso, reach, thickness, info,
-                    vein_nodes, max_points)
+                    vein_nodes, max_points, vein_reach)
         if got is not None:
             return got
     if len(cent) < 3:

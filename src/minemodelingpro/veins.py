@@ -150,7 +150,8 @@ def components(mid, rot=None, aniso=None, reach=60.0):
 
 
 def build(c, rot=None, aniso=None, reach=60.0, step=None, min_thick=0.3,
-          max_thick=None, taper=0.35, max_nodes=240_000, fill_step=None):
+          max_thick=None, taper=0.35, max_nodes=240_000, fill_step=None,
+          res=None):
     """The veins these contacts describe: surfaces, and the points inside them.
 
     Contacts that cannot be walked between within the reach are separate veins
@@ -159,21 +160,59 @@ def build(c, rot=None, aniso=None, reach=60.0, step=None, min_thick=0.3,
     mid_all = np.asarray(c["mid"], float)
     if not len(mid_all):
         return None
+
+    def _sub(ix):
+        return {k: (np.asarray(v)[ix] if hasattr(v, "__len__") and len(v) == len(mid_all)
+                    else v) for k, v in c.items()}
+
+    def _try(ix, budget):
+        """One component, with a shorter leash if it will not hold together.
+
+        Reaching further merges contacts that may disagree about where the wall
+        is, and `_one` refuses a node where they do — correctly, since the mean
+        of two competing walls is a sheet in barren rock. But refusing every
+        node means the body comes back as nothing, and a body that has gone
+        dark is worse than a body drawn conservatively: measured over the
+        corpus, the longer reach alone put twelve more bodies on the page with
+        no shape at all. So a component that fails whole is split again at the
+        data's own spacing and each piece drawn separately — the old behaviour,
+        applied only where the new one does not hold."""
+        got = _one(_sub(ix), rot, aniso, reach, step, min_thick, max_thick, taper,
+                   budget, fill_step, res=res)
+        tight = float(res or 0.0)
+        # A surface fitted through N contacts that comes back with fewer than N
+        # triangles has collapsed, not been drawn: the agreement test threw away
+        # all but a corner of the lattice. That reads on the page exactly like
+        # the body going dark — one project came back with two triangles where
+        # it had had five hundred and sixty-two — so a collapse is retried on
+        # the shorter leash too, and whichever draws more of the body is kept.
+        ok = got is not None and len(got["f"]) >= len(ix)
+        if ok or not tight or tight >= reach:
+            return [got] if got is not None else []
+        out = []
+        pieces = components(np.asarray(mid_all)[ix], rot, aniso, tight)
+        for q in pieces:
+            if not len(q):
+                continue
+            g = _one(_sub(np.asarray(ix)[q]), rot, aniso, tight, step, min_thick,
+                     max_thick, taper, max(int(budget / max(1, len(pieces))), 2_000),
+                     fill_step, res=res)
+            if g is not None:
+                out.append(g)
+        if got is not None and sum(len(g["f"]) for g in out) <= len(got["f"]):
+            return [got]
+        return out
+
     parts = components(mid_all, rot, aniso, reach)
     if len(parts) > 1:
         built = []
+        per = max(int(max_nodes / max(1, len(parts))), 2_000)
         for ix in parts:
-            if not len(ix):
-                continue
-            sub = {k: (np.asarray(v)[ix] if hasattr(v, "__len__") and len(v) == len(mid_all)
-                       else v) for k, v in c.items()}
-            got = _one(sub, rot, aniso, reach, step, min_thick, max_thick, taper,
-                       max(int(max_nodes / max(1, len(parts))), 2_000), fill_step)
-            if got is not None:
-                built.append(got)
+            if len(ix):
+                built.extend(_try(ix, per))
         return _merge_veins(built, mid_all, c) if built else None
-    return _one(c, rot, aniso, reach, step, min_thick, max_thick, taper,
-                max_nodes, fill_step)
+    built = _try(np.arange(len(mid_all)), max_nodes)
+    return _merge_veins(built, mid_all, c) if built else None
 
 
 def _merge_veins(built, mid_all, c):
@@ -192,7 +231,7 @@ def _merge_veins(built, mid_all, c):
 
 def _one(c, rot=None, aniso=None, reach=60.0, step=None, min_thick=0.3,
          max_thick=None, taper=0.35, max_nodes=240_000, fill_step=None,
-         extrap=0.25):
+         extrap=0.25, res=None):
     """One vein: a closed surface, and the points inside it for the estimator."""
     mid = np.asarray(c["mid"], float)
     if len(mid) < 1:
@@ -218,7 +257,13 @@ def _one(c, rot=None, aniso=None, reach=60.0, step=None, min_thick=0.3,
     span_u = max(float(u.max() - u.min()), 2.0 * out_m)
     span_v = max(float(v.max() - v.min()), 2.0 * out_m)
     if step is None:
-        step = max(min(span_u, span_v) / 60.0, float(reach) / 12.0, 1.0)
+        # How FAR a vein continues and how FINELY it is drawn are different
+        # questions, and tying the lattice to the reach answered the second with
+        # the first: raising the reach to the continuity distance coarsened the
+        # step with it and halved the triangle count on most of the corpus — a
+        # longer vein drawn more crudely. `res` is the distance between the data
+        # instead, so the surface keeps its detail while the vein keeps its run.
+        step = max(min(span_u, span_v) / 60.0, float(res or reach) / 12.0, 1.0)
     pad = out_m
     nu = int(np.clip(span_u / step + 5, 9, 1200))
     nv = int(np.clip(span_v / step + 5, 9, 1200))

@@ -189,6 +189,12 @@ button.mini:hover{background:var(--chip)}
    so the open panel docks to the right and the controls shrink. */
 @media (max-height:560px) and (orientation:landscape){
   #leftcol{display:contents}
+  /* #leftcol>.panel is an id rule, so it beats the .panel rule below on every
+     property that is not !important — including `position`. A static panel has
+     no z-index, so its sheet and its label text paint UNDER the fixed canvas
+     and all that survives is the switch pills, which are position:relative.
+     That is the whole control bar gone. Restore it at the same specificity. */
+  #leftcol>.panel{position:fixed;max-height:none}
   :root{--bar:40px}
   #bar .ttl span{display:none}
   .panel{left:auto!important;right:8px!important;width:300px!important;max-width:46vw;
@@ -216,6 +222,7 @@ button.mini:hover{background:var(--chip)}
 #mtools{display:none}
 @media (max-width:760px){
   #leftcol{display:contents}
+  #leftcol>.panel{position:fixed;max-height:58vh}   /* see the note above */
   :root{--bar:48px}
   #bar .brand{display:none}
   #bar .ttl b{font-size:14.5px}
@@ -256,6 +263,7 @@ button.mini:hover{background:var(--chip)}
       <label class="tg"><input type="checkbox" id="L-trace" checked>Drill traces &amp; collars</label>
       <label class="tg" title="Only blocks at or above the cut-off slider are drawn — which is why this layer looks patchier than the deposit shape beside it"><input type="checkbox" id="L-blocks" checked>Block model <span style="color:var(--mut);font-weight:400">(above cut-off)</span><small id="blk-note"></small></label>
       <label class="tg"><input type="checkbox" id="L-body">Deposit shape<small id="body-note"></small></label>
+      <label class="tg" id="cont-row" style="display:none;padding-left:18px" title="The hangingwall and footwall the surface is fitted through: two points per intercept. Where there are none, the surface is interpolated."><input type="checkbox" id="L-contacts" checked>Contact points</label>
       <label class="tg" id="zlab-row" style="display:none;padding-left:18px"><input type="checkbox" id="L-zlabels">Name each body</label>
       <label class="tg"><input type="checkbox" id="L-terrain">Terrain<small id="ter-note"></small></label>
       <label class="tg"><input type="checkbox" id="L-labels">Hole labels</label>
