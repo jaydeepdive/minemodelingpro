@@ -380,6 +380,36 @@ def boundary_of(cent, rot, reach):
     return np.asarray(idx, int), np.asarray(dirs, float)
 
 
+def _vein(segments, at, threshold, rot, aniso, reach, thickness, info,
+          vein_nodes=240_000):
+    """The vein-modelling path: contacts, a reference surface, a thickness."""
+    try:
+        from minemodelingpro import veins as VEIN
+        c = VEIN.contacts(segments, at, threshold)
+        if not len(c["mid"]):
+            return None
+        out = VEIN.build(c, rot=rot, aniso=aniso, reach=reach,
+                         min_thick=0.3, max_thick=(float(thickness) * 3
+                                                   if thickness else None),
+                         max_nodes=int(max(vein_nodes, 2_000)))
+        if out is None:
+            return None
+        info.update({"mode": "vein", "intercepts": out["n_contacts"],
+                     "contacts": out["n_contacts"] * 2,
+                     "reach_m": out["reach_m"], "step_m": out["step_m"],
+                     "points": int(len(out["pts"])),
+                     "triangles": int(len(out["f"]))})
+        tv = np.asarray(out["thickness"], float)
+        if len(tv):
+            info["_thick"] = tv
+        info["_mesh"] = (np.asarray(out["v"], float), np.asarray(out["f"], np.int64))
+        info["_contacts"] = (np.asarray(out["hw"], float), np.asarray(out["fw"], float))
+        return out["pts"], info
+    except Exception as exc:                                   # noqa: BLE001
+        info["vein_error"] = "%s: %s" % (type(exc).__name__, str(exc)[:120])
+        return None
+
+
 def _alpha_faces(uv, reach, xyz=None):
     """Delaunay triangles small enough to be real ground between holes.
 
@@ -461,7 +491,8 @@ def _fill_triangle(P, W, step, layers, normal):
 
 
 def wireframe(pts, g, hid, threshold, rot=None, aniso=None, reach=120.0, step=8.0,
-              thickness=None, max_points=600_000):
+              thickness=None, max_points=600_000, segments=None, at=None,
+              vein_nodes=240_000):
     """The body a qualified person would draw, as a cloud of points inside it.
 
     The skeleton this replaces joined intercepts with lines, and a line has no
@@ -482,6 +513,16 @@ def wireframe(pts, g, hid, threshold, rot=None, aniso=None, reach=120.0, step=8.
     ground. Returns (points, info)."""
     cent, hole, wid = intercepts_w(pts, g, hid, threshold)
     info = {"intercepts": int(len(cent))}
+    # A vein is modelled as a vein where the caller can give the intervals
+    # themselves: a reference surface through the contacts with an interpolated
+    # thickness, which uses every intercept instead of the fifth of them that
+    # survive a Delaunay circumradius test. See veins.py for the measurement
+    # that made this necessary. MMP_DOMAIN=alpha restores the triangulation.
+    if segments is not None and at is not None and os.environ.get("MMP_DOMAIN") != "alpha":
+        got = _vein(segments, at, threshold, rot, aniso, reach, thickness, info,
+                    vein_nodes)
+        if got is not None:
+            return got
     if len(cent) < 3:
         return (cent if len(cent) else np.zeros((0, 3))), info
     spacing = _intercept_spacing(cent, hole)

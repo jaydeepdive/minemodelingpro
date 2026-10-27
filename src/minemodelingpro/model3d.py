@@ -78,6 +78,10 @@ _VIEWER_TMPL = os.path.join(_HERE, "model3d_viewer.html")
 #      the collar elevations instead of being drawn against a flat datum
 # 13 — mineralisation belonging to no named zone is drawn as the separate bodies
 #      it is, instead of as one sheet triangulated across the whole property
+# 17 — a vein is modelled as a vein: hangingwall and footwall contacts, a
+#      reference surface through them and an interpolated thickness, instead of
+#      a Delaunay triangulation of intercept midpoints that used a fifth of the
+#      drilling and gave every triangle one thickness
 # 16 — the alpha criterion is tested in the ROCK and in the deposit's own
 #      anisotropic frame, not in the body's two-dimensional shadow: a vein
 #      system was being welded into one sheet across the barren ground between
@@ -88,7 +92,7 @@ _VIEWER_TMPL = os.path.join(_HERE, "model3d_viewer.html")
 #      surface at the thickness each intercept shows, instead of that shape
 #      sampled to points and snapped to the block lattice, which flattened every
 #      pinch and swell a vein has into the same row of boxes
-MODEL_VERSION = 16
+MODEL_VERSION = 17
 # the most domain cells to send to a browser; beyond this the envelope is drawn
 # on a coarser lattice, which is a picture of the same shape
 BODY_MAX_CELLS = 120_000
@@ -1504,11 +1508,15 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
             dom_mesh = []
 
             dom_thick = []
+            dom_method = {"vein": 0, "alpha": 0}
 
             def _keep_mesh(inf, zid):
                 """Lift a body's geometry out of its info block, under its own id."""
                 mv = (inf or {}).pop("_mesh", None)
                 tv = (inf or {}).pop("_thick", None)
+                (inf or {}).pop("_contacts", None)
+                dom_method["vein" if (inf or {}).get("mode") == "vein"
+                           else "alpha"] += 1
                 if tv is not None and len(tv):
                     dom_thick.append(np.asarray(tv, float))
                 if mv is not None and len(mv[1]):
@@ -1557,26 +1565,56 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                     # continuity, in the deposit's frame: generous along strike and
                     # down dip, tight across. The wireframe keeps its own bound.
                     zreach = max(float(reach), float(el_reach))
+                    # The mineralised INTERVALS, keyed by hole, so the vein
+                    # builder can take a hangingwall and a footwall contact from
+                    # each one. `segs_out` is (hole index, from, to, grade).
+                    _thr = max(bins[0], 1e-9)
+                    _msegs = [s for s in segs_out if s[3] >= _thr]
+                    # desurveyed once per HOLE, not once per interval:
+                    # `hole_xyz` is vectorised and a property has thousands
+                    _smid = np.zeros((len(_msegs), 3))
+                    if _msegs:
+                        _byh = defaultdict(list)
+                        for n, sg in enumerate(_msegs):
+                            _byh[sg[0]].append(n)
+                        for _hi, _ns in _byh.items():
+                            _mm = np.array([(_msegs[n][1] + _msegs[n][2]) / 2.0
+                                            for n in _ns], float)
+                            _smid[_ns] = hole_xyz(H[_hi], _mm)
+
+                    def _at(hi, m):
+                        return hole_xyz(H[hi], np.asarray([float(m)]))[0]
+
+                    def _segs_for(mask):
+                        """The intervals whose midpoints fall in this body."""
+                        return [(_msegs[i][0], _msegs[i][1], _msegs[i][2], _msegs[i][3])
+                                for i in np.nonzero(mask)[0]]
                     leftover_bodies = 0
                     flat_bodies = 0
                     zlab, zlist = ZON.find(pts[mz], hid[mz], zreach,
                                            rot=rot_d, aniso=an_d)
+                    _vbudget = int(max(3_000, 300_000 // max(1, len(zlist or []))))
                     PH.mark("zones")
                     zone_pts, zone_lab = pts[mz], zlab
                     # which zone each composite belongs to — asked once, not once
                     # per zone, which was a KD-tree query per body on a property
                     # that can have fifty of them
                     zof = ZON.assign(pts, zone_pts, zlab, zreach, rot=rot_d, aniso=an_d)
+                    _szone = (ZON.assign(_smid, zone_pts, zlab, zreach, rot=rot_d,
+                                         aniso=an_d) if len(_smid)
+                              else np.zeros(0, np.int32))
                     parts, zinfo, part_zone = [], [], []
                     for z in (zlist or []):
                         belong = zof == z["id"]
-                        if belong.sum() < 6:
+                        if belong.sum() < (1 if len(_smid) else 6):
                             continue
+                        zsg = _segs_for(_szone == z["id"]) if len(_smid) else None
                         zp, zi = DOM.wireframe(
                             pts[belong], g[belong], hid[belong], max(bins[0], 1e-9),
                             rot=rot_d, aniso=an_d, reach=reach,
                             step=max(float(blk[0]), 3.0),
-                            thickness=PS.get("true_width_m") or med_w)
+                            thickness=PS.get("true_width_m") or med_w,
+                            segments=zsg, at=_at, vein_nodes=_vbudget)
                         _keep_mesh(zi, z["id"])
                         if zp is not None and len(zp):
                             if len(zp) <= 2:
@@ -1638,19 +1676,25 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                                                    min_points=1, rot=rot_d, aniso=an_d)
                             lof = ZON.assign(pts, lpts, llab, zreach,
                                              rot=rot_d, aniso=an_d)
+                            # the same question for the intervals, asked once
+                            _lsz = (ZON.assign(_smid, lpts, llab, zreach, rot=rot_d,
+                                               aniso=an_d) if len(_smid)
+                                    else np.zeros(0, np.int32))
                             big = sorted((lz for lz in (llist or [])),
                                          key=lambda lz: -int((lof == lz["id"]).sum()))
                             nbod = 0
                             placed = np.zeros(len(lpts), bool)
                             for lz in big[:LEFTOVER_MAX_BODIES]:
                                 w = lof == lz["id"]
-                                if w.sum() < 3:
+                                if w.sum() < (1 if len(_smid) else 3):
                                     continue
+                                lsg = (_segs_for(_lsz == lz["id"]) if len(_smid) else None)
                                 lp, _li = DOM.wireframe(
                                     pts[w], g[w], hid[w], max(bins[0], 1e-9),
                                     rot=rot_d, aniso=an_d, reach=reach,
                                     step=max(float(blk[0]), 3.0),
-                                    thickness=PS.get("true_width_m") or med_w)
+                                    thickness=PS.get("true_width_m") or med_w,
+                                    segments=lsg, at=_at, vein_nodes=_vbudget)
                                 _keep_mesh(_li, 0)
                                 if lp is not None and len(lp):
                                     if len(lp) <= 2:
@@ -1908,6 +1952,9 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                         "bodies": int(len(groups)),
                         "groups": groups,
                     }
+                    el_out["surface"]["method"] = (
+                        "vein" if dom_method["vein"] >= dom_method["alpha"] else "alpha")
+                    el_out["surface"]["from_veins"] = int(dom_method["vein"])
                     if dom_thick:
                         tv = np.concatenate(dom_thick)
                         el_out["surface"]["thickness_m"] = {

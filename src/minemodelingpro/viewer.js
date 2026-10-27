@@ -319,7 +319,7 @@ function buildSurface(){
   surfMesh.renderOrder=2;
   scene.add(surfMesh);
   SF={tris:S.tris,groups:groups,total:IX.length,dropped:S.dropped||0,bodies:S.bodies||0,
-      thick:S.thickness_m||null};
+      thick:S.thickness_m||null,method:S.method||null};
   applySurface();}
 
 /* One subdivision, then the inserted points relax toward their neighbours.
@@ -380,9 +380,13 @@ function bodyNote(){
   if(SF&&SF.thick){const k=SF.thick;
     t=" · "+(k.min===k.max?k.median+" m thick"
       :k.min+"–"+k.max+" m thick (median "+k.median+")");}
+  // say which it is: a vein surface fitted through the contacts reads very
+  // differently from a sheet triangulated through midpoints, and a reader is
+  // entitled to know which one is on screen
+  const how=(SF&&SF.method==="vein")?" · vein surfaces through the contacts":"";
   ctl("body-note").textContent=
-    (SF&&bodyStyle==="shape")?(fmtN(SF.tris)+" triangles"+t)
-      :(B?(fmtN(B.n)+" cells"):(SF?fmtN(SF.tris)+" triangles"+t:"not built"));}
+    (SF&&bodyStyle==="shape")?(fmtN(SF.tris)+" triangles"+t+how)
+      :(B?(fmtN(B.n)+" cells"):(SF?fmtN(SF.tris)+" triangles"+t+how:"not built"));}
 
 function bodyVis(){
   // The chosen view, where the model has it; the other one where it does not,
