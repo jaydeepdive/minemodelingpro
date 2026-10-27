@@ -283,42 +283,85 @@ def startup():
         sitesync.start_server(_ready)
     except Exception as e:
         print(f"[server] sitesync unavailable: {str(e)[:140]}", flush=True)
+    threading.Thread(target=_facts_loop, daemon=True, name="health").start()
     print(f"[server] ready; site={LIVE['dir']}", flush=True)
+
+
+# The health check answers from here, never from the database.
+#
+# It used to make three round trips — select 1, the worker's pulse, the job
+# counts — and the connection pool waits up to thirty seconds for a connection.
+# App Platform gives up long before that and marks the instance unhealthy, and
+# there is exactly ONE instance, so a slow database for half a minute is a total
+# outage: `no_healthy_upstream (503 UH)` on every route, for everybody. Observed
+# 2026-10-27, mid-page-load, with the app otherwise perfectly fine — and the
+# comment below it already said this lesson once, about HTTP status. Returning
+# 200 while blocking is the same mistake wearing a different hat: a health check
+# that can HANG can take the app out just as surely as one that can fail.
+#
+# So the facts are gathered on a timer, off the request path, and the endpoint
+# reads the last snapshot. What the check now measures is the only thing it was
+# ever meant to measure: can this process answer an HTTP request.
+_FACTS = {"ok": False, "at": 0.0, "db": "not checked yet"}
+_FACTS_EVERY = float(os.environ.get("MMP_HEALTH_EVERY", "10"))
+
+
+def _facts_once():
+    f = {"at": time.time()}
+    try:
+        d = store.db()
+        d.one("select 1")
+        f["ok"] = True
+        age, note = d.worker_seen("modeler")
+        f["worker_seen_s"] = round(age) if age is not None else None
+        f["worker_note"] = note or None
+        try:
+            q = d.one("select count(*) filter (where status = 'queued') as queued, "
+                      "count(*) filter (where status = 'running') as running from jobs")
+            f["queued"], f["running"] = int(q["queued"]), int(q["running"])
+        except Exception:                                    # noqa: BLE001
+            pass
+    except Exception as e:                                   # noqa: BLE001
+        store.drop_db()
+        DBSTATE.update(ok=False, error=str(e)[:300])
+        f["ok"] = False
+        f["db"] = "unreachable"
+        f["db_error"] = str(e)[:300]
+    _FACTS.clear()
+    _FACTS.update(f)
+    return f
+
+
+def _facts_loop():
+    # The first pass is in here rather than in startup() on purpose: it waits on
+    # the pool, and a startup that blocks for thirty seconds answers no health
+    # check at all — which is the bug this whole change is about, moved earlier.
+    while True:
+        try:
+            _facts_once()
+        except Exception as e:                               # noqa: BLE001
+            print(f"[health] {type(e).__name__}: {str(e)[:140]}", flush=True)
+        time.sleep(_FACTS_EVERY)
 
 
 @app.get("/api/health")
 def health():
-    """Is the app up — and is the worker that does the modelling still breathing?
+    """Is this process answering — and, as information, is the rest of it well?
 
-    The worker line is here because an app whose background worker has died looks
-    perfectly healthy from the outside, and that is exactly the failure that leaves
-    an upload saying "parsing" for three hours."""
-    # 200 whenever the process is answering, because it is: it serves the
-    # gallery with or without Postgres. Reporting the database by HTTP status
-    # instead made App Platform pull a working instance out of rotation.
-    ok = False
-    d = None
-    try:
-        d = store.db()
-        d.one("select 1")
-        ok = True
-    except Exception as e:                                   # noqa: BLE001
-        store.drop_db()
-        DBSTATE.update(ok=False, error=str(e)[:300])
-    out = {"ok": ok, "version": VERSION}
-    if not ok:
-        out["db"] = "unreachable"
-        out["db_error"] = DBSTATE.get("error")
-    if ok:
-        age, note = d.worker_seen("modeler")
-        out["worker_seen_s"] = round(age) if age is not None else None
-        out["worker_note"] = note or None
-        try:
-            q = d.one("select count(*) filter (where status = 'queued') as queued, "
-                      "count(*) filter (where status = 'running') as running from jobs")
-            out["queued"], out["running"] = int(q["queued"]), int(q["running"])
-        except Exception:
-            pass
+    The status code says only that the web process is alive, because that is
+    what the edge is asking and it is the only question this instance can answer
+    about itself without waiting on something else. The database and the
+    worker's pulse are reported from a snapshot taken on a timer: an app whose
+    background worker has died looks perfectly healthy from the outside, and
+    that is the failure that leaves an upload saying "parsing" for three hours.
+    """
+    out = {"version": VERSION}
+    out.update({k: v for k, v in _FACTS.items() if k != "at"})
+    out.setdefault("ok", False)
+    age = time.time() - (_FACTS.get("at") or 0)
+    # a snapshot nobody has refreshed is not evidence of anything
+    if not _FACTS.get("at") or age > max(_FACTS_EVERY * 4, 60):
+        out["stale_s"] = round(age) if _FACTS.get("at") else None
     return out
 
 

@@ -10,6 +10,7 @@ that would have caught it.
     PYTHONPATH=src python3 scripts/test_public_assets.py
 """
 import os
+import time
 import re
 import glob
 import sys
@@ -121,6 +122,12 @@ try:
     store.drop_db()
     S.DBSTATE.update(ok=False, error=None, schema=False)
     with TestClient(S.app, raise_server_exceptions=False) as c:
+        # the health facts are gathered on a thread, off the request path, so
+        # give that thread its first pass rather than racing it
+        for _ in range(100):
+            if S._FACTS.get("at"):
+                break
+            time.sleep(0.02)
         r = c.get("/api/health")
         check("the app starts and answers its health check", r.status_code == 200,
               r.status_code)
