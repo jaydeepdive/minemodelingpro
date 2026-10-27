@@ -973,5 +973,20 @@
   "size_kb": 3656,
   "collected": "2026-10-26T19:18:51Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_PGA-2026-10-26-technical-report-ni-43-101-english-76c4.pdf"
+ },
+ {
+  "file": "ceo_ONYX-2026-10-27-technical-report-ni-43-101-english-0c29.pdf",
+  "filing_ref": "ONYX-2026-10-27-technical-report-ni-43-101-english-0c29.pdf",
+  "company": "ONYX",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-10-27",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/ONYX-2026-10-27-technical-report-ni-43-101-english-0c29.pdf",
+  "source": "ceo.ca",
+  "size_kb": 62717,
+  "collected": "2026-10-27T21:18:42Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_ONYX-2026-10-27-technical-report-ni-43-101-english-0c29.pdf"
  }
 ]
