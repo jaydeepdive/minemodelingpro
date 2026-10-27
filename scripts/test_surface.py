@@ -244,6 +244,34 @@ for p in pages:
                   S["groups"][i]["start"] + S["groups"][i]["count"]
                   == S["groups"][i + 1]["start"] for i in range(len(S["groups"]) - 1)),
               starts[:6])
+        # The veins inside each body. A body is often several, and they arrive
+        # as their own draw ranges so one can be shown alone.
+        VG = S.get("veins")
+        if VG:
+            vtot = sum(g["count"] for g in VG)
+            check("%s: the veins cover every triangle exactly once" % nm,
+                  vtot == len(F) * 3, (vtot, len(F) * 3))
+            vst = [g["start"] for g in VG]
+            check("%s: the veins are contiguous, so one can be drawn alone" % nm,
+                  vst == sorted(vst) and all(
+                      VG[i]["start"] + VG[i]["count"] == VG[i + 1]["start"]
+                      for i in range(len(VG) - 1)), vst[:6])
+            check("%s: every vein id appears once" % nm,
+                  len({g["id"] for g in VG}) == len(VG),
+                  len(VG) - len({g["id"] for g in VG}))
+            # a vein belongs to one body, and lies inside that body's range
+            byb = {g["id"]: g for g in S["groups"]}
+            off = [g for g in VG if g.get("body") not in byb
+                   or g["start"] < byb[g["body"]]["start"]
+                   or g["start"] + g["count"] >
+                   byb[g["body"]]["start"] + byb[g["body"]]["count"]]
+            check("%s: every vein sits inside the body it names" % nm,
+                  not off, [(g["id"], g.get("body")) for g in off[:4]])
+            info = S.get("vein_info") or []
+            check("%s: each vein's description matches a vein that is drawn" % nm,
+                  {q["id"] for q in info} <= {g["id"] for g in VG},
+                  sorted({q["id"] for q in info} - {g["id"] for g in VG})[:4])
+
         # The contacts the surface is fitted through. They travel with it, so a
         # reader can tell a wall that was measured from a wall that was guessed.
         C = S.get("contacts")
@@ -261,6 +289,17 @@ for p in pages:
                       C["groups"][i]["start"] + C["groups"][i]["count"]
                       == C["groups"][i + 1]["start"]
                       for i in range(len(C["groups"]) - 1)), cst[:6])
+            CVG = C.get("veins")
+            if CVG:
+                check("%s: the veins cover every contact exactly once" % nm,
+                      sum(g["count"] for g in CVG) == C["n"],
+                      (sum(g["count"] for g in CVG), C["n"]))
+                # a wall and its partner are one measurement and one vein
+                check("%s: a contact vein never splits a wall pair" % nm,
+                      all(g["start"] % 2 == 0 and g["count"] % 2 == 0
+                          for g in CVG),
+                      [(g["id"], g["start"], g["count"]) for g in CVG
+                       if g["start"] % 2 or g["count"] % 2][:4])
             # a contact is a point on a drillhole, so it must sit inside the
             # model, not in the air beside it
             lo = np.asarray(C["origin"], float)
@@ -280,6 +319,84 @@ for p in pages:
         break
 if not seen:
     print("  (no built page carries a surface yet — rebuild the site to check this)")
+
+
+# ---- the payload the page receives, built directly
+# These checks used to run only over committed pages, and no committed page
+# carries a surface — so they were checking nothing at all. model3d.surface_payload
+# is the function that does the grouping, so it is called here with a mesh whose
+# right answer is known by construction.
+print("\n== bodies and the veins inside them")
+from minemodelingpro import model3d as M3
+
+
+def quad(x, y):
+    """Two triangles, four vertices, somewhere nobody else is."""
+    return (np.array([[x, y, 0.], [x + 5, y, 0.], [x + 5, y + 5, 0.], [x, y + 5, 0.]]),
+            np.array([[0, 1, 2], [0, 2, 3]], np.int64))
+
+
+# body id -> the vein each quad belongs to. Body 1's vein 0 is deliberately
+# INTERLEAVED with vein 1, because gathering a vein that arrived in pieces is
+# the whole job of the sort; a fixture where they are already adjacent would
+# pass with no sort at all.
+SHAPE = [(1, [0, 1, 0]), (2, [2, 2])]
+mesh, cont, parts = [], [], []
+for bid, veins in SHAPE:
+    for k, vid in enumerate(veins):
+        v, f = quad(100 * bid + 10 * k, 0.0)
+        mesh.append((v, f, bid, np.full(len(f), vid, np.int32)))
+    for vid in sorted(set(veins), reverse=True):   # out of order on purpose
+        n = veins.count(vid)
+        hw = np.tile(np.array([[100. * bid, 0., 0.]]), (n, 1))
+        cont.append((hw, hw + 1.0, bid, np.full(n, vid, np.int32)))
+        parts.append({"id": vid, "body": bid, "holes": n, "span_m": 42.0,
+                      "thick_m": 1.5})
+pay = M3.surface_payload(mesh, cont, parts, [np.array([1.0, 2.0])],
+                         {"vein": 2, "alpha": 0})
+G, V, C = pay["groups"], pay["veins"], pay["contacts"]
+check("every body is one group", [g["id"] for g in G] == [1, 2],
+      [g["id"] for g in G])
+check("the bodies cover every triangle", sum(g["count"] for g in G) == pay["tris"] * 3,
+      (sum(g["count"] for g in G), pay["tris"] * 3))
+check("the veins cover every triangle too", sum(g["count"] for g in V) == pay["tris"] * 3,
+      (sum(g["count"] for g in V), pay["tris"] * 3))
+check("a body of two veins is split in two, a body of one is not",
+      sorted(len([g for g in V if g["body"] == b]) for b in (1, 2)) == [1, 2],
+      [(g["id"], g["body"]) for g in V])
+# the two quads of vein 0 are not adjacent in the input; they must still be one run
+check("faces of one vein are gathered into a single run, however they arrived",
+      len({g["id"] for g in V}) == len(V)
+      and [g["count"] for g in V if g["body"] == 1] == [12, 6],
+      [(g["id"], g["count"]) for g in V])
+byb = {g["id"]: g for g in G}
+check("every vein lies inside its own body's range",
+      all(byb[g["body"]]["start"] <= g["start"]
+          and g["start"] + g["count"] <=
+          byb[g["body"]]["start"] + byb[g["body"]]["count"] for g in V),
+      [(g["id"], g["body"]) for g in V])
+check("the contacts are grouped the same way",
+      sum(g["count"] for g in C["groups"]) == C["n"]
+      and sum(g["count"] for g in C["veins"]) == C["n"],
+      (C["n"], sum(g["count"] for g in C["groups"]),
+       sum(g["count"] for g in C["veins"])))
+check("a wall never loses its partner to a vein boundary",
+      all(g["start"] % 2 == 0 and g["count"] % 2 == 0 for g in C["veins"]),
+      [(g["id"], g["start"], g["count"]) for g in C["veins"]])
+check("each vein's description belongs to a vein that is drawn",
+      {q["id"] for q in pay["vein_info"]} <= {g["id"] for g in V},
+      pay["vein_info"])
+
+# A body the triangulated path built has no vein split at all. It must still
+# arrive as one vein, so the page needs no special case for it.
+v, f = quad(0.0, 0.0)
+one = M3.surface_payload([(v, f, 7, np.zeros(len(f), np.int32))],
+                         [], [{"id": 0, "body": 7}], [], {"vein": 0, "alpha": 1})
+check("a body with no vein split still arrives as exactly one vein",
+      len(one["veins"]) == 1 and one["veins"][0]["body"] == 7
+      and one["veins"][0]["count"] == one["tris"] * 3, one["veins"])
+check("and it is reported as the triangulated path, not as a vein surface",
+      one["method"] == "alpha", one["method"])
 
 print("\n%d passed, %d failed" % (len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

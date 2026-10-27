@@ -97,7 +97,10 @@ _VIEWER_TMPL = os.path.join(_HERE, "model3d_viewer.html")
 #      lattice it is drawn on is sized by the data's own spacing instead of by
 #      that distance; the wall contacts it is fitted through ride along, so a
 #      reader can see where the surface is measured and where it is guessed
-MODEL_VERSION = 18
+# 19 — a body's veins are carried separately rather than welded into one
+#      solid: each face and each contact says which vein it belongs to, so one
+#      vein of nine can be looked at on its own
+MODEL_VERSION = 19
 # the most domain cells to send to a browser; beyond this the envelope is drawn
 # on a coarser lattice, which is a picture of the same shape
 BODY_MAX_CELLS = 120_000
@@ -1258,6 +1261,150 @@ class Phases:
         return "%.0fs: " % total + ", ".join("%s %.0fs" % (k, v) for k, v in rows if v >= 0.5)
 
 
+
+def surface_payload(dom_mesh, dom_cont, dom_vparts, dom_thick, dom_method):
+    """The body's geometry as the page receives it.
+
+    Lifted out of build_project so it can be exercised on its own: it is the
+    only place that decides how triangles and contacts are grouped — by body,
+    and within a body by vein — and that grouping is what lets a reader show
+    one vein of nine. The page-level checks for it were running over committed
+    pages, and no committed page carries a surface yet, so they were checking
+    nothing. `dom_mesh` is (verts, faces, body id, face->vein), `dom_cont` is
+    (hangingwall, footwall, body id, contact->vein).
+    """
+    MV = np.concatenate([m[0] for m in dom_mesh])
+    FA, ZS, VS, off = [], [], [], 0
+    for v, f, zid, fv in dom_mesh:
+        FA.append(np.asarray(f, np.int64) + off)
+        ZS.append(np.full(len(f), zid, np.int32))
+        VS.append(np.asarray(fv, np.int32))
+        off += len(v)
+    FA = np.concatenate(FA)
+    ZS = np.concatenate(ZS)
+    VS = np.concatenate(VS)
+    # Triangles grouped by body and, within a body, by vein, so
+    # either can be drawn alone. The sort carries the vein tag
+    # with it and the groups are read back off the sorted arrays
+    # AFTER thinning — the thinning drops faces, so any boundary
+    # worked out before it would be pointing at the wrong ones.
+    ordr = np.lexsort((VS, ZS))
+    FA, ZS, VS = FA[ordr], ZS[ordr], VS[ordr]
+    dropped = 0
+    if len(FA) > SURFACE_MAX_TRIS:
+        # thin evenly within each body rather than truncating,
+        # which would drop whole bodies off the end of the sort
+        take = np.linspace(0, len(FA) - 1, SURFACE_MAX_TRIS).astype(int)
+        dropped = int(len(FA) - len(take))
+        FA, ZS, VS = FA[take], ZS[take], VS[take]
+    used, flat = np.unique(FA.ravel(), return_inverse=True)
+    MV, FA = MV[used], flat.reshape(-1, 3)
+    lo3, hi3 = MV.min(0), MV.max(0)
+    sc = np.maximum(hi3 - lo3, 1e-6) / 65535.0
+    QV = np.clip(np.round((MV - lo3) / sc), 0, 65535).astype(np.uint16)
+
+    def _runs(key, extra=None):
+        """Contiguous runs of `key`, as draw ranges in indices."""
+        out, i = [], 0
+        while i < len(key):
+            j = i
+            while j < len(key) and key[j] == key[i]:
+                j += 1
+            g = {"id": int(key[i]), "start": int(i * 3),
+                 "count": int((j - i) * 3)}
+            if extra is not None:
+                g["body"] = int(extra[i])
+            out.append(g)
+            i = j
+        return out
+
+    groups = _runs(ZS)
+    veins = _runs(VS, ZS)
+    wide = len(MV) > 65535
+    out = {
+        "origin": [round(float(x), 3) for x in lo3],
+        "scale": [float(x) for x in sc],
+        "v": _b64(QV), "nv": int(len(MV)),
+        "f": _b64(FA.astype(np.uint32 if wide else np.uint16)),
+        "wide": bool(wide),
+        "tris": int(len(FA)),
+        "dropped": dropped,
+        "bodies": int(len(groups)),
+        "groups": groups,
+        # one entry per vein, in the same draw-range form, with
+        # the body it sits in. A body of one vein still gets
+        # one, so the page needs no special case.
+        "veins": veins,
+        "vein_info": [q for q in dom_vparts
+                      if q["id"] in {g["id"] for g in veins}],
+    }
+    out["method"] = (
+        "vein" if dom_method["vein"] >= dom_method["alpha"] else "alpha")
+    out["from_veins"] = int(dom_method["vein"])
+    if dom_thick:
+        tv = np.concatenate(dom_thick)
+        out["thickness_m"] = {
+            "n": int(len(tv)), "min": round(float(tv.min()), 1),
+            "median": round(float(np.median(tv)), 1),
+            "max": round(float(tv.max()), 1)}
+    # ---- the contacts the surface is held by
+    # A surface with nothing on it reads as a guess everywhere.
+    # These are the measured wall positions: hangingwall and
+    # footwall, one pair per intercept, grouped by body so a
+    # single vein can be shown with its own control points.
+    if dom_cont:
+        CV, CZ, CW = [], [], []
+        for hw, fw, zid, cvn in dom_cont:
+            n = min(len(hw), len(fw))
+            if not n:
+                continue
+            pair = np.empty((n * 2, 3), float)
+            pair[0::2] = hw[:n]
+            pair[1::2] = fw[:n]
+            CV.append(pair)
+            CZ.append(np.full(n * 2, zid, np.int32))
+            # a wall and its partner belong to the same vein
+            cw = (np.asarray(cvn, np.int32)[:n] if cvn is not None
+                  and len(cvn) >= n else np.zeros(n, np.int32))
+            CW.append(np.repeat(cw, 2))
+        if CV:
+            CV = np.concatenate(CV)
+            CZ = np.concatenate(CZ)
+            CW = np.concatenate(CW)
+            # by body, then by vein, matching the triangles. A
+            # contact belonging to no built vein sorts last
+            # under -1 and is still drawn: it was measured.
+            o = np.lexsort((CW, CZ))
+            CV, CZ, CW = CV[o], CZ[o], CW[o]
+            if len(CV) > CONTACT_MAX_PTS:
+                # thin in pairs, so a wall never loses its partner
+                k = np.linspace(0, len(CV) // 2 - 1,
+                                CONTACT_MAX_PTS // 2).astype(int)
+                k = np.stack([k * 2, k * 2 + 1], 1).ravel()
+                CV, CZ, CW = CV[k], CZ[k], CW[k]
+            clo, chi = CV.min(0), CV.max(0)
+            csc = np.maximum(chi - clo, 1e-6) / 65535.0
+
+            def _cruns(key):
+                out, i = [], 0
+                while i < len(key):
+                    j = i
+                    while j < len(key) and key[j] == key[i]:
+                        j += 1
+                    out.append({"id": int(key[i]), "start": int(i),
+                                "count": int(j - i)})
+                    i = j
+                return out
+
+            out["contacts"] = {
+                "origin": [round(float(x), 3) for x in clo],
+                "scale": [float(x) for x in csc],
+                "p": _b64(np.clip(np.round((CV - clo) / csc), 0,
+                                  65535).astype(np.uint16)),
+                "n": int(len(CV)), "groups": _cruns(CZ),
+                "veins": _cruns(CW)}
+    return out
+
 def build_project(ds, max_elements=3, verbose=False, settings=None):
     """Build one project model. `settings` (or data/keep/mmp_model_params.json via
     the project slug, or ds["params"] from an imported dataset) overrides any of
@@ -1516,24 +1663,54 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
             dom_pts, dom_info, dom_zone = (None, None, None)
             dom_mesh = []
             dom_cont = []
+            dom_vparts = []
+            dom_vseq = [0]          # vein ids run across the whole element
 
             dom_thick = []
             dom_method = {"vein": 0, "alpha": 0}
 
             def _keep_mesh(inf, zid):
-                """Lift a body's geometry out of its info block, under its own id."""
+                """Lift a body's geometry out of its info block, under its own id.
+
+                A body is frequently several veins, and the vein is the thing a
+                geologist reads — so each face and each contact also carries
+                WHICH vein it belongs to. The ids are made unique across the
+                element here rather than inside the builder, which only ever
+                sees one body at a time.
+                """
                 mv = (inf or {}).pop("_mesh", None)
                 tv = (inf or {}).pop("_thick", None)
                 ct = (inf or {}).pop("_contacts", None)
+                fvn = (inf or {}).pop("_face_vein", None)
+                cvn = (inf or {}).pop("_contact_vein", None)
+                vps = (inf or {}).pop("_vein_parts", None) or []
+                base = dom_vseq[0]
                 if ct is not None and len(ct[0]):
+                    n = len(ct[0])
+                    cv = (np.asarray(cvn, np.int32) if cvn is not None
+                          and len(cvn) == n else np.zeros(n, np.int32))
+                    cv = np.where(cv < 0, -1, cv + base)
                     dom_cont.append((np.asarray(ct[0], float),
-                                     np.asarray(ct[1], float), int(zid)))
+                                     np.asarray(ct[1], float), int(zid), cv))
                 dom_method["vein" if (inf or {}).get("mode") == "vein"
                            else "alpha"] += 1
                 if tv is not None and len(tv):
                     dom_thick.append(np.asarray(tv, float))
                 if mv is not None and len(mv[1]):
-                    dom_mesh.append((mv[0], mv[1], int(zid)))
+                    nf = len(mv[1])
+                    # a body with no vein split — the triangulated path — is one
+                    # vein, so every face still has an id and the page needs no
+                    # special case for it
+                    fv = (np.asarray(fvn, np.int32) if fvn is not None
+                          and len(fvn) == nf else np.zeros(nf, np.int32))
+                    dom_mesh.append((mv[0], mv[1], int(zid), fv + base))
+                for q in (vps or [{"vein": 0}]):
+                    dom_vparts.append({"id": int(base + int(q.get("vein") or 0)),
+                                       "body": int(zid),
+                                       "holes": q.get("n_contacts"),
+                                       "span_m": q.get("span_m"),
+                                       "thick_m": q.get("thick_m")})
+                dom_vseq[0] = base + max(1, int((inf or {}).get("veins") or 1))
             rot_d, an_d = None, None
             if PS.get("domain") is not False:
                 rot_d, an_d = anisotropy(pts, g, eopts.get("anisotropy"),
@@ -1924,101 +2101,8 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
             # already accepted, so this stops where the drilling stops.
             if dom_mesh:
                 try:
-                    MV = np.concatenate([m[0] for m in dom_mesh])
-                    FA, ZS, off = [], [], 0
-                    for v, f, zid in dom_mesh:
-                        FA.append(np.asarray(f, np.int64) + off)
-                        ZS.append(np.full(len(f), zid, np.int32))
-                        off += len(v)
-                    FA = np.concatenate(FA)
-                    ZS = np.concatenate(ZS)
-                    # triangles grouped by body, so one body can be drawn alone
-                    ordr = np.argsort(ZS, kind="stable")
-                    FA, ZS = FA[ordr], ZS[ordr]
-                    dropped = 0
-                    if len(FA) > SURFACE_MAX_TRIS:
-                        # thin evenly within each body rather than truncating,
-                        # which would drop whole bodies off the end of the sort
-                        take = np.linspace(0, len(FA) - 1, SURFACE_MAX_TRIS).astype(int)
-                        dropped = int(len(FA) - len(take))
-                        FA, ZS = FA[take], ZS[take]
-                    used, flat = np.unique(FA.ravel(), return_inverse=True)
-                    MV, FA = MV[used], flat.reshape(-1, 3)
-                    lo3, hi3 = MV.min(0), MV.max(0)
-                    sc = np.maximum(hi3 - lo3, 1e-6) / 65535.0
-                    QV = np.clip(np.round((MV - lo3) / sc), 0, 65535).astype(np.uint16)
-                    groups, i = [], 0
-                    while i < len(ZS):
-                        j = i
-                        while j < len(ZS) and ZS[j] == ZS[i]:
-                            j += 1
-                        groups.append({"id": int(ZS[i]), "start": int(i * 3),
-                                       "count": int((j - i) * 3)})
-                        i = j
-                    wide = len(MV) > 65535
-                    el_out["surface"] = {
-                        "origin": [round(float(x), 3) for x in lo3],
-                        "scale": [float(x) for x in sc],
-                        "v": _b64(QV), "nv": int(len(MV)),
-                        "f": _b64(FA.astype(np.uint32 if wide else np.uint16)),
-                        "wide": bool(wide),
-                        "tris": int(len(FA)),
-                        "dropped": dropped,
-                        "bodies": int(len(groups)),
-                        "groups": groups,
-                    }
-                    el_out["surface"]["method"] = (
-                        "vein" if dom_method["vein"] >= dom_method["alpha"] else "alpha")
-                    el_out["surface"]["from_veins"] = int(dom_method["vein"])
-                    if dom_thick:
-                        tv = np.concatenate(dom_thick)
-                        el_out["surface"]["thickness_m"] = {
-                            "n": int(len(tv)), "min": round(float(tv.min()), 1),
-                            "median": round(float(np.median(tv)), 1),
-                            "max": round(float(tv.max()), 1)}
-                    # ---- the contacts the surface is held by
-                    # A surface with nothing on it reads as a guess everywhere.
-                    # These are the measured wall positions: hangingwall and
-                    # footwall, one pair per intercept, grouped by body so a
-                    # single vein can be shown with its own control points.
-                    if dom_cont:
-                        CV, CZ = [], []
-                        for hw, fw, zid in dom_cont:
-                            n = min(len(hw), len(fw))
-                            if not n:
-                                continue
-                            pair = np.empty((n * 2, 3), float)
-                            pair[0::2] = hw[:n]
-                            pair[1::2] = fw[:n]
-                            CV.append(pair)
-                            CZ.append(np.full(n * 2, zid, np.int32))
-                        if CV:
-                            CV = np.concatenate(CV)
-                            CZ = np.concatenate(CZ)
-                            o = np.argsort(CZ, kind="stable")
-                            CV, CZ = CV[o], CZ[o]
-                            if len(CV) > CONTACT_MAX_PTS:
-                                # thin in pairs, so a wall never loses its partner
-                                k = np.linspace(0, len(CV) // 2 - 1,
-                                                CONTACT_MAX_PTS // 2).astype(int)
-                                k = np.stack([k * 2, k * 2 + 1], 1).ravel()
-                                CV, CZ = CV[k], CZ[k]
-                            clo, chi = CV.min(0), CV.max(0)
-                            csc = np.maximum(chi - clo, 1e-6) / 65535.0
-                            cg, i = [], 0
-                            while i < len(CZ):
-                                j = i
-                                while j < len(CZ) and CZ[j] == CZ[i]:
-                                    j += 1
-                                cg.append({"id": int(CZ[i]), "start": int(i),
-                                           "count": int(j - i)})
-                                i = j
-                            el_out["surface"]["contacts"] = {
-                                "origin": [round(float(x), 3) for x in clo],
-                                "scale": [float(x) for x in csc],
-                                "p": _b64(np.clip(np.round((CV - clo) / csc), 0,
-                                                  65535).astype(np.uint16)),
-                                "n": int(len(CV)), "groups": cg}
+                    el_out["surface"] = surface_payload(
+                        dom_mesh, dom_cont, dom_vparts, dom_thick, dom_method)
                 except Exception as exc:                 # geometry is a bonus layer
                     if verbose:
                         print("    surface skipped: %s" % exc)

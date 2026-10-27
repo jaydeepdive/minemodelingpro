@@ -263,6 +263,106 @@ async function phone(p) {
   return { opened, bad };
 }
 
+/* Per-vein isolation, on a payload built in the page.
+
+   A body is frequently several veins and each now arrives as its own draw
+   range, so showing one is a range change. No committed page carries veins yet
+   — they appear the first time the gallery is rebuilt — and the renderer is
+   the half that ships ahead of the pages, so the logic is exercised against a
+   synthetic surface rather than waiting for the corpus. Two bodies, two veins
+   each, four triangles a vein: enough that a wrong range is unambiguous. */
+async function veins(p) {
+  return await p.evaluate(() => {
+    const b64 = a => btoa(String.fromCharCode(...new Uint8Array(a.buffer)));
+    const NB = 2, NV = 2, QUADS = 2;            // bodies, veins each, quads each
+    const V = [], F = [], G = [], VG = [], INFO = [];
+    let vi = 0, fi = 0;
+    for (let b = 1; b <= NB; b++) {
+      const gstart = fi * 3;
+      for (let v = 0; v < NV; v++) {
+        const vstart = fi * 3, id = (b - 1) * NV + v;
+        for (let q = 0; q < QUADS; q++) {
+          const x = 1000 * b + 100 * v + 10 * q;
+          V.push(x, 0, 0, x + 5, 0, 0, x + 5, 5, 0, x, 5, 0);
+          F.push(vi, vi + 1, vi + 2, vi, vi + 2, vi + 3);
+          vi += 4; fi += 2;
+        }
+        VG.push({ id, body: b, start: vstart, count: fi * 3 - vstart });
+        INFO.push({ id, body: b, holes: 3 + id, span_m: 120 + id, thick_m: 2.5 });
+      }
+      G.push({ id: b, start: gstart, count: fi * 3 - gstart });
+    }
+    const QV = Uint16Array.from(V), FA = Uint16Array.from(F);
+    const E = M.elements[EL];
+    E.zones = [];
+    for (let b = 1; b <= NB; b++)
+      E.zones.push({ id: b, name: "Zone " + b, holes: 4, span_m: [100, 50],
+                     bbox: [[0, 0, 0], [50, 50, 50]], series: [] });
+    /* contacts: one pair per vein, grouped the same way */
+    const CP = [], CG = [], CV = [];
+    let ci = 0;
+    for (let b = 1; b <= NB; b++) {
+      const cs = ci;
+      for (let v = 0; v < NV; v++) {
+        const id = (b - 1) * NV + v;
+        CP.push(1000 * b, 0, 0, 1000 * b, 9, 0);
+        CV.push({ id, start: ci, count: 2 });
+        ci += 2;
+      }
+      CG.push({ id: b, start: cs, count: ci - cs });
+    }
+    E.surface = {
+      origin: [0, 0, 0], scale: [1, 1, 1], v: b64(QV), nv: V.length / 3,
+      f: b64(FA), wide: false, tris: F.length / 3, dropped: 0,
+      bodies: G.length, groups: G, veins: VG, vein_info: INFO,
+      contacts: { origin: [0, 0, 0], scale: [1, 1, 1],
+                  p: b64(Uint16Array.from(CP)), n: CP.length / 3,
+                  groups: CG, veins: CV },
+    };
+    buildBody();
+    const cb = document.getElementById("L-body");
+    if (cb) { cb.checked = true; if (cb.onchange) cb.onchange({ target: cb }); }
+    bodyStyle = "shape"; bodyVis();
+    drawZones();
+    const row = document.getElementById("veinrow");
+    const out = { built: !!surfMesh, contacts: !!contMesh,
+                  tris: surfMesh ? surfMesh.geometry.getIndex().count / 3 : 0,
+                  row: !!row, total: SF && SF.total,
+                  /* bodies and veins must each account for every triangle:
+                     one partition of the same mesh, two levels deep */
+                  groups: SF ? SF.groups.map(g => g.count) : null,
+                  vgroups: SF ? SF.veins.map(g => g.count) : null };
+    if (!row) return out;
+    const chips = () => [...row.querySelectorAll("button")];
+    out.projectChips = chips().length;
+    /* pick a body, then a vein of it */
+    const zb = [...document.querySelectorAll("#zones button")].find(x => +x.dataset.z === 2);
+    out.bodyChip = !!zb;
+    if (zb) zb.click();
+    out.bodyRange = surfMesh.geometry.drawRange.count;
+    out.bodyWant = SF.groups.find(g => g.id === 2).count;
+    out.bodyContacts = contMesh.geometry.drawRange.count;
+    out.bodyContactsWant = CT.groups.find(g => g.id === 2).count;
+    out.bodyVeinChips = chips().length;            /* "All 2" + two veins */
+    out.label = chips()[1] ? chips()[1].textContent.trim() : "";
+    const vid = +chips()[1].dataset.v;
+    chips()[1].click();
+    out.veinOf = SF.veins.find(v => v.id === vid).body;
+    out.veinRange = surfMesh.geometry.drawRange.count;
+    out.veinWant = SF.veins.find(v => v.id === vid).count;
+    out.veinContacts = contMesh.geometry.drawRange.count;
+    out.veinContactsWant = CT.veins.find(v => v.id === vid).count;
+    /* clicking it again gives the body back */
+    chips().find(c => +c.dataset.v === vid).click();
+    out.cleared = surfMesh.geometry.drawRange.count === out.bodyRange;
+    /* and the whole project restores everything */
+    [...document.querySelectorAll("#zones button")].find(x => +x.dataset.z === 0).click();
+    out.whole = surfMesh.geometry.drawRange.count === SF.total;
+    out.rowAfterWhole = getComputedStyle(row).display !== "none";
+    return out;
+  });
+}
+
 srv.listen(8766, async () => {
   const b = await chromium.launch();
   const out = [];
@@ -314,8 +414,9 @@ srv.listen(8766, async () => {
                  })() };
       });
       const act = await interact(p);
+      const vn = await veins(p);
       const ph = await phone(p);
-      out.push({ name, ...st, act, phone: ph, errors: errs });
+      out.push({ name, ...st, act, veins: vn, phone: ph, errors: errs });
     } catch (e) {
       out.push({ name, canvas:false, w:0, h:0, panels:0, act:null,
                  errors: errs.concat([String(e.message||e)]) });
@@ -347,6 +448,39 @@ for res in results:
         check("%s offers no contacts switch on a page that carries none" % nm,
               not res.get("gotCont") and not res.get("contRowShown"),
               (res.get("gotCont"), res.get("contRowShown")))
+    vn = res.get("veins") or {}
+    if vn.get("row"):
+        check("%s draws a surface made of separate veins" % nm,
+              vn.get("built") and vn.get("contacts")
+              and vn.get("total") == sum(vn.get("groups") or [0])
+              and vn.get("total") == sum(vn.get("vgroups") or [0]),
+              (vn.get("built"), vn.get("contacts"), vn.get("total"),
+               vn.get("groups"), vn.get("vgroups")))
+        check("%s isolates a body to that body's triangles and contacts" % nm,
+              vn.get("bodyRange") == vn.get("bodyWant")
+              and vn.get("bodyContacts") == vn.get("bodyContactsWant"),
+              (vn.get("bodyRange"), vn.get("bodyWant"),
+               vn.get("bodyContacts"), vn.get("bodyContactsWant")))
+        check("%s lists the veins of the body that is picked, and only those" % nm,
+              vn.get("bodyVeinChips") == 3, vn.get("bodyVeinChips"))
+        check("%s says what a vein is, not just that it is one" % nm,
+              "hole" in (vn.get("label") or "") and "m" in (vn.get("label") or ""),
+              vn.get("label"))
+        check("%s isolates ONE vein — surface and its contacts" % nm,
+              vn.get("veinRange") == vn.get("veinWant")
+              and vn.get("veinContacts") == vn.get("veinContactsWant")
+              and vn.get("veinRange") < vn.get("bodyRange"),
+              (vn.get("veinRange"), vn.get("veinWant"),
+               vn.get("veinContacts"), vn.get("veinContactsWant")))
+        check("%s picks a vein of the body that is open, not another body's" % nm,
+              vn.get("veinOf") == 2, vn.get("veinOf"))
+        check("%s gives the whole body back when the vein is unpicked" % nm,
+              vn.get("cleared"), vn.get("cleared"))
+        check("%s restores every body when the project is picked again" % nm,
+              vn.get("whole"), vn.get("whole"))
+    else:
+        check("%s needs no vein row where the renderer could not build one" % nm,
+              not vn.get("built"), vn)
     ph = res.get("phone") or {}
     check("%s opens its panels on a phone" % nm, ph.get("opened", 0) >= 2, ph.get("opened"))
     check("%s keeps a phone panel's own labels on top of the canvas" % nm,

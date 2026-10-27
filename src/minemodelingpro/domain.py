@@ -421,6 +421,13 @@ def _vein(segments, at, threshold, rot, aniso, reach, thickness, info,
             info["_thick"] = tv
         info["_mesh"] = (np.asarray(out["v"], float), np.asarray(out["f"], np.int64))
         info["_contacts"] = (np.asarray(out["hw"], float), np.asarray(out["fw"], float))
+        # which vein each face and each contact belongs to. A body is often
+        # several veins, and without this the page can only show or hide the
+        # whole body: there was no way to look at one vein of nine.
+        info["_face_vein"] = np.asarray(out.get("face_vein", ()), np.int32)
+        info["_contact_vein"] = np.asarray(out.get("contact_vein", ()), np.int32)
+        info["_vein_parts"] = out.get("vein_parts") or []
+        info["veins"] = int(out.get("veins") or 1)
         # the same cap the triangulated path applies. Without it a client's
         # six-hundred-hole database can hand the estimator an unbounded cloud,
         # and the modeller has 1 GB — which the kernel answers by killing it

@@ -188,19 +188,20 @@ def build(c, rot=None, aniso=None, reach=60.0, step=None, min_thick=0.3,
         # the shorter leash too, and whichever draws more of the body is kept.
         ok = got is not None and len(got["f"]) >= len(ix)
         if ok or not tight or tight >= reach:
-            return [got] if got is not None else []
+            return [(got, np.asarray(ix))] if got is not None else []
         out = []
         pieces = components(np.asarray(mid_all)[ix], rot, aniso, tight)
         for q in pieces:
             if not len(q):
                 continue
-            g = _one(_sub(np.asarray(ix)[q]), rot, aniso, tight, step, min_thick,
+            sx = np.asarray(ix)[q]
+            g = _one(_sub(sx), rot, aniso, tight, step, min_thick,
                      max_thick, taper, max(int(budget / max(1, len(pieces))), 2_000),
                      fill_step, res=res)
             if g is not None:
-                out.append(g)
-        if got is not None and sum(len(g["f"]) for g in out) <= len(got["f"]):
-            return [got]
+                out.append((g, sx))
+        if got is not None and sum(len(g["f"]) for g, _ in out) <= len(got["f"]):
+            return [(got, np.asarray(ix))]
         return out
 
     parts = components(mid_all, rot, aniso, reach)
@@ -216,17 +217,50 @@ def build(c, rot=None, aniso=None, reach=60.0, step=None, min_thick=0.3,
 
 
 def _merge_veins(built, mid_all, c):
+    """One mesh, with the seams between the veins kept rather than welded.
+
+    Each component was built on its own, and concatenating them threw away
+    which triangles and which contacts belonged to which — so a body holding
+    nine veins arrived at the page as one undifferentiated solid that could
+    only be shown or hidden whole. The faces and the contacts are concatenated
+    IN VEIN ORDER and carry a vein index each, which makes showing one vein a
+    draw range rather than a rebuild. The contacts are reordered to match; a
+    contact belonging to no built vein keeps its place at the end under -1, so
+    nothing measured is dropped from the picture.
+    """
     V, F, P, T, off = [], [], [], [], 0
-    for b in built:
-        V.append(b["v"]); F.append(np.asarray(b["f"], np.int64) + off)
-        off += len(b["v"]); P.append(b["pts"]); T.append(np.asarray(b["thickness"], float))
+    fv, cx, cv, parts = [], [], [], []
+    for n, (b, ix) in enumerate(built):
+        V.append(b["v"])
+        F.append(np.asarray(b["f"], np.int64) + off)
+        off += len(b["v"])
+        P.append(b["pts"])
+        t = np.asarray(b["thickness"], float)
+        T.append(t)
+        fv.append(np.full(len(b["f"]), n, np.int32))
+        cx.append(np.asarray(ix, np.int64))
+        cv.append(np.full(len(ix), n, np.int32))
+        parts.append({"vein": n, "n_contacts": int(len(ix)),
+                      "faces": int(len(b["f"])),
+                      "span_m": b.get("span_m"),
+                      "thick_m": (round(float(np.median(t)), 2) if len(t) else None),
+                      "area_nodes": int(b["area_nodes"])})
+    cx = np.concatenate(cx) if cx else np.zeros(0, np.int64)
+    loose = np.setdiff1d(np.arange(len(mid_all)), cx, assume_unique=False)
+    order = np.concatenate([cx, loose]).astype(np.int64)
+    cvein = np.concatenate(cv + [np.full(len(loose), -1, np.int32)]) if cv else \
+        np.full(len(loose), -1, np.int32)
+    hw, fw = np.asarray(c["hw"], float), np.asarray(c["fw"], float)
     return {"v": np.concatenate(V), "f": np.concatenate(F),
             "pts": np.concatenate(P) if P else np.zeros((0, 3)),
-            "hw": c["hw"], "fw": c["fw"], "mid": mid_all,
+            "hw": hw[order], "fw": fw[order], "mid": np.asarray(mid_all)[order],
             "thickness": np.concatenate(T) if T else np.zeros(0),
             "n_contacts": int(len(mid_all)), "veins": len(built),
-            "step_m": built[0]["step_m"], "reach_m": built[0]["reach_m"],
-            "area_nodes": int(sum(b["area_nodes"] for b in built))}
+            "face_vein": np.concatenate(fv) if fv else np.zeros(0, np.int32),
+            "contact_vein": cvein,
+            "vein_parts": parts,
+            "step_m": built[0][0]["step_m"], "reach_m": built[0][0]["reach_m"],
+            "area_nodes": int(sum(b["area_nodes"] for b, _ in built))}
 
 
 def _one(c, rot=None, aniso=None, reach=60.0, step=None, min_thick=0.3,
@@ -334,6 +368,9 @@ def _one(c, rot=None, aniso=None, reach=60.0, step=None, min_thick=0.3,
             "thickness": t_true, "n_contacts": int(len(mid)),
             "step_m": round(float(step), 2),
             "reach_m": round(float(reach), 1),
+            # the vein's own run and height, in its own plane — what a chip
+            # naming this vein has to say to be worth reading
+            "span_m": round(float(max(u.max() - u.min(), v.max() - v.min())), 1),
             "area_nodes": int(M.sum())}
 
 

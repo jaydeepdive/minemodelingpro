@@ -319,12 +319,13 @@ function buildSurface(){
   for(const gp of (S.groups||[])){_c.set(zoneColor(gp.id));
     for(let k=gp.start;k<gp.start+gp.count;k++){const vi=F[k];
       col[vi*3]=_c.r;col[vi*3+1]=_c.g;col[vi*3+2]=_c.b;}}
-  let P=pos,C=col,IX=F,groups=S.groups||[],mul=1;
+  let P=pos,C=col,IX=F,groups=S.groups||[],vgroups=S.veins||[],mul=1;
   // Rounded off in the browser rather than in the page: four times the triangles
   // cost nothing to compute here and would quadruple what every reader downloads.
   if(!MOBILE&&S.tris<=60000){const r=refineSurface(P,C,IX);
     if(r){P=r.pos;C=r.col;IX=r.idx;mul=4;}}
-  if(mul!==1)groups=groups.map(g=>({id:g.id,start:g.start*mul,count:g.count*mul}));
+  if(mul!==1){groups=groups.map(g=>({id:g.id,start:g.start*mul,count:g.count*mul}));
+    vgroups=vgroups.map(g=>({id:g.id,body:g.body,start:g.start*mul,count:g.count*mul}));}
   const geo=new THREE.BufferGeometry();
   geo.setAttribute("position",new THREE.BufferAttribute(P,3));
   geo.setAttribute("color",new THREE.BufferAttribute(C,3));
@@ -337,7 +338,11 @@ function buildSurface(){
   surfMesh.renderOrder=2;
   scene.add(surfMesh);
   SF={tris:S.tris,groups:groups,total:IX.length,dropped:S.dropped||0,bodies:S.bodies||0,
-      thick:S.thickness_m||null,method:S.method||null};
+      thick:S.thickness_m||null,method:S.method||null,
+      /* A body is often several veins. They arrive as their own draw ranges,
+         so showing one is a range change rather than a rebuild. A page built
+         before this carries none and the vein row never appears. */
+      veins:vgroups,vinfo:S.vein_info||[]};
   buildContacts(S.contacts);
   applySurface();}
 
@@ -364,7 +369,7 @@ function buildContacts(C){
     vertexColors:true,size:3.2,sizeAttenuation:false,depthWrite:false}));
   contMesh.renderOrder=3;
   scene.add(contMesh);
-  CT={groups:C.groups||[],total:n};}
+  CT={groups:C.groups||[],veins:C.veins||[],total:n};}
 
 /* One subdivision, then the inserted points relax toward their neighbours.
    The triangulation is one face per three intercepts, so a body arrives as a
@@ -407,17 +412,19 @@ function refineSurface(pos,col,idx){
 /* one body on its own, the same rule the blocks and the cells follow. The
    triangles arrive grouped by body, so this is a draw range rather than a
    rebuild. */
+/* One body on its own, or one VEIN of that body — the same rule the blocks and
+   the cells follow, one level deeper. A vein beats a body when both are picked,
+   because the vein is the narrower question. */
 function applySurface(){
-  if(contMesh&&CT){
-    if(!curZone)contMesh.geometry.setDrawRange(0,CT.total);
-    else{const cg=CT.groups.find(x=>x.id===curZone);
-      if(cg)contMesh.geometry.setDrawRange(cg.start,cg.count);
-      else contMesh.geometry.setDrawRange(0,0);}}
-  if(!surfMesh||!SF)return;
-  if(!curZone){surfMesh.geometry.setDrawRange(0,SF.total);return;}
-  const gp=SF.groups.find(x=>x.id===curZone);
-  if(gp)surfMesh.geometry.setDrawRange(gp.start,gp.count);
-  else surfMesh.geometry.setDrawRange(0,0);}
+  const pick=(mesh,gs,vs,total)=>{
+    if(!mesh)return;
+    const g=(curVein!=null&&vs)?vs.find(x=>x.id===curVein)
+           :(curZone?(gs||[]).find(x=>x.id===curZone):null);
+    if(!curZone&&curVein==null)mesh.geometry.setDrawRange(0,total);
+    else if(g)mesh.geometry.setDrawRange(g.start,g.count);
+    else mesh.geometry.setDrawRange(0,0);};
+  if(contMesh&&CT)pick(contMesh,CT.groups,CT.veins,CT.total);
+  if(surfMesh&&SF)pick(surfMesh,SF.groups,SF.veins,SF.total);}
 
 /* which of the two the envelope toggle shows */
 function bodyNote(){
@@ -661,20 +668,104 @@ let terrain=null;
 
 /* ---------------- element chips, legend, grade panel ---------------- */
 /* ---------------- zones: one project, body by body ---------------- */
-let curZone=0;
+let curZone=0,curVein=null;
+
+/* The Bodies panel, built here when the page does not have one.
+
+   Every page in the gallery today was baked before this panel existed, so on
+   all of them the bodies could not be listed and the veins inside them could
+   not be reached — the renderer ships ahead of the pages, and waiting for the
+   nightly rebuild is how a client's model stayed a day behind for six days.
+   Same pattern as the Targets panel: build it, wire it, let a shell that
+   already has one win. */
+function bodiesPanel(){
+  let p=$("pZones");
+  if(p&&p.querySelector){
+    if(!$("veinrow")){
+      const z=p.querySelector("#zones");
+      if(z&&z.parentNode){const d=document.createElement("div");
+        d.id="veinrow";d.className="sec";d.style.display="none";d.style.marginTop="6px";
+        z.parentNode.insertBefore(d,z.nextSibling);}}
+    return p;
+  }
+  p=document.createElement("section");
+  p.id="pZones";p.className="panel min";p.style.display="none";
+  p.innerHTML='<div class="phead"><h2>Bodies <small id="zone-n" '
+    +'style="font-weight:400;color:var(--mut)"></small></h2>'
+    +'<button class="pbtn" aria-label="Minimise">+</button></div>'
+    +'<div class="pbody"><div class="sec"><div class="chips" id="zones"></div>'
+    +'<div class="sec" id="veinrow" style="display:none;margin-top:6px"></div>'
+    +'<div id="zonebox"></div></div></div>';
+  const col=$("leftcol"),model=$("pModel"),tg=$("pTargets");
+  if(col&&col.appendChild){
+    if(tg&&tg.parentNode===col)col.insertBefore(p,tg);else col.appendChild(p);}
+  else if(model&&model.parentNode)model.parentNode.insertBefore(p,model.nextSibling);
+  else document.body.appendChild(p);
+  wirePanel(p,"Bodies");
+  return p;}
+
 function drawZones(){
-  const E=M.elements[EL],Z=(E&&E.zones)||[],sec=$("pZones");
-  if(!sec)return;
-  if(!Z.length){sec.style.display="none";curZone=0;return;}
+  const E=M.elements[EL],Z=(E&&E.zones)||[],sec=bodiesPanel();
+  if(!sec||!sec.style)return;
+  if(!Z.length){sec.style.display="none";curZone=0;curVein=null;return;}
   sec.style.display="";
   ctl("zone-n").textContent="· "+Z.length;
   const dot=id=>`<i style="display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;vertical-align:1px;background:${zoneColor(id)}"></i>`;
   const chip=(id,label)=>`<button class="chip${curZone===id?" on":""}" data-z="${id}">${id?dot(id):""}${label}</button>`;
   ctl("zones").innerHTML=chip(0,"Whole project")+Z.map(z=>chip(z.id,z.name)).join("");
   [...$("zones").querySelectorAll("button")].forEach(b=>b.onclick=()=>{
-    const id=+b.dataset.z;curZone=(curZone===id?0:id);drawZones();applyCut();applyBody();applySurface();drawZoneBox();
+    const id=+b.dataset.z;curZone=(curZone===id?0:id);curVein=null;
+    drawZones();applyCut();applyBody();applySurface();drawZoneBox();
     if(curZone)flyToZone(Z.find(z=>z.id===curZone));});
+  drawVeins();
   drawZoneBox();
+}
+
+/* The veins the picked body is made of — or, with no body picked, the biggest
+   on the property. A body is a connected lens of rock; a vein is the thing a
+   geologist actually reads, and a body of nine veins used to arrive as one
+   solid that could only be shown or hidden whole.
+
+   It lists the project's veins when no body is picked because body 0 — real
+   mineralisation belonging to no named body — has no chip of its own (chip 0
+   is "Whole project"), and on a vein property that is routinely half the veins
+   there are. Capped, because a list of every vein is the clutter this panel
+   was split off to avoid. */
+const VEIN_CHIP_CAP=12;
+function drawVeins(){
+  const box=ctl("veinrow");if(!box||!box.style)return;
+  const vs=(SF&&SF.veins)||[];
+  const mine=curZone?vs.filter(v=>v.body===curZone):vs.slice();
+  if(mine.length<2){box.style.display="none";curVein=null;return;}
+  box.style.display="";
+  const info={};for(const q of ((SF&&SF.vinfo)||[]))info[q.id]=q;
+  // biggest first: a one-hole lens is real, but it is not what to read first
+  const sorted=mine.slice().sort((a,b)=>(b.count-a.count));
+  const show=curZone?sorted:sorted.slice(0,VEIN_CHIP_CAP);
+  // whichever vein is picked stays on the list even if it is not in the top few
+  if(curVein!=null&&!show.some(v=>v.id===curVein)){
+    const v=sorted.find(x=>x.id===curVein);if(v)show.push(v);}
+  const lab=(v,n)=>{const q=info[v.id]||{};
+    const bits=[];
+    if(q.holes)bits.push(q.holes+(q.holes===1?" hole":" holes"));
+    if(q.span_m>1)bits.push(Math.round(q.span_m)+" m");
+    if(q.thick_m)bits.push(fmtN(q.thick_m,q.thick_m<10?1:0)+" m thick");
+    return `Vein ${n}${bits.length?` <small style="opacity:.72">· ${bits.join(" · ")}</small>`:""}`;};
+  const head=curZone?`Veins in this body · ${mine.length}`
+    :(mine.length>VEIN_CHIP_CAP?`Veins · ${mine.length}, ${VEIN_CHIP_CAP} largest`
+                               :`Veins · ${mine.length}`);
+  box.innerHTML=`<p class="lab">${head}</p><div class="chips">`
+    +`<button class="chip${curVein==null?" on":""}" data-v="" title="Every vein `
+    +`${curZone?"in this body":"on the property"}">All ${mine.length}</button>`
+    +show.map((v,i)=>`<button class="chip${curVein===v.id?" on":""}" data-v="${v.id}" `
+      +`title="Drawn on its own, with the wall contacts it was fitted through">`
+      +`${lab(v,i+1)}</button>`).join("")
+    +`</div>`;
+  [...box.querySelectorAll("button")].forEach(b=>b.onclick=()=>{
+    const raw=b.dataset.v;
+    const id=raw===""?null:+raw;
+    curVein=(curVein===id?null:id);
+    drawVeins();applySurface();});
 }
 function drawZoneBox(){
   const E=M.elements[EL],Z=(E&&E.zones)||[],box=$("zonebox");if(!box)return;
@@ -702,7 +793,7 @@ function drawLegend(){const E=M.elements[EL];$("lg-h").textContent=EL+" grade ("
   for(let k=E.bins.length-1;k>=0;k--){const d=document.createElement("div");const hi=k<E.bins.length-1?E.bins[k+1]:null;
     d.innerHTML=`<i style="background:${E.colors[k]}"></i>${hi==null?"≥ "+E.bins[k]:E.bins[k]+" – "+hi} ${esc(E.unit)}`;L.appendChild(d);}
   const d=document.createElement("div");d.innerHTML=`<i class="lo"></i>&lt; ${E.bins[0]} ${esc(E.unit)} · <span style="color:var(--mut)">grey = no reported intercept</span>`;L.appendChild(d);}
-function setEl(e){EL=e;store.set("el:"+M.slug,e);curZone=0;drawEls();buildIntervals();drawLegend();setupGT();buildBlocks();buildBody();drawData();drawZones();drawCard();buildTargets();}
+function setEl(e){EL=e;store.set("el:"+M.slug,e);curZone=0;curVein=null;drawEls();buildIntervals();drawLegend();setupGT();buildBlocks();buildBody();drawData();drawZones();drawCard();buildTargets();}
 
 function setupGT(){const E=M.elements[EL];const cut=$("cut");
   if(!E.gt){$("gtsec").hidden=true;$("nogt").hidden=false;
@@ -1838,7 +1929,7 @@ function targetLabels(){
    target is the EVIDENCE for ranking it, not a prediction of what the hole will
    cut, and putting it in the same row as the hole to drill read as a forecast.
    It sits under "why here", in words that say whose assay it is. */
-function wirePanel(p){
+function wirePanel(p,label){
   const h=p.querySelector(".phead");if(!h)return;
   const btn=h.querySelector(".pbtn");
   const upd=()=>{if(btn)btn.textContent=MOBILE?"×":(p.classList.contains("min")?"+":"–");};
@@ -1849,12 +1940,13 @@ function wirePanel(p){
     p.classList.toggle("min");store.set("min:"+p.id,p.classList.contains("min"));upd();});
   const tools=$("mtools");
   if(tools&&tools.appendChild&&!tools.querySelector('[data-open="'+p.id+'"]')){
-    const b=document.createElement("button");b.dataset.open=p.id;b.textContent="Targets";
+    const b=document.createElement("button");b.dataset.open=p.id;
+    b.textContent=label||"Targets";
     b.addEventListener("click",()=>{const was=p.classList.contains("open");
       document.querySelectorAll(".panel").forEach(x=>x.classList.remove("open"));
       document.querySelectorAll("#mtools button").forEach(x=>x.classList.remove("on"));
       if(!was){p.classList.add("open");b.classList.add("on");}});
-    const after=tools.querySelector('[data-open="pZones"]');
+    const after=tools.querySelector('[data-open="'+(p.id==="pZones"?"pModel":"pZones")+'"]');
     if(after&&after.nextSibling)tools.insertBefore(b,after.nextSibling);else tools.appendChild(b);}}
 
 function targetPanel(){
@@ -1871,7 +1963,7 @@ function targetPanel(){
   else if(zones&&zones.parentNode)zones.parentNode.insertBefore(p,zones.nextSibling);
   else if(model&&model.parentNode)model.parentNode.insertBefore(p,model.nextSibling);
   else document.body.appendChild(p);
-  wirePanel(p);
+  wirePanel(p,"Targets");
   return p;}
 
 function fmtXY(v){return Math.round(v).toLocaleString();}
