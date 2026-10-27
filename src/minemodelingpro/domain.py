@@ -381,7 +381,7 @@ def boundary_of(cent, rot, reach):
 
 
 def _vein(segments, at, threshold, rot, aniso, reach, thickness, info,
-          vein_nodes=240_000):
+          vein_nodes=240_000, max_points=600_000):
     """The vein-modelling path: contacts, a reference surface, a thickness."""
     try:
         from minemodelingpro import veins as VEIN
@@ -404,7 +404,16 @@ def _vein(segments, at, threshold, rot, aniso, reach, thickness, info,
             info["_thick"] = tv
         info["_mesh"] = (np.asarray(out["v"], float), np.asarray(out["f"], np.int64))
         info["_contacts"] = (np.asarray(out["hw"], float), np.asarray(out["fw"], float))
-        return out["pts"], info
+        # the same cap the triangulated path applies. Without it a client's
+        # six-hundred-hole database can hand the estimator an unbounded cloud,
+        # and the modeller has 1 GB — which the kernel answers by killing it
+        # mid-build, with nothing on the page but a job that never finishes.
+        S = np.asarray(out["pts"], float)
+        if len(S) > max_points:
+            S = S[np.linspace(0, len(S) - 1, max_points).astype(int)]
+            info["points"] = int(len(S))
+            info["thinned_to"] = int(max_points)
+        return S, info
     except Exception as exc:                                   # noqa: BLE001
         info["vein_error"] = "%s: %s" % (type(exc).__name__, str(exc)[:120])
         return None
@@ -520,7 +529,7 @@ def wireframe(pts, g, hid, threshold, rot=None, aniso=None, reach=120.0, step=8.
     # that made this necessary. MMP_DOMAIN=alpha restores the triangulation.
     if segments is not None and at is not None and os.environ.get("MMP_DOMAIN") != "alpha":
         got = _vein(segments, at, threshold, rot, aniso, reach, thickness, info,
-                    vein_nodes)
+                    vein_nodes, max_points)
         if got is not None:
             return got
     if len(cent) < 3:

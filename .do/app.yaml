@@ -21,7 +21,14 @@ services:
     http_port: 8080
     health_check:
       http_path: /api/health
-      initial_delay_seconds: 60
+      # 15, not 60. There is ONE instance, so a deployment replaces it: until
+      # the new container passes a health check there is nothing for the edge
+      # to route to, and the whole site answers 503 for the length of this
+      # delay. 60 s was right when startup waited up to a minute for Postgres
+      # to attach; since the app starts degraded and serves the gallery without
+      # a database, it is ready in about two seconds, and the minute was pure
+      # outage on every push.
+      initial_delay_seconds: 15
       period_seconds: 20
       failure_threshold: 5
     routes:
