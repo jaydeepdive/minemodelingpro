@@ -750,6 +750,9 @@ function drawVeins(){
     if(q.holes)bits.push(q.holes+(q.holes===1?" hole":" holes"));
     if(q.span_m>1)bits.push(Math.round(q.span_m)+" m");
     if(q.thick_m)bits.push(fmtN(q.thick_m,q.thick_m<10?1:0)+" m thick");
+    // the vein's own attitude, where it was found as a plane through the
+    // contacts rather than assumed from the shape of the drilled ground
+    if(q.dip!=null)bits.push(Math.round(q.dip)+"° / "+String(Math.round(q.dip_dir)).padStart(3,"0"));
     return `Vein ${n}${bits.length?` <small style="opacity:.72">· ${bits.join(" · ")}</small>`:""}`;};
   const head=curZone?`Veins in this body · ${mine.length}`
     :(mine.length>VEIN_CHIP_CAP?`Veins · ${mine.length}, ${VEIN_CHIP_CAP} largest`

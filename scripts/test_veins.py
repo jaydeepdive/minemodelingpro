@@ -94,16 +94,62 @@ if out:
     check("the thickness varies with the data, rather than being one number",
           float(th.max() - th.min()) > 5.0, (float(th.min()), float(th.max())))
 
-print("\n== what a thin drill pattern still gives")
+print("\n== what a thin drill pattern does NOT give")
+# These two used to assert the opposite — that one hole made a lens and two
+# made a ribbon. That was my call and it was wrong: a point is not a plane and
+# a line is not a sheet, so what it actually drew was a disc the width of the
+# reach, wherever a single intercept failed to join anything. On Lawyers, a
+# 923-hole vein property, that was 44 discs out of 73 "veins", and the model on
+# screen was confetti. An intercept with nothing to tie it to is still shown —
+# it is a contact, and the estimator still carries its grade — but no surface
+# is invented through it.
 one = [(h, f, t, g) for (h, f, t, g) in segs[:1]]
-c1 = VN.contacts(one, at, 5.0)
-o1 = VN.build(c1, aniso=[1.0, 0.8, 0.25], reach=50.0)
-check("a single intersection still makes a lens, not nothing",
-      o1 is not None and len(o1["f"]) > 0, None if o1 is None else len(o1["f"]))
-two = segs[:2]
-o2 = VN.build(VN.contacts(two, at, 5.0), aniso=[1.0, 0.8, 0.25], reach=50.0)
-check("two holes make a ribbon", o2 is not None and len(o2["f"]) > 0,
+o1 = VN.build(VN.contacts(one, at, 5.0), aniso=[1.0, 0.8, 0.25], reach=50.0)
+check("one intercept is a point, and gets no surface", o1 is None,
+      None if o1 is None else len(o1["f"]))
+o2 = VN.build(VN.contacts(segs[:2], at, 5.0), aniso=[1.0, 0.8, 0.25], reach=50.0)
+check("two intercepts are a line, and get no surface", o2 is None,
       None if o2 is None else len(o2["f"]))
+o3 = VN.build(VN.contacts(segs[:3], at, 5.0), aniso=[1.0, 0.8, 0.25], reach=50.0)
+check("three make a surface — that is where a sheet begins",
+      o3 is not None and len(o3["f"]) > 0, None if o3 is None else len(o3["f"]))
+
+print("\n== a stray intercept joins the vein it sits on")
+# One hole off the end of a vein, a little off its plane: it belongs to that
+# vein, not to a disc of its own. This is what strands on a real property —
+# measured on Lawyers, the median stray sat 0.7 m inside a real vein's
+# footprint and was cut loose only by being ~30 m off its plane.
+base = VN.contacts(segs, at, 5.0)
+nmid = np.asarray(base["mid"], float)
+Rb = np.asarray(VN.frame(nmid, None), float)
+drift = Rb[2] * 24.0 + Rb[0] * 10.0          # mostly across the plane
+def plus_one(d, shift):
+    """The same contacts with one extra, displaced by `shift`."""
+    out = {}
+    for k, v in d.items():
+        if not hasattr(v, "__len__") or len(v) != len(nmid):
+            out[k] = v
+            continue
+        a = np.asarray(v)
+        if a.ndim == 2:                       # a position: move the copy
+            out[k] = np.vstack([a, a[-1:] + shift])
+        else:                                 # a label or a grade: repeat it
+            out[k] = np.concatenate([a, a[-1:]])
+    return out
+
+
+stray = plus_one(base, drift)
+o4 = VN.build(stray, aniso=[1.0, 0.8, 0.25], reach=50.0)
+check("it is taken into the vein rather than drawn on its own",
+      o4 is not None and o4["veins"] == 1, None if o4 is None else o4["veins"])
+# and a contact genuinely far off any plane is NOT dragged in
+far = plus_one(base, Rb[2] * 400.0)
+o5 = VN.build(far, aniso=[1.0, 0.8, 0.25], reach=50.0)
+check("but one far off every plane is left out, not absorbed",
+      o5 is not None and o5["veins"] == 1
+      and int(np.sum(np.asarray(o5["contact_vein"]) < 0)) == 1,
+      None if o5 is None else (o5["veins"],
+                               int(np.sum(np.asarray(o5["contact_vein"]) < 0))))
 
 print("\n== it stops where the drilling stops")
 if out:
@@ -121,6 +167,94 @@ if out:
     # thickness proxy: spread of the across-coordinate at similar positions
     check("it pinches out at the edge rather than ending in a wall",
           rim.sum() > 0 and core.sum() > 0, (int(rim.sum()), int(core.sum())))
+
+print("\n== the vein's attitude comes from the vein, not from the drilled volume")
+# The failure this exists to stop, reproduced. A vein property is drilled wide
+# and shallow: several steep sub-parallel veins, sampled over a few hundred
+# metres of depth across a kilometre of ground. The CLOUD those intercepts make
+# is therefore flat, so its principal axes put the vein normal straight down —
+# whatever the veins do. On Lawyers (923 holes) that gave one "vein" 330 m
+# thick where the intercepts measure 5.4 m, and the page was a field of blobs.
+DIP, DDIR, WIDTH = 70.0, 250.0, 4.0
+th, ph = np.radians(DIP), np.radians(DDIR)
+NRM = np.array([np.sin(ph) * np.sin(th), np.cos(ph) * np.sin(th), np.cos(th)])
+NRM = NRM / np.linalg.norm(NRM)
+STRIKE = np.cross([0, 0, 1.0], NRM); STRIKE /= np.linalg.norm(STRIKE)
+DOWN = np.cross(NRM, STRIKE); DOWN /= np.linalg.norm(DOWN)
+if DOWN[2] > 0:
+    DOWN = -DOWN
+rng = np.random.default_rng(7)
+Pm = []
+for k in range(5):                       # five sub-parallel veins, 90 m apart
+    u = rng.uniform(-400, 400, 26)       # 800 m of strike
+    v = rng.uniform(-110, 110, 26)       # ~200 m of depth: a shallow slice
+    Pm.append(u[:, None] * STRIKE + v[:, None] * DOWN + NRM * (90.0 * k))
+Pm = np.vstack(Pm)
+Hw, Fw = Pm - NRM * (WIDTH / 2), Pm + NRM * (WIDTH / 2)
+
+flat = np.linalg.svd(Pm - Pm.mean(0), full_matrices=False)[2]
+vertical = abs(float(flat[2] @ np.array([0, 0, 1.0])))
+check("the drilled cloud really is the shape that fools a principal-axis fit",
+      vertical > 0.8, round(vertical, 3))
+check("so the old frame would call these flat-lying, not %d degrees" % DIP,
+      abs(90 - np.degrees(np.arccos(min(1.0, vertical)))) > 50,
+      round(float(np.degrees(np.arccos(min(1.0, vertical)))), 1))
+
+got, leftover = VN.sheets(Pm, Hw, Fw, reach=150.0)
+# a vein may come back in more than one patch where the drilling leaves a gap
+# along strike; what must be right is that they sit at the five vein positions
+levels = sorted(round(float(np.median(Pm[f["ix"]] @ NRM)) / 45.0) for f in got)
+check("the sheets sit at the five vein positions, not anywhere else",
+      len(set(levels)) == 5, (len(got), levels))
+dips = [VN.dip_of(f["normal"]) for f in got]
+check("every one is given the vein's dip, within 5 degrees",
+      all(abs(d - DIP) < 5 for d, _ in dips), [d for d, _ in dips])
+check("and the vein's dip direction, within 5 degrees",
+      all(min(abs(a - DDIR), 360 - abs(a - DDIR)) < 5 for _, a in dips),
+      [a for _, a in dips])
+check("each is read as thin, not as a slab of the whole cloud",
+      all(f["thick_m"] < 6 * WIDTH for f in got), [f["thick_m"] for f in got])
+check("between them they hold essentially every contact",
+      sum(len(f["ix"]) for f in got) >= 0.9 * len(Pm),
+      (sum(len(f["ix"]) for f in got), len(Pm)))
+
+# A deposit that is not a vein must not be carved into imaginary ones. The
+# realistic shape of that is a porphyry: a blobby cloud whose intercepts are
+# TENS of metres wide, not a couple. (An earlier version of this check used a
+# cloud of points carrying 4 m walls and expected no sheets — but points with
+# 4 m walls are vein-like, so it was asking for the wrong answer. What matters
+# is that a wide-intercept body is not fragmented.)
+# and the guard that makes that true is the deposit style, not the geometry:
+# a plane fitted through ANY cloud finds something, so `build` only splits by
+# plane where the filings say the body is tabular.
+blob = rng.normal(0, 60, (120, 3))
+wide = np.full((len(blob), 3), 0.0); wide[:, 2] = 15.0
+bg, _bl = VN.sheets(blob, blob - wide, blob + wide, reach=150.0)
+check("RANSAC finds planes in a formless cloud, which is why style gates it",
+      len(bg) > 3, len(bg))
+cb = {"mid": Pm, "hw": Hw, "fw": Fw,
+      "grade": np.full(len(Pm), 5.0), "hole": np.arange(len(Pm)),
+      "down_m": np.zeros(len(Pm))}
+ov = VN.build(cb, aniso=[1.0, 0.9, 0.25], reach=150.0, res=150.0, style="vein")
+op = VN.build(cb, aniso=[1.0, 0.9, 0.25], reach=150.0, res=150.0, style="porphyry")
+check("a vein-style deposit is split by plane, and gets each vein's attitude",
+      ov is not None and any(q.get("dip") is not None for q in ov["vein_parts"]),
+      None if ov is None else ov["vein_parts"][:1])
+check("a porphyry is not, and keeps the proximity split",
+      op is not None and all(q.get("dip") is None for q in op["vein_parts"]),
+      None if op is None else op["vein_parts"][:1])
+check("MMP_VEINSPLIT=ball puts the old behaviour back",
+      (os.environ.__setitem__("MMP_VEINSPLIT", "ball"),
+       all(q.get("dip") is None for q in
+           (VN.build(cb, aniso=[1.0, 0.9, 0.25], reach=150.0, res=150.0,
+                     style="vein") or {"vein_parts": []})["vein_parts"]),
+       os.environ.pop("MMP_VEINSPLIT", None))[1])
+
+R = VN.plane_frame(NRM)
+check("the frame's third row is the vein normal",
+      abs(float(abs(R[2] @ NRM)) - 1.0) < 1e-6, str(R[2].round(3)))
+check("its strike axis is horizontal", abs(float(R[0][2])) < 1e-9, str(R[0].round(3)))
+check("its dip axis points down", bool(R[1][2] < 0), str(R[1].round(3)))
 
 print("\n== two veins stay two veins")
 s1, at1, _w, _n = vein_holes(half=120.0)

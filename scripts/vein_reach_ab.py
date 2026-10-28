@@ -33,8 +33,8 @@ sys.path.insert(0, _HERE)
 # count roughly halved — a longer vein drawn more crudely, which is not the
 # trade anyone asked for. So: the old reach; the new reach with that passenger
 # still attached; and the new reach with the lattice sized by the data instead.
-ARMS = (("link", {"MMP_VEINREACH": "link"}),
-        ("zone+res", {}))
+ARMS = (("ball", {"MMP_VEINSPLIT": "ball"}),
+        ("planes", {}))
 
 
 def datasets():
@@ -104,7 +104,7 @@ def main():
     for slug in slugs:
         row = {"slug": slug}
         for name, env in ARMS:
-            for k in ("MMP_VEINREACH", "MMP_VEINRES"):
+            for k in ("MMP_VEINREACH", "MMP_VEINRES", "MMP_VEINSPLIT"):
                 os.environ.pop(k, None)
             os.environ.update(env)
             t0 = time.time()
@@ -122,8 +122,8 @@ def main():
             return ((row.get(n) or {}).get("shape") or {}).get(k)
         last = ARMS[-1][0]
         print(f"{slug[:28]:28} " + " ".join(f"{n}={_f(_r(n))}" for n, _ in ARMS)
-              + f"   tris {_s('link','tris')}->{_s(last,'tris')}"
-                f"   no_surface {_s('link','no_surface')}"
+              + f"   tris {_s('ball','tris')}->{_s(last,'tris')}"
+                f"   no_surface {_s('ball','no_surface')}"
                 f"->{_s(last,'no_surface')}", flush=True)
     summarise(rows)
     out = os.environ.get("MMP_AB_OUT", "/tmp/vein_reach_ab.json")
@@ -152,11 +152,11 @@ def summarise(rows):
               f"worse than 10x {sum(1 for x in rs if x > 10 or x < 0.1):2d}")
     last = names[-1]
     tr = [(r[n]["shape"] or {}).get("tris") or 0 for r in got for n in (last,)]
-    tl = [(r["link"]["shape"] or {}).get("tris") or 0 for r in got]
+    tl = [(r["ball"]["shape"] or {}).get("tris") or 0 for r in got]
     print(f"  triangles, link -> {last}: {sum(tl):,} -> {sum(tr):,}")
-    moved = [(r["slug"], r["link"]["score"]["ratio"], r[last]["score"]["ratio"])
+    moved = [(r["slug"], r["ball"]["score"]["ratio"], r[last]["score"]["ratio"])
              for r in got
-             if abs(r[last]["score"]["ratio"] - r["link"]["score"]["ratio"]) > 0.02]
+             if abs(r[last]["score"]["ratio"] - r["ball"]["score"]["ratio"]) > 0.02]
     print(f"  {len(moved)} project(s) moved at all")
     for s, a, b in sorted(moved, key=lambda t: -abs(t[2] - t[1]))[:12]:
         worse = abs(1 - b) > abs(1 - a)

@@ -100,7 +100,11 @@ _VIEWER_TMPL = os.path.join(_HERE, "model3d_viewer.html")
 # 19 — a body's veins are carried separately rather than welded into one
 #      solid: each face and each contact says which vein it belongs to, so one
 #      vein of nine can be looked at on its own
-MODEL_VERSION = 19
+# 20 — a vein's plane is found from its own wall contacts instead of taken from
+#      the principal axes of the drilled cloud, which on a wide shallow property
+#      always reads flat-lying; and a surface needs three contacts, so a lone
+#      intercept is no longer drawn as a disc the width of the reach
+MODEL_VERSION = 20
 # the most domain cells to send to a browser; beyond this the envelope is drawn
 # on a coarser lattice, which is a picture of the same shape
 BODY_MAX_CELLS = 120_000
@@ -1705,11 +1709,16 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                           and len(fvn) == nf else np.zeros(nf, np.int32))
                     dom_mesh.append((mv[0], mv[1], int(zid), fv + base))
                 for q in (vps or [{"vein": 0}]):
-                    dom_vparts.append({"id": int(base + int(q.get("vein") or 0)),
-                                       "body": int(zid),
-                                       "holes": q.get("n_contacts"),
-                                       "span_m": q.get("span_m"),
-                                       "thick_m": q.get("thick_m")})
+                    e = {"id": int(base + int(q.get("vein") or 0)),
+                         "body": int(zid),
+                         "holes": q.get("n_contacts"),
+                         "span_m": q.get("span_m"),
+                         "thick_m": q.get("thick_m")}
+                    # the vein's own attitude, where it was found as a plane
+                    # through the contacts rather than assumed from the cloud
+                    if q.get("dip") is not None:
+                        e["dip"], e["dip_dir"] = q.get("dip"), q.get("dip_dir")
+                    dom_vparts.append(e)
                 dom_vseq[0] = base + max(1, int((inf or {}).get("veins") or 1))
             rot_d, an_d = None, None
             if PS.get("domain") is not False:
@@ -1805,7 +1814,7 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                             step=max(float(blk[0]), 3.0),
                             thickness=PS.get("true_width_m") or med_w,
                             segments=zsg, at=_at, vein_nodes=_vbudget,
-                            vein_reach=zreach)
+                            vein_reach=zreach, style=skey)
                         _keep_mesh(zi, z["id"])
                         if zp is not None and len(zp):
                             if len(zp) <= 2:
@@ -1886,7 +1895,7 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                                     step=max(float(blk[0]), 3.0),
                                     thickness=PS.get("true_width_m") or med_w,
                                     segments=lsg, at=_at, vein_nodes=_vbudget,
-                                    vein_reach=zreach)
+                                    vein_reach=zreach, style=skey)
                                 _keep_mesh(_li, 0)
                                 if lp is not None and len(lp):
                                     if len(lp) <= 2:

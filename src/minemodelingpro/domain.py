@@ -381,7 +381,7 @@ def boundary_of(cent, rot, reach):
 
 
 def _vein(segments, at, threshold, rot, aniso, reach, thickness, info,
-          vein_nodes=240_000, max_points=600_000, vein_reach=None):
+          vein_nodes=240_000, max_points=600_000, vein_reach=None, style=None):
     """The vein-modelling path: contacts, a reference surface, a thickness.
 
     `reach` is the link reach — the distance at which the old triangulation was
@@ -408,7 +408,7 @@ def _vein(segments, at, threshold, rot, aniso, reach, thickness, info,
         out = VEIN.build(c, rot=rot, aniso=aniso, reach=reach, res=res,
                          min_thick=0.3, max_thick=(float(thickness) * 3
                                                    if thickness else None),
-                         max_nodes=int(max(vein_nodes, 2_000)))
+                         max_nodes=int(max(vein_nodes, 2_000)), style=style)
         if out is None:
             return None
         info.update({"mode": "vein", "intercepts": out["n_contacts"],
@@ -525,7 +525,7 @@ def _fill_triangle(P, W, step, layers, normal):
 
 def wireframe(pts, g, hid, threshold, rot=None, aniso=None, reach=120.0, step=8.0,
               thickness=None, max_points=600_000, segments=None, at=None,
-              vein_nodes=240_000, vein_reach=None):
+              vein_nodes=240_000, vein_reach=None, style=None):
     """The body a qualified person would draw, as a cloud of points inside it.
 
     The skeleton this replaces joined intercepts with lines, and a line has no
@@ -553,7 +553,7 @@ def wireframe(pts, g, hid, threshold, rot=None, aniso=None, reach=120.0, step=8.
     # that made this necessary. MMP_DOMAIN=alpha restores the triangulation.
     if segments is not None and at is not None and os.environ.get("MMP_DOMAIN") != "alpha":
         got = _vein(segments, at, threshold, rot, aniso, reach, thickness, info,
-                    vein_nodes, max_points, vein_reach)
+                    vein_nodes, max_points, vein_reach, style)
         if got is not None:
             return got
     if len(cent) < 3:

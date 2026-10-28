@@ -38,7 +38,29 @@ measures half as much vein as it does core, and the old thickness was the core
 length. Each contact pair is projected onto the surface normal, which is the
 width a geologist means and the one that belongs in a volume.
 """
+import os
 import numpy as np
+
+# A surface needs three points. Below that there is no plane to fit, no strike
+# to follow and no thickness trend to carry — only a position, which the
+# contacts themselves already show.
+MIN_CONTACTS = 3
+# How far off a vein's own surface a stray intercept may be and still be taken
+# as part of it, in multiples of that vein's measured true width. A vein that
+# undulates by a couple of its own widths between holes is a vein; one that is
+# ten widths away is a different vein, or nothing.
+ACROSS_WIDTHS = 3.0
+# Which deposits are modelled as sheets. A plane fitted through a point cloud
+# always finds SOMETHING — on a formless cloud RANSAC carves out slabs that
+# pass every intrinsic test you can cheaply write, because a thin wide slice
+# of a blob really is thin and wide. The thing that distinguishes a vein from
+# a slice is not in the geometry, it is in the deposit, and MMP already reads
+# that from the report's own Item 8. So the plane split is used where the
+# filings say the body is tabular, and the old proximity split everywhere else.
+TABULAR = ("vein", "orogenic", "vms", "sedex", "pegmatite")
+# How many times more contacts a candidate plane must hold than slicing the
+# cloud at random in that band would give. Below this it is a slice, not a vein.
+CHANCE_MULT = 3.0
 
 
 def _unit(v):
@@ -113,6 +135,165 @@ def true_width(hw, fw, normal):
     return np.abs(d @ np.asarray(normal, float))
 
 
+def plane_frame(nrm):
+    """A vein's own axes from its normal: (along strike, down dip, across).
+
+    Strike is horizontal and in the plane, down-dip is in the plane and points
+    down, across is the normal. It has to be this and not any two perpendicular
+    vectors, because the anisotropy weights are applied per axis — generous
+    along strike, less down dip, tight across — and on arbitrary in-plane axes
+    those weights would describe nothing.
+    """
+    n = _unit(np.asarray(nrm, float))
+    z = np.array([0.0, 0.0, 1.0])
+    if abs(float(n @ z)) > 0.999:                 # flat-lying: strike is free
+        strike = np.array([1.0, 0.0, 0.0])
+    else:
+        strike = _unit(np.cross(z, n))
+    down = _unit(np.cross(n, strike))
+    if down[2] > 0:
+        down = -down
+    return np.vstack([strike, down, n])
+
+
+def dip_of(nrm):
+    """(dip, dip direction) in degrees, the way a geologist writes an attitude.
+
+    The dip direction is where the plane goes DOWN, so it is read off the
+    down-dip vector itself. Taking it from the normal instead gives the right
+    answer or the back bearing depending on which way the normal happens to
+    point, and a vein reported as dipping 070 when it dips 250 is worse than
+    no attitude at all.
+    """
+    R = plane_frame(nrm)
+    down = R[1]
+    dip = float(np.degrees(np.arcsin(min(1.0, abs(float(down[2]))))))
+    ddir = float(np.degrees(np.arctan2(float(down[0]), float(down[1]))) % 360.0)
+    return round(dip, 1), round(ddir, 1)
+
+
+def sheets(mid, hw, fw, reach, min_contacts=5, tol_widths=2.0,
+           iters=600, seed=0, min_aspect=3.0):
+    """The veins these contacts lie ON, found as planes rather than as clumps.
+
+    This replaces asking "are these contacts near each other". They always are,
+    on a drilled property — what makes them one VEIN is lying on one surface.
+    Splitting by proximity needs a frame to be tight in, and the frame came
+    from the principal axes of the mineralised cloud, which on Lawyers (923
+    holes) put the vein normal straight down: a property drilled a kilometre
+    across and three hundred metres deep looks flat-lying to that fit whatever
+    the veins do. One "vein" came out 330 m thick where the intercepts measure
+    5.4 m, and the model on screen was a field of blobs.
+
+    So: fit a plane to three contacts, keep the ones within a couple of their
+    own measured widths of it, require that they form a connected patch in that
+    plane, and require the patch to be much wider than it is thick — a sheet,
+    not a cloud with a plane drawn through it. Strongest first, then again on
+    what is left. Contacts that lie on no sheet are returned separately rather
+    than forced onto one.
+
+    Five contacts minimum, not three: a plane fitted to three points passes
+    through them exactly, so any three points whatsoever are a perfect "sheet".
+    Asking for two more than the fit needs is what makes it evidence.
+
+    Returns (list of {ix, normal, along_m, dip_m, thick_m, dip, dip_dir}, leftover).
+    """
+    mid = np.asarray(mid, float)
+    hw = np.asarray(hw, float)
+    fw = np.asarray(fw, float)
+    n = len(mid)
+    if n < min_contacts:
+        return [], np.arange(n)
+    rng = np.random.default_rng(seed)
+    left = np.arange(n)
+    out = []
+    while len(left) >= min_contacts:
+        P = mid[left]
+        best = None
+        for _ in range(iters):
+            k = rng.choice(len(P), 3, replace=False)
+            a, b, c3 = P[k]
+            nrm = np.cross(b - a, c3 - a)
+            if np.linalg.norm(nrm) < 1e-9:
+                continue
+            nrm = _unit(nrm)
+            # the tolerance is the intercepts' own true width along THIS normal,
+            # so a 5 m vein is not given a 30 m band to wander in
+            w = np.abs((fw[left] - hw[left]) @ nrm)
+            tol = max(float(np.median(w)) * tol_widths, 3.0)
+            ins = np.nonzero(np.abs((P - a) @ nrm) <= tol)[0]
+            if len(ins) < min_contacts:
+                continue
+            R = plane_frame(nrm)
+            Q = P[ins] @ R.T
+            lab = _link2d(Q[:, :2], reach)
+            for g in np.unique(lab):
+                sel = ins[lab == g]
+                if len(sel) < min_contacts:
+                    continue
+                sp = Q[lab == g]
+                along = float(sp[:, 0].max() - sp[:, 0].min())
+                dipl = float(sp[:, 1].max() - sp[:, 1].min())
+                thick = max(float(np.ptp((P[sel] - a) @ nrm)), 1e-6)
+                if min(along, dipl) < min_aspect * thick:
+                    continue                      # a cloud, not a sheet
+                # And the scatter about the plane has to be explained by the
+                # vein's own width. Without this, ANY cloud slices into thin
+                # slabs that pass the aspect test — a blob of random points
+                # gave nine "sheets" holding 95% of it. A vein's contacts sit
+                # within a width or two of its surface because that is what a
+                # vein is; a slab through a porphyry does not.
+                wsel = float(np.median(np.abs((fw[left][sel] - hw[left][sel]) @ nrm)))
+                if thick > max(2.5 * wsel, 4.0):
+                    continue
+                # Finally: are there MORE contacts on this plane than slicing
+                # anywhere would give? A slab anywhere through a formless cloud
+                # is thin and wide and passes every test above — a blob of 120
+                # random points yielded ten "sheets" holding 92% of it. The
+                # null model is the obvious one: a band this thick, cut through
+                # a cloud this deep, catches this many by chance. A vein has to
+                # beat that by a clear margin, which it does easily, because
+                # its contacts are on it rather than near it.
+                depth = float(np.ptp(P @ nrm))
+                if depth > 1e-6:
+                    chance = len(P) * min(1.0, thick / depth)
+                    if len(sel) < max(min_contacts, CHANCE_MULT * chance):
+                        continue
+                score = (len(sel), -thick)
+                if best is None or score > best[0]:
+                    best = (score, sel, nrm, along, dipl, thick)
+        if best is None:
+            break
+        _sc, sel, nrm, along, dipl, thick = best
+        dip, ddir = dip_of(nrm)
+        out.append({"ix": left[sel], "normal": nrm, "along_m": round(along, 1),
+                    "dip_m": round(dipl, 1), "thick_m": round(thick, 1),
+                    "dip": dip, "dip_dir": ddir})
+        left = np.setdiff1d(left, left[sel])
+    return out, left
+
+
+def _link2d(xy, reach):
+    """Connected patches in the plane, at `reach`."""
+    from scipy.spatial import cKDTree
+    t = cKDTree(xy)
+    pairs = t.query_pairs(float(reach), output_type="ndarray")
+    parent = np.arange(len(xy))
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+    for i, j in pairs:
+        ri, rj = find(int(i)), find(int(j))
+        if ri != rj:
+            parent[ri] = rj
+    root = np.array([find(i) for i in range(len(xy))])
+    _u, inv = np.unique(root, return_inverse=True)
+    return inv
+
+
 def components(mid, rot=None, aniso=None, reach=60.0):
     """Contacts split into the separate veins they belong to.
 
@@ -151,7 +332,7 @@ def components(mid, rot=None, aniso=None, reach=60.0):
 
 def build(c, rot=None, aniso=None, reach=60.0, step=None, min_thick=0.3,
           max_thick=None, taper=0.35, max_nodes=240_000, fill_step=None,
-          res=None):
+          res=None, style=None):
     """The veins these contacts describe: surfaces, and the points inside them.
 
     Contacts that cannot be walked between within the reach are separate veins
@@ -204,7 +385,32 @@ def build(c, rot=None, aniso=None, reach=60.0, step=None, min_thick=0.3,
             return [(got, np.asarray(ix))]
         return out
 
-    parts = components(mid_all, rot, aniso, reach)
+    # Which contacts lie on which vein, and what that vein's own attitude is.
+    # Found as planes; a cloud that is not sheet-like yields none and the old
+    # proximity split is used instead, because not every deposit is a vein.
+    plan = []
+    tabular = str(style or "").lower() in TABULAR
+    if tabular and os.environ.get("MMP_VEINSPLIT") != "ball":
+        found, _left = sheets(mid_all, c["hw"], c["fw"], reach)
+        on_sheet = sum(len(f["ix"]) for f in found)
+        # only trust it when the planes account for most of the contacts;
+        # otherwise it is finding a few sheets inside something else
+        if found and on_sheet >= 0.5 * len(mid_all):
+            plan = [(f["ix"], plane_frame(f["normal"]), f) for f in found]
+    if plan:
+        built = []
+        per = max(int(max_nodes / max(1, len(plan))), 2_000)
+        for ix, R, meta in plan:
+            # each vein is drawn in ITS OWN plane, not in the deposit's average
+            got = _one(_sub(ix), R, aniso, reach, step, min_thick, max_thick,
+                       taper, per, fill_step, res=res)
+            if got is not None:
+                got["attitude"] = {"dip": meta["dip"], "dip_dir": meta["dip_dir"]}
+                built.append((got, np.asarray(ix)))
+        if built:
+            return _merge_veins(built, mid_all, c)
+
+    parts = _absorb(components(mid_all, rot, aniso, reach), mid_all, c, rot, reach)
     if len(parts) > 1:
         built = []
         per = max(int(max_nodes / max(1, len(parts))), 2_000)
@@ -214,6 +420,61 @@ def build(c, rot=None, aniso=None, reach=60.0, step=None, min_thick=0.3,
         return _merge_veins(built, mid_all, c) if built else None
     built = _try(np.arange(len(mid_all)), max_nodes)
     return _merge_veins(built, mid_all, c) if built else None
+
+
+def _absorb(parts, mid_all, c, rot, reach):
+    """Give a stranded intercept to the vein it actually sits on.
+
+    Connectivity is judged on a ball in a stretched frame, and that is a knife
+    edge: measured on Lawyers (923 holes), the intercepts left in ones and twos
+    sat a median of 0.7 m INSIDE the footprint of a real vein — directly along
+    strike of it — and were cut loose only by being ~30 m off its plane against
+    a 22 m tolerance. Each then became its own vein and was drawn as a disc.
+
+    So before a component of one or two contacts is treated as a vein of its
+    own, it is offered to the veins around it, judged the way a geologist would:
+    is it within this vein's footprint along strike and down dip, and is it
+    close to this vein's surface across the plane — in multiples of that vein's
+    own true width, not in metres. If it fits, it belongs to that vein and makes
+    it better supported. If it does not, it is not drawn (`_one` needs three
+    contacts), and the intercept still shows as a contact.
+    """
+    big = [p for p in parts if len(p) >= MIN_CONTACTS]
+    small = [p for p in parts if len(p) < MIN_CONTACTS]
+    if not big or not small:
+        return parts
+    mid = np.asarray(mid_all, float)
+    hw = np.asarray(c["hw"], float)
+    fw = np.asarray(c["fw"], float)
+    frames = []
+    for bp in big:
+        R = np.asarray(frame(mid[bp], rot), float)
+        n = _unit(R[2])
+        Q = mid[bp] @ R.T
+        width = float(np.median(np.abs((fw[bp] - hw[bp]) @ n))) or 1.0
+        frames.append((R, Q, max(width, 1.0)))
+    out = [list(p) for p in big]
+    left = []
+    for sp in small:
+        q = mid[np.asarray(sp)]
+        best, bi = None, -1
+        for k, (R, Q, width) in enumerate(frames):
+            P = q @ R.T
+            # inside the vein's own footprint, or how far outside it
+            du = np.abs(P[:, 0] - np.clip(P[:, 0], Q[:, 0].min(), Q[:, 0].max())).max()
+            dv = np.abs(P[:, 1] - np.clip(P[:, 1], Q[:, 1].min(), Q[:, 1].max())).max()
+            inplane = float(np.hypot(du, dv))
+            across = float(np.abs(P[:, 2] - np.median(Q[:, 2])).max())
+            if inplane > reach or across > ACROSS_WIDTHS * width:
+                continue
+            score = (across / width, inplane)
+            if best is None or score < best:
+                best, bi = score, k
+        if bi >= 0:
+            out[bi].extend(int(i) for i in sp)
+        else:
+            left.append(sp)
+    return [np.asarray(sorted(p), dtype=np.int64) for p in out] + left
 
 
 def _merge_veins(built, mid_all, c):
@@ -240,11 +501,14 @@ def _merge_veins(built, mid_all, c):
         fv.append(np.full(len(b["f"]), n, np.int32))
         cx.append(np.asarray(ix, np.int64))
         cv.append(np.full(len(ix), n, np.int32))
-        parts.append({"vein": n, "n_contacts": int(len(ix)),
-                      "faces": int(len(b["f"])),
-                      "span_m": b.get("span_m"),
-                      "thick_m": (round(float(np.median(t)), 2) if len(t) else None),
-                      "area_nodes": int(b["area_nodes"])})
+        q = {"vein": n, "n_contacts": int(len(ix)),
+             "faces": int(len(b["f"])),
+             "span_m": b.get("span_m"),
+             "thick_m": (round(float(np.median(t)), 2) if len(t) else None),
+             "area_nodes": int(b["area_nodes"])}
+        if b.get("attitude"):
+            q.update(b["attitude"])      # the vein's own dip and dip direction
+        parts.append(q)
     cx = np.concatenate(cx) if cx else np.zeros(0, np.int64)
     loose = np.setdiff1d(np.arange(len(mid_all)), cx, assume_unique=False)
     order = np.concatenate([cx, loose]).astype(np.int64)
@@ -266,9 +530,17 @@ def _merge_veins(built, mid_all, c):
 def _one(c, rot=None, aniso=None, reach=60.0, step=None, min_thick=0.3,
          max_thick=None, taper=0.35, max_nodes=240_000, fill_step=None,
          extrap=0.25, res=None):
-    """One vein: a closed surface, and the points inside it for the estimator."""
+    """One vein: a closed surface, and the points inside it for the estimator.
+
+    Three contacts minimum. One intercept is a point and two are a line, and
+    neither of those is a sheet — drawing one anyway produced a disc the width
+    of the reach, which is what put forty-four circles on a 923-hole vein
+    property and made the model look like spilled confetti. The intercepts
+    themselves are still shown, and the estimator still carries their grade;
+    what stops is inventing a surface where there is nothing to fit one to.
+    """
     mid = np.asarray(c["mid"], float)
-    if len(mid) < 1:
+    if len(mid) < MIN_CONTACTS:
         return None
     R = frame(mid, rot)
     nrm = _unit(R[2])
@@ -283,10 +555,10 @@ def _one(c, rot=None, aniso=None, reach=60.0, step=None, min_thick=0.3,
     if max_thick:
         t_true = np.minimum(t_true, float(max_thick))
 
-    # a lone intercept has no span at all, so the lattice is sized on what the
-    # vein is ALLOWED to reach rather than on the data's extent: otherwise the
-    # grid is three nodes wide, only the middle one is in range, and a body one
-    # hole has seen comes back as nothing
+    # How far the sheet may run past its outermost contact. It used to also
+    # SIZE the lattice for a one-contact vein, so that a lone intercept came
+    # back as a disc rather than as nothing; with three contacts required there
+    # is always a real extent to size on, and that circle is gone.
     out_m = float(reach) * float(extrap)
     span_u = max(float(u.max() - u.min()), 2.0 * out_m)
     span_v = max(float(v.max() - v.min()), 2.0 * out_m)
