@@ -330,9 +330,98 @@ def components(mid, rot=None, aniso=None, reach=60.0):
     return [np.nonzero(root == r)[0] for r in np.unique(root)]
 
 
+def voids_on(lat, mid_sel, traces, width, clear=None):
+    """Holes that went through the VEIN and cut nothing.
+
+    The earlier version of this tested crossings of the flat plane the vein was
+    fitted on. A vein undulates, so a hole crossing that plane thirty metres
+    from where the vein really is counted as a miss, and on a property with
+    nine hundred holes that closed nearly every vein. Leapfrog flips the
+    outside intervals relative to the nearest INTERIOR intervals — against the
+    reference surface, not against a plane — so this does the same: the
+    surface is built once, and only then is a hole asked whether it passed
+    through it.
+    """
+    if traces is None or lat is None:
+        return np.zeros((0, 3))
+    R, gu, gv, REF, M = lat
+    P, hid = traces
+    P = np.asarray(P, float)
+    if not len(P) or not len(mid_sel):
+        return np.zeros((0, 3))
+    Q = P @ R.T
+    iu = np.searchsorted(gu, Q[:, 0]).clip(0, len(gu) - 1)
+    iv = np.searchsorted(gv, Q[:, 1]).clip(0, len(gv) - 1)
+    on = M[iu, iv]                                 # the vein exists under here
+    d = Q[:, 2] - REF[iu, iv]                      # how far off the surface
+    hid = np.asarray(hid)
+    same = hid[1:] == hid[:-1]
+    cross = same & on[:-1] & on[1:] & ((d[:-1] <= 0) != (d[1:] <= 0))
+    k = np.nonzero(cross)[0]
+    if not len(k):
+        return np.zeros((0, 3))
+    d0, d1 = d[k], d[k + 1]
+    t = np.where(np.abs(d1 - d0) > 1e-9, -d0 / (d1 - d0), 0.0)[:, None]
+    X = P[k] + (P[k + 1] - P[k]) * t
+    from scipy.spatial import cKDTree
+    near = cKDTree(mid_sel).query(X)[0]
+    # a hole that DID cut the vein has its contact at the crossing; how close
+    # that has to be scales with the vein, not with the lattice
+    lim = float(clear if clear is not None else max(3.0 * float(width), 10.0))
+    return X[near > lim]
+
+
+def voids_for(mid_sel, R, traces, width, reach, clear=None):
+    """Where drilling went through the vein's plane and found no vein.
+
+    Leapfrog calls this pinching out: holes with no vein segment are added as
+    "outside" points and flipped, so the hangingwall and footwall cross and the
+    vein closes. MMP holds the same evidence and was not using it — a vein ran
+    until the search reach gave out, which is a property of the setting rather
+    than of the deposit. These are the crossing points, carried into the
+    interpolation as ZERO thickness, so the walls meet there and the body ends.
+
+    A crossing only counts when no contact of this vein sits near it: a hole
+    that did cut the vein has its contact right at the crossing.
+    """
+    if traces is None:
+        return np.zeros((0, 3))
+    P, hid = traces
+    P = np.asarray(P, float)
+    if not len(P) or not len(mid_sel):
+        return np.zeros((0, 3))
+    nrm = _unit(R[2])
+    Q = mid_sel @ R.T
+    o = float(np.median(Q[:, 2]))                 # the plane the vein sits on
+    umin, umax = Q[:, 0].min() - reach, Q[:, 0].max() + reach
+    vmin, vmax = Q[:, 1].min() - reach, Q[:, 1].max() + reach
+    w = P @ nrm - o
+    hid = np.asarray(hid)
+    # a sign change between consecutive samples of the SAME hole is a crossing
+    same = hid[1:] == hid[:-1]
+    cross = same & ((w[:-1] <= 0) != (w[1:] <= 0))
+    k = np.nonzero(cross)[0]
+    if not len(k):
+        return np.zeros((0, 3))
+    d0, d1 = w[k], w[k + 1]
+    t = np.where(np.abs(d1 - d0) > 1e-9, -d0 / (d1 - d0), 0.0)[:, None]
+    X = P[k] + (P[k + 1] - P[k]) * t
+    QX = X @ R.T
+    keep = ((QX[:, 0] >= umin) & (QX[:, 0] <= umax)
+            & (QX[:, 1] >= vmin) & (QX[:, 1] <= vmax))
+    X = X[keep]
+    if not len(X):
+        return X
+    from scipy.spatial import cKDTree
+    near = cKDTree(mid_sel).query(X)[0]
+    # how close a contact has to be before the crossing is explained by it
+    lim = float(clear if clear is not None else max(2.5 * float(width), 8.0))
+    return X[near > lim]
+
+
 def build(c, rot=None, aniso=None, reach=60.0, step=None, min_thick=0.3,
           max_thick=None, taper=0.35, max_nodes=240_000, fill_step=None,
-          res=None, style=None):
+          res=None, style=None, traces=None):
     """The veins these contacts describe: surfaces, and the points inside them.
 
     Contacts that cannot be walked between within the reach are separate veins
@@ -360,6 +449,8 @@ def build(c, rot=None, aniso=None, reach=60.0, step=None, min_thick=0.3,
         applied only where the new one does not hold."""
         got = _one(_sub(ix), rot, aniso, reach, step, min_thick, max_thick, taper,
                    budget, fill_step, res=res)
+        if got is not None:
+            got.pop("lat", None)
         tight = float(res or 0.0)
         # A surface fitted through N contacts that comes back with fewer than N
         # triangles has collapsed, not been drawn: the agreement test threw away
@@ -401,11 +492,30 @@ def build(c, rot=None, aniso=None, reach=60.0, step=None, min_thick=0.3,
         built = []
         per = max(int(max_nodes / max(1, len(plan))), 2_000)
         for ix, R, meta in plan:
-            # each vein is drawn in ITS OWN plane, not in the deposit's average
+            # each vein is drawn in ITS OWN plane, not in the deposit's average,
+            # and closed where holes crossed that plane and cut nothing
+            sel = np.asarray(mid_all)[ix]
+            wd = float(np.median(np.abs((np.asarray(c["fw"])[ix]
+                                         - np.asarray(c["hw"])[ix]) @ _unit(R[2]))))
             got = _one(_sub(ix), R, aniso, reach, step, min_thick, max_thick,
                        taper, per, fill_step, res=res)
+            nvd = 0
+            if (got is not None and traces is not None
+                    and os.environ.get("MMP_VEINPINCH") != "off"):
+                vd = voids_on(got.get("lat"), sel, traces, wd or 1.0)
+                if len(vd):
+                    shut = _one(_sub(ix), R, aniso, reach, step, min_thick,
+                                max_thick, taper, per, fill_step, res=res,
+                                voids=vd)
+                    # closing a vein is evidence; erasing it is not. A pass
+                    # that leaves almost nothing means the surface and the
+                    # drilling disagree, and the drilling is being read wrong.
+                    if shut is not None and len(shut["f"]) >= 0.2 * len(got["f"]):
+                        got, nvd = shut, len(vd)
             if got is not None:
-                got["attitude"] = {"dip": meta["dip"], "dip_dir": meta["dip_dir"]}
+                got.pop("lat", None)
+                got["attitude"] = {"dip": meta["dip"], "dip_dir": meta["dip_dir"],
+                                   "closed_by": int(nvd)}
                 built.append((got, np.asarray(ix)))
         if built:
             return _merge_veins(built, mid_all, c)
@@ -529,7 +639,7 @@ def _merge_veins(built, mid_all, c):
 
 def _one(c, rot=None, aniso=None, reach=60.0, step=None, min_thick=0.3,
          max_thick=None, taper=0.35, max_nodes=240_000, fill_step=None,
-         extrap=0.25, res=None):
+         extrap=0.25, res=None, voids=None):
     """One vein: a closed surface, and the points inside it for the estimator.
 
     Three contacts minimum. One intercept is a point and two are a line, and
@@ -585,8 +695,20 @@ def _one(c, rot=None, aniso=None, reach=60.0, step=None, min_thick=0.3,
     # stretched frame so continuity runs along it and not across to its neighbour
     from scipy.spatial import cKDTree
     su, sv = float(W[0]), float(W[1])
-    tree = cKDTree(np.c_[u / su, v / sv])
-    k = int(min(12, len(mid)))
+    # The contacts, plus the places drilling proved the vein absent. A void
+    # carries zero thickness, so the two walls close on it and the body ends
+    # there instead of running on to the edge of the search.
+    uu, vv, ww, tt = u, v, w, t_true
+    n_void = 0                       # NOT nv: that is the lattice's v count
+    if voids is not None and len(voids):
+        QV = np.asarray(voids, float) @ R.T
+        n_void = len(QV)
+        uu = np.concatenate([u, QV[:, 0]])
+        vv = np.concatenate([v, QV[:, 1]])
+        ww = np.concatenate([w, QV[:, 2]])
+        tt = np.concatenate([t_true, np.zeros(n_void)])
+    tree = cKDTree(np.c_[uu / su, vv / sv])
+    k = int(min(12, len(uu)))
     d, i = tree.query(np.c_[U.ravel() / su, V.ravel() / sv], k=k)
     if k == 1:
         d, i = d[:, None], i[:, None]
@@ -597,8 +719,8 @@ def _one(c, rot=None, aniso=None, reach=60.0, step=None, min_thick=0.3,
     # lands in the ground between this vein and the next. A node is "between"
     # when its nearest contacts surround it — the mean direction to them is
     # short — and only then does it get the whole reach.
-    duv = np.stack([U.ravel()[:, None] / su - (u / su)[i],
-                    V.ravel()[:, None] / sv - (v / sv)[i]], axis=-1)
+    duv = np.stack([U.ravel()[:, None] / su - (uu / su)[i],
+                    V.ravel()[:, None] / sv - (vv / sv)[i]], axis=-1)
     dn = np.linalg.norm(duv, axis=2, keepdims=True)
     dn[dn < 1e-9] = 1.0
     surround = np.linalg.norm((duv / dn).mean(1), axis=1)
@@ -606,8 +728,8 @@ def _one(c, rot=None, aniso=None, reach=60.0, step=None, min_thick=0.3,
     inside = (near <= reach) & (between | (near <= reach * float(extrap)))
     wt = 1.0 / (d * d + (step * 0.5) ** 2)
     wt[~np.isfinite(wt)] = 0.0
-    ref = (wt * w[i]).sum(1) / wt.sum(1)
-    thk = (wt * t_true[i]).sum(1) / wt.sum(1)
+    ref = (wt * ww[i]).sum(1) / wt.sum(1)
+    thk = (wt * tt[i]).sum(1) / wt.sum(1)
 
     # ONE surface per vein, and the data has to agree that there is one. Where
     # the contacts near a node disagree about where the vein is by more than the
@@ -615,7 +737,7 @@ def _one(c, rot=None, aniso=None, reach=60.0, step=None, min_thick=0.3,
     # weighted mean of them is a sheet halfway between — in barren rock. That is
     # the failure the triangulation had in its own form, arriving by a different
     # road, so it is refused rather than averaged.
-    sd = np.sqrt(np.maximum((wt * (w[i] - ref[:, None]) ** 2).sum(1) / wt.sum(1), 0.0))
+    sd = np.sqrt(np.maximum((wt * (ww[i] - ref[:, None]) ** 2).sum(1) / wt.sum(1), 0.0))
     agree = sd <= np.maximum(thk, min_thick) * 1.5
 
     # pinch out: the walls close as the vein runs past its support, instead of
@@ -623,7 +745,9 @@ def _one(c, rot=None, aniso=None, reach=60.0, step=None, min_thick=0.3,
     edge = np.clip((reach - near) / (max(taper, 1e-6) * reach), 0.0, 1.0)
     thk = np.maximum(thk * edge, 0.0)
 
-    M = (inside & agree).reshape(nu, nv)
+    # Where the walls have met there is no vein left. This is what makes a
+    # body stop at the drilling that disproved it rather than at the reach.
+    M = (inside & agree & (thk >= float(min_thick))).reshape(nu, nv)
     if M.sum() < 3:
         return None
     REF, THK = ref.reshape(nu, nv), thk.reshape(nu, nv)
@@ -635,9 +759,11 @@ def _one(c, rot=None, aniso=None, reach=60.0, step=None, min_thick=0.3,
         return None
 
     pts = _fill(U, V, REF, THK, M, R, fill_step or max(step * 0.5, 1.0))
+    lat = (R, gu, gv, REF, M)
     return {"v": verts, "f": faces, "pts": pts,
             "hw": c["hw"], "fw": c["fw"], "mid": mid, "veins": 1,
             "thickness": t_true, "n_contacts": int(len(mid)),
+            "lat": lat,
             "step_m": round(float(step), 2),
             "reach_m": round(float(reach), 1),
             # the vein's own run and height, in its own plane — what a chip

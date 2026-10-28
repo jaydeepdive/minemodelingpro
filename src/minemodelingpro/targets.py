@@ -140,9 +140,29 @@ def hole_attitude(dip=None, dip_direction=None, normal=None, min_dip=45.0):
     return (az, min(hd, -float(min_dip)), "square to the body's own plane")
 
 
+def nearest_plane(planes, p):
+    """The modelled vein nearest a point, as (normal, dip, dip_direction).
+
+    A property is several veins at several attitudes, and the hole that tests a
+    target has to cut THAT vein. One attitude for the whole deposit is the same
+    mistake as one frame for the whole deposit."""
+    if not planes:
+        return None
+    p = np.asarray(p, float)
+    best, bd = None, None
+    for q in planes:
+        c = np.asarray(q.get("centre"), float)
+        if c.shape != (3,):
+            continue
+        d = float(np.linalg.norm(p - c))
+        if bd is None or d < bd:
+            best, bd = q, d
+    return best
+
+
 def propose(cent, grade, width, hole, rim_idx, rim_dir, tested, step,
             dip=None, dip_direction=None, normal=None, surface=None,
-            max_targets=12, min_separation=None):
+            max_targets=12, min_separation=None, planes=None):
     """Step-outs from the rim of a body, best first.
 
     `tested` is the sampled existing drilling; `step` is one drill spacing, the
@@ -181,7 +201,17 @@ def propose(cent, grade, width, hole, rim_idx, rim_dir, tested, step,
                "step_m": round(float(step), 1),
                "bearing": round(float((np.degrees(np.arctan2(d[0], d[1]))) % 360.0), 0),
                "nearest_drilling_m": round(near, 1) if near is not None else None}
-        att = hole_attitude(dip, dip_direction, normal)
+        # the attitude of the vein this target actually sits on, where the
+        # model found one; otherwise whatever the project states, and only
+        # then the deposit's average across-axis
+        pl = nearest_plane(planes, p)
+        if pl is not None:
+            att = hole_attitude(pl.get("dip"), pl.get("dip_dir"))
+            if att:
+                att = (att[0], att[1], "square to this vein (%g deg / %03.0f)"
+                       % (pl.get("dip"), pl.get("dip_dir")))
+        else:
+            att = hole_attitude(dip, dip_direction, normal)
         if att and surface is not None:
             az, hd, why = att
             sz = surface(p[0], p[1])

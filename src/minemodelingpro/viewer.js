@@ -439,7 +439,9 @@ function bodyNote(){
   // say which it is: a vein surface fitted through the contacts reads very
   // differently from a sheet triangulated through midpoints, and a reader is
   // entitled to know which one is on screen
-  const how=(SF&&SF.method==="vein")?" · vein surfaces through the contacts":"";
+  const how=(SF&&SF.method==="vein")?" · vein surfaces through the contacts"
+    :(SF&&SF.method==="implicit")?" · implicit surfaces, from what the drilling "
+      +"says is inside the body and what it says is outside":"";
   ctl("body-note").textContent=
     (SF&&bodyStyle==="shape")?(fmtN(SF.tris)+" triangles"+t+how)
       :(B?(fmtN(B.n)+" cells"):(SF?fmtN(SF.tris)+" triangles"+t+how:"not built"));}
@@ -760,9 +762,14 @@ function drawVeins(){
   box.innerHTML=`<p class="lab">${head}</p><div class="chips">`
     +`<button class="chip${curVein==null?" on":""}" data-v="" title="Every vein `
     +`${curZone?"in this body":"on the property"}">All ${mine.length}</button>`
-    +show.map((v,i)=>`<button class="chip${curVein===v.id?" on":""}" data-v="${v.id}" `
-      +`title="Drawn on its own, with the wall contacts it was fitted through">`
-      +`${lab(v,i+1)}</button>`).join("")
+    +show.map((v,i)=>{const q=info[v.id]||{};
+      const why="Drawn on its own, with the wall contacts it was fitted through."
+        +(q.dip!=null?` Dips ${Math.round(q.dip)}° toward ${Math.round(q.dip_dir)}°, `
+          +`measured from those contacts.`:"")
+        +(q.closed_by?` Closed off where ${q.closed_by} hole${q.closed_by===1?"":"s"} `
+          +`went through it and cut nothing.`:"");
+      return `<button class="chip${curVein===v.id?" on":""}" data-v="${v.id}" `
+        +`title="${esc(why)}">${lab(v,i+1)}</button>`;}).join("")
     +`</div>`;
   [...box.querySelectorAll("button")].forEach(b=>b.onclick=()=>{
     const raw=b.dataset.v;
@@ -1992,8 +1999,9 @@ function drawTargetList(){
     +`<p class="note" style="margin:8px 0 0">Each is one ${TG.step_m} m step-out — the `
     +`spacing this pattern already drills — from a hole that cut mineralisation at the `
     +`edge of the model, onto ground no existing hole passes through. `
-    +(TG.oriented?"Angled to the attitude the report states."
-      :"Angled square to the body's own plane; no report states its attitude.")
+    +(TG.oriented?"Each is angled to cut the vein it tests squarely — the attitude "
+      +"is on the hole below."
+      :"Angled square to the body's own plane; no attitude was measured for it.")
     +` The model stops where the drilling stops, and so does this: nothing here `
     +`estimates what a hole would cut.</p>`;
   const rows=$("tgt-rows");

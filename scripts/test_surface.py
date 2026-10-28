@@ -29,6 +29,8 @@ PASS, FAIL = [], []
 
 
 def check(name, cond, detail=""):
+    if isinstance(detail, np.ndarray):          # an array has no truth value
+        detail = np.array2string(detail, threshold=12)
     (PASS if cond else FAIL).append(name)
     print(("  ok   " if cond else "  FAIL ") + name +
           (("  — " + str(detail)) if detail and not cond else ""))
@@ -67,10 +69,16 @@ def vein(n=40, seed=3):
             np.asarray(want), nrm)
 
 
-print("== a tabular vein")
+print("== a tabular vein, triangulated")
+# The triangulation is no longer what a body gets by default — a field is —
+# but it is still the fallback, so its own properties are still checked. The
+# field's are checked in their own section below; they are different
+# properties, not the same ones with different numbers.
 pts, g, hid, want, nrm = vein()
 rot, an = anisotropy(pts, g, [1.0, 0.8, 0.25])
+os.environ["MMP_DOMAIN"] = "alpha"
 S, info = DOM.wireframe(pts, g, hid, 1.0, rot=rot, aniso=an, reach=140.0, step=6.0)
+os.environ.pop("MMP_DOMAIN", None)
 check("a sheet is triangulated through the intercepts", info.get("mode") == "sheet", info)
 mesh = info.get("_mesh")
 check("the geometry is kept, not only the point cloud", mesh is not None)
@@ -124,6 +132,13 @@ else:
     check("a single fence still gets a body", info2.get("_mesh") is not None, info2)
 
 print("\n== a body with no plane to it")
+# These check the TRIANGULATION, which is still the fallback and still has
+# to behave. The field has its own section; they are different properties.
+os.environ["MMP_DOMAIN"] = "alpha"
+
+# the triangulation's own path for a body with no plane: still the fallback
+os.environ["MMP_DOMAIN"] = "alpha"
+
 blob = rng.normal(0, 60, (900, 3))
 gb = np.full(len(blob), 3.0)
 hb = np.array(["B%03d" % (i // 9) for i in range(len(blob))])
@@ -141,6 +156,10 @@ if m3 is not None:
           signed_volume(V3 - c, F3) > 0, signed_volume(V3 - c, F3))
 
 print("\n== two veins are not one sheet")
+# These check the TRIANGULATION, which is still the fallback and still has
+# to behave. The field has its own section; they are different properties.
+os.environ["MMP_DOMAIN"] = "alpha"
+
 # The fault this pins: the alpha criterion decided whether a triangle was real
 # ground by measuring it in the body's SHADOW — its own plane, where the
 # across-strike distance between two parallel veins is flattened to nothing —
@@ -326,6 +345,36 @@ if not seen:
 # carries a surface — so they were checking nothing at all. model3d.surface_payload
 # is the function that does the grouping, so it is called here with a mesh whose
 # right answer is known by construction.
+os.environ.pop("MMP_DOMAIN", None)
+print("\n== the same vein as a field")
+# What the field has to get right is different from what the triangulation
+# does. It does not pass through the intercepts exactly, and it has no wall
+# pairs — it is an isosurface. What it must be is CLOSED, enclosing a volume,
+# of a thickness that varies the way the intercepts do, and not wandering off
+# the drilling.
+S2, i2 = DOM.wireframe(pts, g, hid, 1.0, rot=rot, aniso=an, reach=140.0, step=6.0)
+check("a body with no walls picked out is built as a field",
+      i2.get("mode") == "implicit", i2.get("mode"))
+m2 = i2.get("_mesh")
+check("and it keeps its geometry", m2 is not None)
+if m2 is not None:
+    V2, F2 = m2
+    check("the field's surface is closed too",
+          bool((edge_counts(F2) == 2).all()),
+          np.unique(edge_counts(F2)))
+    check("it encloses a volume", abs(signed_volume(V2, F2)) > 0.0)
+    cent2, _h2, _w2 = DOM.intercepts_w(pts, g, hid, 1.0)
+    from scipy.spatial import cKDTree as _KD
+    off = _KD(cent2).query(V2)[0]
+    check("no part of it wanders far from the drilling that made it",
+          float(np.percentile(off, 99)) < 140.0,
+          round(float(np.percentile(off, 99)), 1))
+    lo2, hi2 = V2.min(0), V2.max(0)
+    check("it spans the drilling rather than a corner of it",
+          bool(np.all(hi2 - lo2 >= (cent2.max(0) - cent2.min(0)) * 0.6)),
+          ((hi2 - lo2).round(0).tolist(),
+           (cent2.max(0) - cent2.min(0)).round(0).tolist()))
+
 print("\n== bodies and the veins inside them")
 from minemodelingpro import model3d as M3
 
@@ -392,6 +441,11 @@ check("each vein's description belongs to a vein that is drawn",
 v, f = quad(0.0, 0.0)
 one = M3.surface_payload([(v, f, 7, np.zeros(len(f), np.int32))],
                          [], [{"id": 0, "body": 7}], [], {"vein": 0, "alpha": 1})
+imp = M3.surface_payload([(v, f, 7, np.zeros(len(f), np.int32))],
+                         [], [{"id": 0, "body": 7}], [],
+                         {"vein": 0, "alpha": 1, "implicit": 4})
+check("a body built as a field is reported as one", imp["method"] == "implicit",
+      imp["method"])
 check("a body with no vein split still arrives as exactly one vein",
       len(one["veins"]) == 1 and one["veins"][0]["body"] == 7
       and one["veins"][0]["count"] == one["tris"] * 3, one["veins"])

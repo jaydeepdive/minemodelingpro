@@ -381,7 +381,8 @@ def boundary_of(cent, rot, reach):
 
 
 def _vein(segments, at, threshold, rot, aniso, reach, thickness, info,
-          vein_nodes=240_000, max_points=600_000, vein_reach=None, style=None):
+          vein_nodes=240_000, max_points=600_000, vein_reach=None, style=None,
+          traces=None):
     """The vein-modelling path: contacts, a reference surface, a thickness.
 
     `reach` is the link reach — the distance at which the old triangulation was
@@ -408,7 +409,8 @@ def _vein(segments, at, threshold, rot, aniso, reach, thickness, info,
         out = VEIN.build(c, rot=rot, aniso=aniso, reach=reach, res=res,
                          min_thick=0.3, max_thick=(float(thickness) * 3
                                                    if thickness else None),
-                         max_nodes=int(max(vein_nodes, 2_000)), style=style)
+                         max_nodes=int(max(vein_nodes, 2_000)), style=style,
+                         traces=traces)
         if out is None:
             return None
         info.update({"mode": "vein", "intercepts": out["n_contacts"],
@@ -523,9 +525,108 @@ def _fill_triangle(P, W, step, layers, normal):
     return (base[None, :, :] + off).reshape(-1, 3)
 
 
+def _implicit(pts, g, hid, threshold, rot, aniso, reach, step, info,
+              segments=None, at=None, traces=None, max_points=600_000,
+              max_faces=None):
+    """The deposit as a signed field, isosurfaced. One builder, every style.
+
+    Inside is the mineralised composite positions; outside is every other
+    sample on every hole, which is the evidence that a body stops. Where the
+    caller can give wall contacts — the vein case — they pin the zero level
+    exactly; where it cannot, the two clouds sign each other and the contact
+    falls between them, which is what it means for a porphyry shell.
+    """
+    try:
+        from minemodelingpro import implicit as IMP
+        P = np.asarray(pts, float)
+        gg = np.asarray(g, float)
+        sel = gg >= float(threshold)
+        inside = P[sel]
+        # Three HOLES, not three points. Thirty composites down one hole are a
+        # line, and a field fitted to a line invents a body in every direction
+        # nobody drilled — the same fault as drawing a disc through a single
+        # intercept, arriving by a different road.
+        holes = np.unique(np.asarray(hid)[sel]) if hid is not None else []
+        if len(inside) < 6 or len(holes) < 3:
+            return None
+        contacts = np.zeros((0, 3))
+        if segments is not None and at is not None:
+            try:
+                from minemodelingpro import veins as VEIN
+                c = VEIN.contacts(segments, at, threshold)
+                if len(c["mid"]):
+                    contacts = np.vstack([np.asarray(c["hw"], float),
+                                          np.asarray(c["fw"], float)])
+            except Exception:
+                contacts = np.zeros((0, 3))
+        outside = np.zeros((0, 3))
+        if traces is not None:
+            from scipy.spatial import cKDTree
+            T = np.asarray(traces[0], float)
+            lo, hi = inside.min(0) - reach, inside.max(0) + reach
+            T = T[np.all((T >= lo) & (T <= hi), axis=1)]
+            if len(T):
+                # a sample sitting on mineralisation is not evidence against it
+                near = cKDTree(inside).query(T)[0]
+                outside = T[near > max(float(step), 2.0)]
+        out = IMP.surface(inside, contacts, outside, rot=rot, aniso=aniso,
+                          reach=float(reach), step=float(step),
+                          max_faces=max_faces)
+        if out is None:
+            return None
+        V, F = np.asarray(out["v"], float), np.asarray(out["f"], np.int64)
+        info.update({"mode": "implicit", "intercepts": int(len(inside)),
+                     "reach_m": round(float(reach), 1),
+                     "step_m": round(float(out["step_m"]), 2),
+                     "outside_samples": int(out["n_outside"]),
+                     "contacts": int(out["n_contacts"]),
+                     "triangles": int(len(F))})
+        info["_mesh"] = (V, F)
+        if len(contacts):
+            h = len(contacts) // 2
+            info["_contacts"] = (contacts[:h], contacts[h:])
+        # the estimator wants the inside of the body, not its skin
+        S = _inside_points(V, F, inside, float(out["step_m"]))
+        if len(S) > max_points:
+            S = S[np.linspace(0, len(S) - 1, max_points).astype(int)]
+        info["points"] = int(len(S))
+        return S, info
+    except Exception as exc:                     # the surface is a bonus layer
+        if os.environ.get("MMP_DEBUG"):
+            import traceback
+            traceback.print_exc()
+        info["implicit_error"] = "%s: %s" % (type(exc).__name__, str(exc)[:120])
+        return None
+
+
+def _inside_points(V, F, seed, step):
+    """A cloud filling the modelled body, for the estimator to search.
+
+    The surface is a skin; the estimator needs the volume. Rather than a
+    point-in-mesh test per node, which is slow and fiddly for an open surface,
+    this fills between the skin and the drilling that made it.
+    """
+    from scipy.spatial import cKDTree
+    if not len(V):
+        return np.asarray(seed, float)
+    lo, hi = V.min(0), V.max(0)
+    n = np.maximum(np.ceil((hi - lo) / max(step, 1.0)).astype(int) + 1, 2)
+    if int(n[0]) * int(n[1]) * int(n[2]) > 4_000_000:
+        return np.asarray(seed, float)
+    ax = [lo[d] + np.arange(n[d]) * max(step, 1.0) for d in range(3)]
+    G = np.stack(np.meshgrid(*ax, indexing="ij"), axis=-1).reshape(-1, 3)
+    # inside means closer to the drilling that made the body than to its skin
+    ds = cKDTree(V).query(G)[0]
+    di = cKDTree(np.asarray(seed, float)).query(G)[0]
+    keep = (di <= ds) & (di <= max(step, 1.0) * 6.0)
+    S = G[keep]
+    return S if len(S) else np.asarray(seed, float)
+
+
 def wireframe(pts, g, hid, threshold, rot=None, aniso=None, reach=120.0, step=8.0,
               thickness=None, max_points=600_000, segments=None, at=None,
-              vein_nodes=240_000, vein_reach=None, style=None):
+              vein_nodes=240_000, vein_reach=None, style=None, traces=None,
+              face_budget=None):
     """The body a qualified person would draw, as a cloud of points inside it.
 
     The skeleton this replaces joined intercepts with lines, and a line has no
@@ -551,9 +652,29 @@ def wireframe(pts, g, hid, threshold, rot=None, aniso=None, reach=120.0, step=8.
     # thickness, which uses every intercept instead of the fifth of them that
     # survive a Delaunay circumradius test. See veins.py for the measurement
     # that made this necessary. MMP_DOMAIN=alpha restores the triangulation.
-    if segments is not None and at is not None and os.environ.get("MMP_DOMAIN") != "alpha":
+    mode = os.environ.get("MMP_DOMAIN", "")
+    # A VEIN first, where the body is one: that path carries each vein's own
+    # attitude, its wall contacts and the pinch-out, and a reader can take the
+    # veins apart one at a time. Nothing else models a tabular body as well.
+    if segments is not None and at is not None and mode not in ("alpha", "implicit"):
         got = _vein(segments, at, threshold, rot, aniso, reach, thickness, info,
-                    vein_nodes, max_points, vein_reach, style)
+                    vein_nodes, max_points, vein_reach, style, traces)
+        if got is not None:
+            return got
+    # Otherwise the body as a scalar field — the deposit that is not tabular,
+    # and the tabular one the vein builder could not hold. Fitting a surface to
+    # anything is what limited every earlier builder: a shape that folds is not
+    # a height-field over any plane, and the triangulation it replaces had no
+    # notion of inside or outside at all, so a hole that went through a body
+    # and cut nothing could not shrink it. Measured over 76 filed statements,
+    # this halves the bodies that get no shape drawn for them: 959 of 1,251
+    # down to 668. MMP_DOMAIN=alpha restores the triangulation everywhere.
+    # MMP_DOMAIN=vein stops here and falls through to the triangulation, which
+    # is what shipped before the field builder existed — the control arm.
+    if mode not in ("alpha", "vein"):
+        got = _implicit(pts, g, hid, threshold, rot, aniso, reach, step,
+                        info, segments, at, traces, max_points,
+                        max_faces=face_budget)
         if got is not None:
             return got
     if len(cent) < 3:

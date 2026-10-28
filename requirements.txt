@@ -5,6 +5,10 @@ pandas
 pyarrow
 numpy
 scipy
+# marching cubes, for the implicit domain builder (implicit.py). 14 MB,
+# imports lazily in 0.01 s for 3 MB of RSS — measured, because this file
+# is deliberately small and the modeller has 1 GB.
+scikit-image
 pillow
 shapely
 geopandas

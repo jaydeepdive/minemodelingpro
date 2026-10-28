@@ -104,7 +104,11 @@ _VIEWER_TMPL = os.path.join(_HERE, "model3d_viewer.html")
 #      the principal axes of the drilled cloud, which on a wide shallow property
 #      always reads flat-lying; and a surface needs three contacts, so a lone
 #      intercept is no longer drawn as a disc the width of the reach
-MODEL_VERSION = 20
+# 21 — a body that is not a tabular vein is modelled as a signed FIELD and
+#      isosurfaced, instead of triangulated: it uses the holes that cut nothing
+#      as evidence of where the body is not, and a shape that folds costs no
+#      more than a flat one. Halves the bodies that got no shape at all.
+MODEL_VERSION = 21
 # the most domain cells to send to a browser; beyond this the envelope is drawn
 # on a coarser lattice, which is a picture of the same shape
 BODY_MAX_CELLS = 120_000
@@ -1342,9 +1346,12 @@ def surface_payload(dom_mesh, dom_cont, dom_vparts, dom_thick, dom_method):
         "vein_info": [q for q in dom_vparts
                       if q["id"] in {g["id"] for g in veins}],
     }
-    out["method"] = (
-        "vein" if dom_method["vein"] >= dom_method["alpha"] else "alpha")
-    out["from_veins"] = int(dom_method["vein"])
+    # a caller that predates a method simply has no count for it
+    dm = {"vein": 0, "alpha": 0, "implicit": 0}
+    dm.update(dom_method or {})
+    out["method"] = max(dm, key=lambda k: dm[k])
+    out["from_veins"] = int(dm["vein"])
+    out["from_implicit"] = int(dm["implicit"])
     if dom_thick:
         tv = np.concatenate(dom_thick)
         out["thickness_m"] = {
@@ -1671,7 +1678,7 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
             dom_vseq = [0]          # vein ids run across the whole element
 
             dom_thick = []
-            dom_method = {"vein": 0, "alpha": 0}
+            dom_method = {"vein": 0, "alpha": 0, "implicit": 0}
 
             def _keep_mesh(inf, zid):
                 """Lift a body's geometry out of its info block, under its own id.
@@ -1689,6 +1696,7 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                 cvn = (inf or {}).pop("_contact_vein", None)
                 vps = (inf or {}).pop("_vein_parts", None) or []
                 base = dom_vseq[0]
+                centres = {}
                 if ct is not None and len(ct[0]):
                     n = len(ct[0])
                     cv = (np.asarray(cvn, np.int32) if cvn is not None
@@ -1696,8 +1704,14 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                     cv = np.where(cv < 0, -1, cv + base)
                     dom_cont.append((np.asarray(ct[0], float),
                                      np.asarray(ct[1], float), int(zid), cv))
-                dom_method["vein" if (inf or {}).get("mode") == "vein"
-                           else "alpha"] += 1
+                    # where each vein sits, so a drill target can be oriented
+                    # to cut THAT vein rather than the deposit's average
+                    cmid = (np.asarray(ct[0], float) + np.asarray(ct[1], float)) / 2.0
+                    for v in np.unique(cv):
+                        if v >= 0:
+                            centres[int(v)] = cmid[cv == v].mean(0)
+                _md = (inf or {}).get("mode")
+                dom_method[_md if _md in dom_method else "alpha"] += 1
                 if tv is not None and len(tv):
                     dom_thick.append(np.asarray(tv, float))
                 if mv is not None and len(mv[1]):
@@ -1718,6 +1732,11 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                     # through the contacts rather than assumed from the cloud
                     if q.get("dip") is not None:
                         e["dip"], e["dip_dir"] = q.get("dip"), q.get("dip_dir")
+                    if q.get("closed_by"):
+                        e["closed_by"] = int(q["closed_by"])
+                    c = centres.get(e["id"])
+                    if c is not None:
+                        e["centre"] = [round(float(x), 1) for x in c]
                     dom_vparts.append(e)
                 dom_vseq[0] = base + max(1, int((inf or {}).get("veins") or 1))
             rot_d, an_d = None, None
@@ -1784,6 +1803,26 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                     def _at(hi, m):
                         return hole_xyz(H[hi], np.asarray([float(m)]))[0]
 
+                    # Every hole's path, sampled. A hole that went through
+                    # where a vein would be and cut nothing is evidence the
+                    # vein is not there — the same evidence Leapfrog uses to
+                    # pinch a vein out, and MMP already holds it. Without it a
+                    # vein runs to wherever the search reach gives out, which
+                    # is a property of the setting rather than of the deposit.
+                    _tp, _th = [], []
+                    for _h in (H or []):
+                        _L = float(_h.get("depth") or 0.0)
+                        if _L <= 0:
+                            continue
+                        _n = int(min(max(_L / 5.0, 2), 400))
+                        try:
+                            _tp.append(hole_xyz(_h, np.linspace(0.0, _L, _n)))
+                        except Exception:
+                            continue
+                        _th.append(np.full(_n, len(_th), np.int32))
+                    _traces = ((np.vstack(_tp), np.concatenate(_th))
+                               if _tp else None)
+
                     def _segs_for(mask):
                         """The intervals whose midpoints fall in this body."""
                         return [(_msegs[i][0], _msegs[i][1], _msegs[i][2], _msegs[i][3])
@@ -1793,6 +1832,10 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                     zlab, zlist = ZON.find(pts[mz], hid[mz], zreach,
                                            rot=rot_d, aniso=an_d)
                     _vbudget = int(max(3_000, 300_000 // max(1, len(zlist or []))))
+                    # and one MESH budget between them: an implicit surface is
+                    # a face per surface cell, so thirty bodies at sixty
+                    # thousand faces each is a three-megabyte page on a phone
+                    _fbudget = int(max(2_500, 90_000 // max(1, len(zlist or []))))
                     PH.mark("zones")
                     zone_pts, zone_lab = pts[mz], zlab
                     # which zone each composite belongs to — asked once, not once
@@ -1814,7 +1857,8 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                             step=max(float(blk[0]), 3.0),
                             thickness=PS.get("true_width_m") or med_w,
                             segments=zsg, at=_at, vein_nodes=_vbudget,
-                            vein_reach=zreach, style=skey)
+                            vein_reach=zreach, style=skey, traces=_traces,
+                            face_budget=_fbudget)
                         _keep_mesh(zi, z["id"])
                         if zp is not None and len(zp):
                             if len(zp) <= 2:
@@ -1895,7 +1939,8 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                                     step=max(float(blk[0]), 3.0),
                                     thickness=PS.get("true_width_m") or med_w,
                                     segments=lsg, at=_at, vein_nodes=_vbudget,
-                                    vein_reach=zreach, style=skey)
+                                    vein_reach=zreach, style=skey, traces=_traces,
+                                    face_budget=_fbudget)
                                 _keep_mesh(_li, 0)
                                 if lp is not None and len(lp):
                                     if len(lp) <= 2:
@@ -2135,6 +2180,13 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                         TGT.hole_samples(H), step=float(max(spacing, 20.0)),
                         dip=PS.get("dip"), dip_direction=PS.get("dip_direction"),
                         normal=(rot_d[2] if rot_d is not None else None),
+                        # Each modelled vein's own plane. Without these the
+                        # across-axis of the whole deposit was used, and on a
+                        # wide shallow property that axis is vertical — which
+                        # is why every proposed hole came back vertical, and
+                        # nobody drills a vertical hole into a steep vein.
+                        planes=[q for q in dom_vparts
+                                if q.get("dip") is not None and q.get("centre")],
                         surface=TGT.surface_from_collars(H),
                         max_targets=12)
                     if tg_rows:
@@ -2142,8 +2194,13 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                             "rows": tg_rows,
                             "step_m": round(float(max(spacing, 20.0)), 1),
                             "rim": int(len(ridx)),
-                            "oriented": bool(PS.get("dip") is not None
-                                             and PS.get("dip_direction") is not None),
+                            # a hole is oriented if it was aimed at something:
+                            # the project's stated attitude, or the attitude
+                            # the model measured for the vein it tests
+                            "oriented": bool((PS.get("dip") is not None
+                                              and PS.get("dip_direction") is not None)
+                                             or any(r.get("attitude_from")
+                                                    for r in tg_rows)),
                             "with_collar": sum(1 for r in tg_rows if r.get("collar")),
                         }
             except Exception as exc:                 # targeting is a bonus layer

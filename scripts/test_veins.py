@@ -256,6 +256,58 @@ check("the frame's third row is the vein normal",
 check("its strike axis is horizontal", abs(float(R[0][2])) < 1e-9, str(R[0].round(3)))
 check("its dip axis points down", bool(R[1][2] < 0), str(R[1].round(3)))
 
+print("\n== a hole that went through the vein and cut nothing closes it")
+# Leapfrog's pinch out: holes with no vein segment are added as outside points
+# and flipped, so the walls cross and the vein ends where the rock says it is
+# not there. MMP was tapering on DISTANCE instead, so a vein ran until the
+# search reach gave out — a property of the setting, not of the deposit.
+g2 = np.random.default_rng(11)
+u2 = g2.uniform(-200, 200, 120)
+v2 = g2.uniform(-90, 90, 120)                  # a sheet, not a line
+keep = (u2 < -45) | (u2 > 45)                  # drilled at both ends, not the middle
+u2, v2 = u2[keep], v2[keep]
+P2 = u2[:, None] * STRIKE + v2[:, None] * DOWN
+H2, F2 = P2 - NRM * 2.0, P2 + NRM * 2.0
+c2 = {"mid": P2, "hw": H2, "fw": F2, "grade": np.full(len(P2), 5.0),
+      "hole": np.arange(len(P2)), "down_m": np.zeros(len(P2))}
+openv = VN.build(c2, aniso=[1.0, 0.9, 0.25], reach=160.0, res=160.0, style="vein")
+check("with no drilling in the gap the vein carries across it",
+      openv is not None and len(openv["f"]) > 0,
+      None if openv is None else len(openv["f"]))
+
+# now put barren holes through the middle: vertical traces crossing the vein
+gapu = [(a, b) for a in np.linspace(-35, 35, 6) for b in np.linspace(-80, 80, 6)]
+tp, th = [], []
+for n, (gu_, gv_) in enumerate(gapu):
+    base = gu_ * STRIKE + gv_ * DOWN
+    col = base + NRM * 60.0
+    end = base - NRM * 60.0
+    seg = col + (end - col) * np.linspace(0, 1, 40)[:, None]
+    tp.append(seg); th.append(np.full(40, n, np.int32))
+traces = (np.vstack(tp), np.concatenate(th))
+shut = VN.build(c2, aniso=[1.0, 0.9, 0.25], reach=160.0, res=160.0, style="vein",
+                traces=traces)
+check("holes through the gap that cut nothing close the vein there",
+      shut is not None and len(shut["f"]) < len(openv["f"]),
+      (None if shut is None else len(shut["f"]), len(openv["f"])))
+check("and the model says how many holes closed it",
+      shut is not None and any((q.get("closed_by") or 0) > 0
+                               for q in shut["vein_parts"]),
+      None if shut is None else shut["vein_parts"])
+# the same holes, but drilled WELL AWAY from the vein, prove nothing
+far = (np.vstack(tp) + STRIKE * 4000.0, np.concatenate(th))
+unaff = VN.build(c2, aniso=[1.0, 0.9, 0.25], reach=160.0, res=160.0, style="vein",
+                 traces=far)
+check("holes nowhere near the vein do not close it",
+      unaff is not None and len(unaff["f"]) == len(openv["f"]),
+      (None if unaff is None else len(unaff["f"]), len(openv["f"])))
+check("MMP_VEINPINCH=off puts the old behaviour back",
+      (os.environ.__setitem__("MMP_VEINPINCH", "off"),
+       len((VN.build(c2, aniso=[1.0, 0.9, 0.25], reach=160.0, res=160.0,
+                     style="vein", traces=traces) or {"f": []})["f"])
+       == len(openv["f"]),
+       os.environ.pop("MMP_VEINPINCH", None))[1])
+
 print("\n== two veins stay two veins")
 s1, at1, _w, _n = vein_holes(half=120.0)
 offs = 150.0

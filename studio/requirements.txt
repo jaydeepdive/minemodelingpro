@@ -9,6 +9,10 @@ psycopg_pool>=3.2
 boto3>=1.34
 numpy>=1.26
 scipy>=1.11
+# marching cubes, for the implicit domain builder (implicit.py). 14 MB,
+# imports lazily in 0.01 s for 3 MB of RSS — measured, because this file
+# is deliberately small and the modeller has 1 GB.
+scikit-image>=0.22
 pandas>=2.1
 openpyxl>=3.1
 xlrd>=2.0
