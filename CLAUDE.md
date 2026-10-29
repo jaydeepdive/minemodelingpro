@@ -1849,23 +1849,52 @@ loose enough to admit blocks well outside it: bounding a 3 m vein that way left
 it 56 m thick, the tolerance it needed ALONG the body having become its
 tolerance ACROSS it.
 
-**It is not on by default, and the reason is in the table above.** Measured
-against a body that has the right thickness, the bound is a BIAS TRADE and not
-an accuracy gain: five more projects land within 2x (24 -> 29) and the symmetric
-error does not improve (0.910 -> 0.995). It tightens the upper tail hard, which
-is exactly what stopping a model bridging into barren rock should do —
-blue-moon 6.78 -> 5.29, chinchillas 31.3 -> 24.3, alliance 8.2 -> 3.4,
-candelaria 2.98 -> 1.79, caber 2.22 -> 1.60 — and it pushes every already-short
-model further down, because those were leaning on the bridging to reach their
-tonnage at all.
+**ON BY DEFAULT** (`MMP_BODYBOUND=off` restores), and the reason took one more
+measurement than expected. Over all 68 scored projects it looks like a bias
+trade — five more inside 2x and a worse symmetric error. Scored on the
+population where the comparison means anything, it is not close:
 
-Which is the same conclusion the two-leg measurement reached from the other
-end: **the volume has two wrong legs and fixing one alone cannot pay.** The
-bound is the across-body leg. The along-strike leg is still open — the body's
-extent is set by where holes happen to be, and `extent.py` has read the strike
-length and down-dip extent out of the reports' own prose since 2026-10-25
-without that ever being applied to anything. That is the other half, and the
-bound should be re-scored with it rather than on its own.
+| 34 projects, filing and drilling describe the same rock | median | med abs log err | within 1.5x | 2x | >10x |
+|---|---|---|---|---|---|
+| before | 1.019 | 0.783 | 12 | 16 | 4 |
+| **bounded to the body** | 0.934 | **0.618** | **14** | **18** | 4 |
+
+A **21% cut in symmetric error** and no project pushed past 10x. The
+all-projects table is diluted by the 39 that are set aside for comparability —
+21 "resource published without its drilling", 18 "filing covers part of what we
+model" — and averaging those in hides the result. **Score a geometry change on
+the comparable population or measure nothing.**
+
+### Tested and NOT shipped: a longer reach for the sheet, with the bound on
+
+The reasoning was good and the corpus agreed, and it is still wrong. With the
+blocks bounded, the model IS the wireframe, so the bounded model's shortfall is
+at its edges — the sheet stops at `reach x 0.25`, about 15 m on a 60 m reach,
+against a filing that carries its own wireframe half a drill spacing or more.
+And the Blue Moon warning (121x) was measured on the ESTIMATOR's envelope,
+which grows as a ball in every direction; a body bounded to its own sheet can
+only grow along the sheet. So the knob that was reckless alone should be safe
+in company.
+
+On the comparable 34 it measured as the biggest gain of the lot — a full reach
+gave a median |log error| of **0.545** against 0.618 bounded-at-0.25 and 0.783
+before, with 16 inside 1.5x against 12 — and Blue Moon itself came out at 5.33,
+BELOW its 6.78 baseline.
+
+**`test_veins.py` refused it.** Two veins with barren ground between them, and
+anything above 0.25 of the reach puts 930 lattice points in the middle of that
+ground: the SHEETS bridge. The block bound cannot save that, because the blocks
+are bounded TO the sheet — if the sheet crosses barren rock the blocks follow
+it across. The extra tonnage the corpus rewarded was partly borrowed from
+between the veins, which is the exact failure the zone split exists to prevent.
+0.4 of the reach already fails; only 0.25 passes.
+
+**This is the counterpart to every "shipped on the mechanism" entry in this
+file.** A change that scores better by doing something indefensible is refused
+on the same grounds as a change that scores neutral while fixing something
+indefensible is accepted. What would work is an extrapolation bounded by the
+distance to the NEXT body — a sheet at the edge of a property runs on, a sheet
+facing its neighbour stops — and `MMP_VEINEXTRAP` is there to measure it.
 
 Three ways this fix was wrong before it was right, all of them silent:
 

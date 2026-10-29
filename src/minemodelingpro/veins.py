@@ -1295,7 +1295,21 @@ def _one(c, rot=None, aniso=None, reach=60.0, step=None, min_thick=0.3,
     # SIZE the lattice for a one-contact vein, so that a lone intercept came
     # back as a disc rather than as nothing; with three contacts required there
     # is always a real extent to size on, and that circle is gone.
-    out_m = float(reach) * float(extrap)
+    # How far the sheet may run past its outermost contact.
+    #
+    # 0.25 of the reach — about 15 m on a 60 m reach — against a filing that
+    # typically carries its own wireframe half a drill spacing or more. With
+    # the blocks bounded to this body (`MMP_BODYBOUND`) the model IS this
+    # surface, and it then lands at 0.708 of the filed tonnage, so the edges
+    # are where the remainder is.
+    #
+    # Raising it was measured as DANGEROUS once before and the warning stands
+    # for the case it was measured in: letting the style's reach set the
+    # ESTIMATOR's envelope put Blue Moon at 121x, because an unbounded envelope
+    # grows as a ball in every direction. A bounded body cannot do that — it can
+    # only grow along its own sheet — so the two changes are complements, and
+    # this knob is only safe in company.
+    out_m = float(reach) * _extrap(extrap)
     span_u = max(float(u.max() - u.min()), 2.0 * out_m)
     span_v = max(float(v.max() - v.min()), 2.0 * out_m)
     if step is None:
@@ -1352,7 +1366,7 @@ def _one(c, rot=None, aniso=None, reach=60.0, step=None, min_thick=0.3,
     dn[dn < 1e-9] = 1.0
     surround = np.linalg.norm((duv / dn).mean(1), axis=1)
     between = surround < 0.8
-    inside = (near <= reach) & (between | (near <= reach * float(extrap)))
+    inside = (near <= reach) & (between | (near <= reach * _extrap(extrap)))
     wt = 1.0 / (d * d + (step * 0.5) ** 2)
     wt[~np.isfinite(wt)] = 0.0
     ref = (wt * ww[i]).sum(1) / wt.sum(1)
@@ -1397,6 +1411,39 @@ def _one(c, rot=None, aniso=None, reach=60.0, step=None, min_thick=0.3,
             # naming this vein has to say to be worth reading
             "span_m": round(float(max(u.max() - u.min(), v.max() - v.min())), 1),
             "area_nodes": int(M.sum())}
+
+
+def _extrap(default=0.25):
+    """How far the sheet runs past its outermost contact, as a share of reach.
+
+    NOT raised, and the reason is a test rather than a score — which is the
+    whole point of having the test.
+
+    The reasoning for raising it was good: with the blocks bounded to the body
+    the model IS this surface, so the bounded model's shortfall is at the
+    edges, and a body bounded to its own sheet cannot balloon the way the
+    estimator's envelope did when it put Blue Moon at 121x. On the corpus that
+    held up — on the 34 projects where the filing and its drilling describe the
+    same rock, bounded with a full reach scored a median |log error| of 0.545
+    against 0.618 at 0.25, and Blue Moon itself sat at 5.33, below its 6.78
+    baseline.
+
+    And it is still wrong. `test_veins.py` pins two veins with barren ground
+    between them, and anything above 0.25 of the reach puts 930 lattice points
+    in the middle of that ground: THE SHEETS THEMSELVES BRIDGE. The block bound
+    cannot save that, because the blocks are bounded TO the sheet — if the
+    sheet crosses barren rock the blocks follow it across. So the extra tonnage
+    the corpus rewarded was partly borrowed from between the veins, which is
+    the exact failure the zone split exists to prevent.
+
+    The bound earns its place on its own (see `model3d.body_cells`); this does
+    not. What would is an extrapolation bounded by the distance to the NEXT
+    body — never more than part of the way to a neighbouring vein — so a sheet
+    at the edge of a property runs on and a sheet facing its neighbour stops.
+    `MMP_VEINEXTRAP` sets it for measuring that.
+    """
+    env = os.environ.get("MMP_VEINEXTRAP")
+    return float(env) if env else float(default)
 
 
 def _width_cap(t, stated=None, mult=2.5, share=0.10):

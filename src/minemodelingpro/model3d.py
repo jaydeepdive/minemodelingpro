@@ -108,7 +108,7 @@ _VIEWER_TMPL = os.path.join(_HERE, "model3d_viewer.html")
 #      isosurfaced, instead of triangulated: it uses the holes that cut nothing
 #      as evidence of where the body is not, and a shape that folds costs no
 #      more than a flat one. Halves the bodies that got no shape at all.
-MODEL_VERSION = 23
+MODEL_VERSION = 24
 # the most domain cells to send to a browser; beyond this the envelope is drawn
 # on a coarser lattice, which is a picture of the same shape
 BODY_MAX_CELLS = 120_000
@@ -478,9 +478,19 @@ def body_cells(dom, lo, bsz, dilate=1):
     c = np.floor((dom - np.asarray(lo, float)) / bsz).astype(np.int64)
     c = np.unique(c, axis=0)
     if dilate:
+        # One offset at a time, not all twenty-seven at once. Materialising the
+        # dilated set in one array is 27 copies of it before the unique, which
+        # on a large body is hundreds of megabytes and took the modeller out —
+        # and a build killed by the kernel reads from the page as a job that
+        # never ends.
         r = np.arange(-int(dilate), int(dilate) + 1)
         off = np.stack(np.meshgrid(r, r, r, indexing="ij"), -1).reshape(-1, 3)
-        c = np.unique((c[:, None, :] + off[None, :, :]).reshape(-1, 3), axis=0)
+        acc = c
+        for o in off:
+            if not o.any():
+                continue
+            acc = np.unique(np.concatenate([acc, c + o[None, :]]), axis=0)
+        c = acc
     origin = c.min(0)
     c = c - origin
     span = c.max(0) + 1
@@ -736,7 +746,7 @@ def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None,
     # along, which is the opposite of what a tabular deposit needs.
     bkeys = bspan = borigin = None
     bshield = None
-    if dom is not None and os.environ.get("MMP_BODYBOUND") == "on":
+    if dom is not None and os.environ.get("MMP_BODYBOUND") != "off":
         # ONLY the parts of the domain that are a surface. A body one or two
         # holes have seen comes back as the intercepts themselves, which is the
         # honest picture of it and the wrong thing to bound a block model to:
