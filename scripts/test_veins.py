@@ -342,5 +342,203 @@ if ob is not None:
 else:
     check("two veins passed together still model", False, "nothing built")
 
+
+# ---------------------------------------------------------------------------
+print("\n== a vein that bends is one vein, not four")
+# A single vein whose strike swings through a right angle, sampled as a
+# geologist would drill it. Plane fitting cannot hold this: each stretch of it
+# is planar, the whole of it is not, so `sheets` returns facets and each facet
+# is drawn as its own body with a gap where the bend is.
+rng = np.random.default_rng(7)
+t = np.linspace(0.0, 1.0, 46)
+# the spine in plan: a quarter turn, 400 m across
+sx = 400.0 * np.sin(t * np.pi / 2.0)
+sy = 400.0 * (1.0 - np.cos(t * np.pi / 2.0))
+W = 5.0
+mids, hws, fws = [], [], []
+for i in range(len(t)):
+    # across-vein normal: perpendicular to the spine, in plan (a steep vein)
+    dx = (sx[min(i + 1, len(t) - 1)] - sx[max(i - 1, 0)])
+    dy = (sy[min(i + 1, len(t) - 1)] - sy[max(i - 1, 0)])
+    L = (dx * dx + dy * dy) ** 0.5 or 1.0
+    nx, ny = -dy / L, dx / L
+    for z in (-40.0, -80.0, -120.0, -160.0):
+        # dip 75 degrees, so the vein leans as it goes down
+        lean = abs(z) / np.tan(np.radians(75.0))
+        c = np.array([sx[i] + nx * lean, sy[i] + ny * lean, z])
+        c = c + rng.normal(0.0, 0.8, 3)
+        mids.append(c)
+        hws.append(c - np.array([nx, ny, 0.0]) * W / 2.0)
+        fws.append(c + np.array([nx, ny, 0.0]) * W / 2.0)
+mid = np.asarray(mids)
+hw = np.asarray(hws)
+fw = np.asarray(fws)
+
+found, _left = VN.sheets(mid, hw, fw, reach=60.0)
+check("plane fitting breaks the bend into separate facets", len(found) >= 2,
+      len(found))
+joined = VN._rejoin(found, mid, hw, fw)
+check("and the facets are put back together as one vein",
+      len(joined) < len(found), (len(found), len(joined)))
+big = max(joined, key=lambda f: len(f["ix"]))
+check("the rejoined vein is described by a spine, not a plane",
+      big.get("unroll") is not None)
+check("and it holds most of the contacts rather than a corner of them",
+      len(big["ix"]) >= 0.6 * len(mid), (len(big["ix"]), len(mid)))
+check("MMP_VEINJOIN=off puts the old behaviour back",
+      len(VN._rejoin(found, mid, hw, fw)) == len(joined))
+
+# ---------------------------------------------------------------------------
+print("\n== two crossing veins are NOT welded into one")
+# The same mechanism must refuse the case it is not for. Two straight veins
+# that cross at a steep angle are two bodies, and a spine through both of them
+# describes neither.
+def sheet(strike_deg, off, n=26):
+    s = np.radians(strike_deg)
+    u = np.array([np.cos(s), np.sin(s), 0.0])
+    nn = np.array([-np.sin(s), np.cos(s), 0.0])
+    P, H, Fw = [], [], []
+    for a in np.linspace(-220.0, 220.0, n):
+        for z in (-40.0, -90.0, -140.0):
+            c = u * a + nn * off + np.array([0.0, 0.0, z])
+            c = c + rng.normal(0.0, 0.8, 3)
+            P.append(c); H.append(c - nn * 2.5); Fw.append(c + nn * 2.5)
+    return np.asarray(P), np.asarray(H), np.asarray(Fw)
+
+pa, ha, fa = sheet(10.0, 0.0)
+pb, hb, fb = sheet(80.0, 0.0)
+mid2 = np.vstack([pa, pb]); hw2 = np.vstack([ha, hb]); fw2 = np.vstack([fa, fb])
+# which vein each contact really came from, so a weld can be caught by name
+src = np.concatenate([np.zeros(len(pa), int), np.ones(len(pb), int)])
+f2, _l2 = VN.sheets(mid2, hw2, fw2, reach=60.0)
+if len(f2) >= 2:
+    j2 = VN._rejoin(f2, mid2, hw2, fw2)
+    # The claim is not that the facet count is unchanged — `sheets` splits one
+    # of these veins into two bedding-like slices and putting THOSE back
+    # together is the right answer. The claim is that no body ends up holding
+    # both veins, which is what welding across a crossing would look like.
+    mixed = []
+    for f in j2:
+        t = src[np.asarray(f["ix"])]
+        a_n, b_n = int((t == 0).sum()), int((t == 1).sum())
+        if min(a_n, b_n) > 0.1 * max(a_n, b_n):
+            mixed.append((a_n, b_n))
+    check("no body holds contacts from both crossing veins", not mixed, mixed)
+    check("and both veins are still present as bodies of their own",
+          len(j2) >= 2, len(j2))
+else:
+    check("two crossing veins are found as separate sheets", False, len(f2))
+
+# ---------------------------------------------------------------------------
+print("\n== noise is not reassembled into a vein")
+# The merge bar scales off each facet's own residual, which is right — a vein's
+# contacts are held in multiples of its width, not in metres — but a RELATIVE
+# bar alone lets sloppy facets license a sloppy merge. A flexible spine fits
+# Gaussian noise better than a plane does, and 24 slivers cut from a formless
+# cloud duly merged into one body before the absolute guard went in.
+rngz = np.random.default_rng(13)
+cloud = rngz.normal(0.0, 120.0, (900, 3))
+slivers = [{"ix": np.arange(i * 25, (i + 1) * 25),
+            "normal": VN._unit(rngz.normal(0.0, 1.0, 3)),
+            "dip": 70.0, "dip_dir": 100.0} for i in range(34)]
+kept = VN._rejoin(slivers, cloud, cloud - 0.5, cloud + 0.5)
+check("slivers of a formless cloud are not merged into one vein",
+      len(kept) == len(slivers), (len(slivers), len(kept)))
+check("and the pass stays bounded past the facet cap",
+      VN.REJOIN_MAX <= 32, VN.REJOIN_MAX)
+
+# ---------------------------------------------------------------------------
+print("\n== the spine is compared with the plane in the same units")
+# `_spine_sheet` measures the plane's residual PERPENDICULAR to the plane and
+# the spine's HORIZONTALLY across it. For a body dipping d those differ by
+# 1/sin(d), and comparing them raw penalised the spine by that factor: on a
+# 23-degree body the spine was recorded as 75% worse than the plane when it is
+# in fact a third as far out. A flat-lying vein is the extreme case.
+flat_dip = 25.0
+P3, H3, F3 = [], [], []
+for a in np.linspace(-200.0, 200.0, 40):
+    for b in np.linspace(-60.0, 60.0, 5):
+        z = -b * np.tan(np.radians(flat_dip))
+        c = np.array([a, b, z]) + rng.normal(0.0, 0.6, 3)
+        P3.append(c); H3.append(c - [0, 0, 2.0]); F3.append(c + [0, 0, 2.0])
+P3 = np.asarray(P3)
+nrm3 = np.linalg.svd(P3 - P3.mean(0), full_matrices=False)[2][2]
+dip3, _dd3 = VN.dip_of(nrm3)
+un3 = VN.Unrolled(P3)
+_u3, _v3, w3 = un3.to_uvw(P3)
+perp = float(np.percentile(np.abs((P3 - P3.mean(0)) @ nrm3), 90))
+horiz = float(np.percentile(np.abs(w3), 90))
+conv = horiz * float(np.sin(np.radians(dip3)))
+check("a horizontal offset is larger than the perpendicular one it stands for",
+      horiz > perp, (round(horiz, 1), round(perp, 1)))
+check("and converting it by the dip brings the two into the same units",
+      abs(conv - perp) < max(0.5 * perp, 1.0),
+      (round(conv, 1), round(perp, 1), round(dip3, 1)))
+
+
+# ---------------------------------------------------------------------------
+print("\n== a flat-lying body is draped on its own surface, not flattened")
+# The mirror of the spine. A horizontal offset from a bedding-parallel horizon
+# is a distance ALONG it, so the spine's across-coordinate is meaningless here
+# and its dip gate refused these bodies outright — leaving a fold fitted to a
+# plane. Draping measures the offset VERTICALLY instead.
+rng = np.random.default_rng(11)
+nb = 320
+bx = rng.uniform(-400.0, 400.0, nb)
+by = rng.uniform(-200.0, 200.0, nb)
+
+# 1. a tilted bed must reduce to the plane exactly, or the construction is
+#    buying its fold by giving up the dip
+tilt = np.column_stack([bx, by, -250.0 + 0.30 * bx + 0.10 * by])
+dr = VN.Draped(tilt)
+_tu, _tv, tw = dr.to_uvw(tilt)
+check("a tilted bed has no departure from its own draped horizon",
+      float(np.abs(tw).max()) < 1e-6, round(float(np.abs(tw).max()), 6))
+
+# 2. a folded bed: the drape has to beat the plane by a clear margin
+fold = np.column_stack([bx, by, -250.0 + 0.10 * bx + 90.0 * np.sin(bx / 180.0)
+                        + rng.normal(0.0, 1.0, nb)])
+nf = VN._unit(np.linalg.svd(fold - fold.mean(0), full_matrices=False)[2][2])
+perp = float(np.percentile(np.abs((fold - fold.mean(0)) @ nf), 90))
+dr2 = VN.Draped(fold)
+_fu, _fv, fw2 = dr2.to_uvw(fold)
+vert = float(np.percentile(np.abs(fw2), 90))
+check("a folded bed sits far from any one plane",
+      perp > 10.0, round(perp, 1))
+check("and close to its draped horizon", vert < 0.4 * perp,
+      (round(vert, 1), round(perp, 1)))
+
+# 3. the coordinates have to be invertible, or the builder cannot map a lattice
+#    node back to the ground
+back = dr2.to_world(_fu, _fv, fw2)
+check("draped coordinates round trip",
+      float(np.abs(back - fold).max()) < 1e-6,
+      round(float(np.abs(back - fold).max()), 6))
+
+# 4. the horizon's normal carries the tilt. A bed offset VERTICALLY by its true
+#    width is thicker than its width by 1/cos(dip), so a vertical normal draws
+#    a dipping bed too thick.
+nn = dr.normals(np.zeros(3))
+check("the draped normal is the horizon's, not vertical",
+      abs(float(nn[0][2])) < 0.999, np.round(nn[0], 3).tolist())
+
+# 5. and the router: a flat group is draped where a steep one is unrolled
+hwb = fold - np.array([0.0, 0.0, 1.5])
+fwb = fold + np.array([0.0, 0.0, 1.5])
+got_flat = VN._spine_sheet(fold, hwb, fwb)
+check("the spine refuses a flat-lying body", got_flat is None)
+got_drape = VN._drape_sheet(fold, hwb, fwb)
+check("and the drape takes it", got_drape is not None)
+if got_drape is not None:
+    check("reporting it as draped", bool(got_drape[1].get("draped")))
+    check("and it is a Draped frame, not a spine",
+          isinstance(got_drape[1].get("unroll"), VN.Draped))
+# the reverse: a steep body is not draped
+steep = np.column_stack([bx, by, bx * 4.0 + rng.normal(0.0, 1.0, nb)])
+check("the drape refuses a steep body",
+      VN._drape_sheet(steep, steep - [0, 0, 1.5], steep + [0, 0, 1.5]) is None)
+check("MMP_VEINDRAPE=off puts the old behaviour back",
+      VN._drape_sheet(fold, hwb, fwb) is not None)
+
 print("\n%d passed, %d failed" % (len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

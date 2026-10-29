@@ -108,7 +108,7 @@ _VIEWER_TMPL = os.path.join(_HERE, "model3d_viewer.html")
 #      isosurfaced, instead of triangulated: it uses the holes that cut nothing
 #      as evidence of where the body is not, and a shape that folds costs no
 #      more than a flat one. Halves the bodies that got no shape at all.
-MODEL_VERSION = 21
+MODEL_VERSION = 22
 # the most domain cells to send to a browser; beyond this the envelope is drawn
 # on a coarser lattice, which is a picture of the same shape
 BODY_MAX_CELLS = 120_000
@@ -1734,6 +1734,18 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                         e["dip"], e["dip_dir"] = q.get("dip"), q.get("dip_dir")
                     if q.get("closed_by"):
                         e["closed_by"] = int(q["closed_by"])
+                    # how the body was described, so a reader can tell a vein
+                    # drawn flat from one followed round its own bend
+                    if q.get("unrolled"):
+                        e["unrolled"] = True
+                    if q.get("planar") is not None:
+                        e["planar"] = q.get("planar")
+                    # and whether plane-fitting had split it into stretches
+                    # that one curved sheet turned out to hold
+                    if q.get("rejoined"):
+                        e["rejoined"] = int(q["rejoined"])
+                    if q.get("draped"):
+                        e["draped"] = True
                     c = centres.get(e["id"])
                     if c is not None:
                         e["centre"] = [round(float(x), 1) for x in c]

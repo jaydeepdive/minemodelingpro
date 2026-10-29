@@ -525,6 +525,69 @@ def _fill_triangle(P, W, step, layers, normal):
     return (base[None, :, :] + off).reshape(-1, 3)
 
 
+def _describe(info, V, F, hw, fw, IMP):
+    """Per-vein metadata from the isosurface, in the shape the page expects.
+
+    The planar builder had to find the veins before it could draw them, by
+    fitting planes — which is exactly what a vein that swings in strike
+    defeats. Here the drawing comes first and the veins fall out of it as the
+    connected pieces of the surface, each with its own attitude measured from
+    its own faces. The page keeps its per-vein chips, its attitudes and its
+    contact grouping; only the way they were arrived at has changed.
+    """
+    try:
+        lab = IMP.components(F, len(V))
+        order = np.argsort(lab, kind="stable")
+        F2, lab = np.asarray(F)[order], lab[order]
+        info["_mesh"] = (V, F2)
+        info["_face_vein"] = lab.astype(np.int32)
+        parts, cmid = [], []
+        for k in np.unique(lab):
+            sub = F2[lab == k]
+            dip, ddir, flat = IMP.attitude(V, sub)
+            vid = np.unique(sub)
+            pts_k = V[vid]
+            span = float(np.linalg.norm(pts_k.max(0) - pts_k.min(0)))
+            parts.append({"vein": int(k), "faces": int(len(sub)),
+                          "span_m": round(span, 1), "dip": dip, "dip_dir": ddir,
+                          "planar": flat})
+            cmid.append(pts_k.mean(0))
+        # each wall pair belongs to the piece of surface nearest it, and the
+        # vein's thickness is what those intercepts measured, not the lattice
+        if len(hw) and parts:
+            from scipy.spatial import cKDTree
+            mid = (hw + fw) / 2.0
+            owner = np.zeros(len(mid), np.int32)
+            byv = {}
+            for n, q in enumerate(parts):
+                byv[q["vein"]] = n
+            vid_all = [np.unique(F2[lab == k]) for k in np.unique(lab)]
+            trees = [cKDTree(V[v]) for v in vid_all]
+            d = np.stack([t.query(mid)[0] for t in trees], axis=1)
+            owner = np.argmin(d, axis=1).astype(np.int32)
+            info["_contact_vein"] = owner
+            for n, q in enumerate(parts):
+                m = owner == n
+                if not m.any():
+                    continue
+                R = IMP.plane_frame(np.asarray([0.0, 0.0, 1.0]) if q["dip"] is None
+                                    else _normal_of(q["dip"], q["dip_dir"]))
+                t = np.abs((fw[m] - hw[m]) @ R[2])
+                q["n_contacts"] = int(m.sum())
+                q["thick_m"] = round(float(np.median(t)), 2)
+        info["_vein_parts"] = parts
+        info["veins"] = len(parts)
+    except Exception:
+        info.pop("_face_vein", None)
+        info.pop("_contact_vein", None)
+
+
+def _normal_of(dip, dip_dir):
+    """The upward normal of a plane with this attitude."""
+    d, a = np.radians(float(dip)), np.radians(float(dip_dir))
+    return np.array([np.sin(a) * np.sin(d), np.cos(a) * np.sin(d), np.cos(d)])
+
+
 def _implicit(pts, g, hid, threshold, rot, aniso, reach, step, info,
               segments=None, at=None, traces=None, max_points=600_000,
               max_faces=None):
@@ -550,13 +613,15 @@ def _implicit(pts, g, hid, threshold, rot, aniso, reach, step, info,
         if len(inside) < 6 or len(holes) < 3:
             return None
         contacts = np.zeros((0, 3))
+        hw = fw = np.zeros((0, 3))
         if segments is not None and at is not None:
             try:
                 from minemodelingpro import veins as VEIN
                 c = VEIN.contacts(segments, at, threshold)
                 if len(c["mid"]):
-                    contacts = np.vstack([np.asarray(c["hw"], float),
-                                          np.asarray(c["fw"], float)])
+                    hw = np.asarray(c["hw"], float)
+                    fw = np.asarray(c["fw"], float)
+                    contacts = np.vstack([hw, fw])
             except Exception:
                 contacts = np.zeros((0, 3))
         outside = np.zeros((0, 3))
@@ -585,6 +650,10 @@ def _implicit(pts, g, hid, threshold, rot, aniso, reach, step, info,
         if len(contacts):
             h = len(contacts) // 2
             info["_contacts"] = (contacts[:h], contacts[h:])
+        # The veins are the pieces the surface came out in. Nothing had to
+        # decide how many there are or fit a plane to each: a body that folds
+        # is one piece, and two bodies the data keeps apart are two.
+        _describe(info, V, F, hw, fw, IMP)
         # the estimator wants the inside of the body, not its skin
         S = _inside_points(V, F, inside, float(out["step_m"]))
         if len(S) > max_points:
@@ -653,10 +722,18 @@ def wireframe(pts, g, hid, threshold, rot=None, aniso=None, reach=120.0, step=8.
     # survive a Delaunay circumradius test. See veins.py for the measurement
     # that made this necessary. MMP_DOMAIN=alpha restores the triangulation.
     mode = os.environ.get("MMP_DOMAIN", "")
-    # A VEIN first, where the body is one: that path carries each vein's own
-    # attitude, its wall contacts and the pinch-out, and a reader can take the
-    # veins apart one at a time. Nothing else models a tabular body as well.
-    if segments is not None and at is not None and mode not in ("alpha", "implicit"):
+    # A TABULAR body leads with the vein builder, and this is a measurement,
+    # not a preference. A vein is represented there as a reference surface plus
+    # a THICKNESS — a value, not a geometry — so a 5 m vein is resolved on any
+    # lattice. The field has to resolve it geometrically, and on Lawyers it ran
+    # at a grid step of 5 to 11.5 m against veins measuring about 5 m: one cell
+    # thick, which marching cubes turns into fragments. Letting the field lead
+    # there gave 54 pieces with scattered attitudes where the vein builder gave
+    # 23 coherent ones dipping consistently 220 to 260. Refining the grid is no
+    # answer: that body at 1 m cells is 36 million of them, and the modeller has
+    # 1 GB. This is why vein modelling software keeps a dedicated vein type
+    # rather than treating a vein as one more implicit surface.
+    if segments is not None and at is not None and mode != "alpha":
         got = _vein(segments, at, threshold, rot, aniso, reach, thickness, info,
                     vein_nodes, max_points, vein_reach, style, traces)
         if got is not None:
@@ -671,7 +748,7 @@ def wireframe(pts, g, hid, threshold, rot=None, aniso=None, reach=120.0, step=8.
     # down to 668. MMP_DOMAIN=alpha restores the triangulation everywhere.
     # MMP_DOMAIN=vein stops here and falls through to the triangulation, which
     # is what shipped before the field builder existed — the control arm.
-    if mode not in ("alpha", "vein"):
+    if mode != "alpha":
         got = _implicit(pts, g, hid, threshold, rot, aniso, reach, step,
                         info, segments, at, traces, max_points,
                         max_faces=face_budget)

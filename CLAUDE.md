@@ -1574,6 +1574,185 @@ layer beside the block model; (2) read anomaly and conductor TABLES out of
 reports where they exist as tables; (3) only then consider using it as a soft
 constraint on the domain. Do not promise inversion of a published map image.
 
+## A vein that bends, and a bed that folds (2026-10-28)
+
+Jordan: "veins are rarely perfectly straight in any plane. They pinch, swell,
+twist and turn" and "we need to improve our modeling on *all* deposit models,
+not just veins".
+
+The spine builder existed and **never once fired on real drilling** while
+beating a plane easily on synthetic vertical veins. Two arithmetic faults, both
+measured, both charging a vein for having a dip.
+
+**1. The spine was a VERTICAL CURTAIN.** `Unrolled`'s across-coordinate was the
+horizontal offset from a curtain hung through the spine, so a dipping vein's own
+lean counted as a departure from its own surface. On a vein bent through a right
+angle at 75 degrees the offset reads 17.9 m, of which **16.7 m is the vein
+hanging over as it goes down** and 3.2 m is a real departure; at 60 degrees it is
+38.4 m against a true 11.8 m. The fitted lean matches 1/tan(dip) to two
+decimals, so it is the dip and nothing else. `Unrolled` now fits that lean and
+takes it out, keeps the coordinates invertible (round trip median 0.000 m), and
+`normals()` returns the leaning sheet's own normal rather than a horizontal one.
+
+**2. The spine and the plane were compared in different units.** The plane's
+residual is measured PERPENDICULAR to it, the spine's HORIZONTALLY across it,
+and for a body dipping d those differ by 1/sin(d). So the spine was penalised
+for the dip a second time: on a 23-degree body it was recorded as 75% worse than
+the plane when it is in fact a third as far out. Both call sites now convert
+before comparing, and `test_veins.py` pins the conversion.
+
+With those fixed, three things work that did not.
+
+**`_rejoin` — the facets of one bending vein are put back together.** `sheets`
+finds planes, and a vein that bends is not one plane, so it came back as several
+— each piece trivially planar, each drawn as its own body, the bend showing as a
+gap between two sheets that in the ground are continuous. Measured over 16
+drilled vein properties, **4 of the 16 components holding two or more steep
+facets were one vein cut up this way** (los-ricos-south 4 facets over 459 m of
+strike with 19 m of across-strike spread; el-tigre 3 over 463 m with none); the
+other 11 were genuine stockwork and stay apart. The test is NOT attitude
+agreement — two facets of a near-vertical vein can report dip directions 144
+degrees apart, because the dip direction of a 90-degree body is arbitrary, so
+comparing attitudes rejects exactly the cases this is for. Instead the contacts
+are pooled, a spine is run through them, and the merge is kept only if every
+pooled contact still sits about as close to that one curved sheet as it did to
+its own plane. El Tigre: **34 facets -> 23 veins**, including a 756 m vein from 4
+pieces and a 523 m vein from 8. Lawyers, which the signature calls stockwork,
+joins nothing: 15 facets in, 15 out.
+
+- The bar is relative (multiples of the vein's own width) AND absolute
+  (`ACROSS_WIDTHS` of it), because a relative bar alone lets sloppy facets
+  license a sloppy merge: **24 slivers cut from Gaussian noise merged into one
+  body** before the absolute guard, since a flexible spine fits noise better
+  than a plane does. Pinned in a test.
+- Bounded at `REJOIN_MAX` (24) facets with pair results memoised — the pass is
+  quadratic per round and fits a frame per test. A component with thirty facets
+  is a stockwork, which is the case this declines anyway.
+
+**`Draped` — a flat-lying body is drawn as its own folded horizon.** A
+horizontal offset from a bedding-parallel horizon is a distance ALONG it, not
+across it, which is why the spine has a dip gate and why a fold was fitted to a
+plane however hard it folds. Three of Lawyers' contact groups dip 21.9, 23.3 and
+14.8 degrees and every one was refused for being too flat; Langis's veins dip 4,
+21 and 32. `Draped` is the mirror construction: plan position along the body,
+and the offset VERTICAL. The tilt is fitted as a plane and only the departure
+interpolated, so **a tilted bed is reproduced exactly** (max offset 0.000 m —
+interpolating the elevations directly would flatten the bed toward its own mean
+beyond the last hole, losing the dip where the body is being carried) and a fold
+of any shape is captured by the residual. On a bed folded 90 m over 400 m the
+plane residual is 23.7 m and the draped 4.2 m. The dip now ROUTES between the
+two — spine for steep, drape for flat — instead of one of them refusing the
+group. Langis's 43-hole horizon at 2.8 degrees comes through draped, plane
+residual 3.1 m -> 1.3 m.
+
+**`BEDDED` — the stratiform styles reach the sheet branch at all.** The branch
+was gated on `TABULAR`, and TABULAR means vein-like, so **iron formation,
+laterite and sedimentary phosphate** — stratiform by definition, bodies that ARE
+a surface with a thickness on it — took the proximity path and were drawn as
+blobs with one global frame. `SHEETED = TABULAR + BEDDED` routes them.
+
+### Measured against the filed statements
+
+76 projects with a statement, same projects each arm, three arms
+(`MMP_VEINLEAN=off`/`MMP_VEINJOIN=off` restore the old behaviour):
+
+| | median ratio | med abs log err | within 2x | worse than 10x |
+|---|---|---|---|---|
+| before | 0.810 | 1.098 | 25 | 18 |
+| + de-leaned spine | 0.810 | 1.098 | 25 | 18 |
+| + facets rejoined | 0.810 | 1.098 | 25 | 18 |
+
+**Identical, no Blue Moon, and one project moved at all** — bandeira-lth
+4.332 -> 4.295, closer to its filing. Triangles 316,183 -> 307,920.
+
+**Tonnage-neutral is the expected result and not the point.** What changed is
+the SHAPE: a 756 m vein instead of four disconnected sheets is the same rock
+described correctly, and tonnage cannot see that. Spot-checked against shipping
+code, every project that moved moved toward its filing, with large triangle
+reductions at essentially unchanged tonnage — the same body as continuous sheets
+rather than fragments, which is a payload win too:
+
+      bandeira-lth   (pegmatite) 4.332 -> 4.295   tris  3,221 ->    334
+      beatons-creek  (orogenic)  0.863 -> 0.874   tris  9,042 ->  5,218
+      akie           (sedex)     1.485 -> 1.479   tris  4,233 ->  4,213
+      cassiar        (vein)      2.446 -> 2.430   tris 40,364 -> 17,584
+      el-tigre       (vein)   2319.3   -> 2316.5  tris 26,664 -> 21,426
+
+Bedded styles on their own population (7 with a statement,
+`MMP_VEINBED=off` + `MMP_VEINDRAPE=off` is the control):
+
+| | median ratio | med abs log err | within 2x |
+|---|---|---|---|
+| before | 0.550 | 1.273 | 2/7 |
+| bedded | **0.643** | 1.273 | 2/7 |
+
+Adumbi 0.550 -> 0.654, B-Gin-Lamarche 2.555 -> 2.534 with **two draped horizons
+and FEWER triangles** (9,822 -> 8,228), Alliance's body restored from 2
+triangles to 16. Nothing moved the wrong way. MODEL_VERSION 22.
+
+The viewer's vein chips now say which description was used — "folded",
+"curved", "N stretches joined" — because a vein followed round its bend is a
+different claim from one flattened onto a plane, and a reader should be able to
+tell.
+
+### Tested and NOT shipped: a search frame that varies through the deposit
+
+This is the "trend that warps the interpolation rather than only stretching the
+search" named as a direction to borrow from Leapfrog, and the first half of it
+checks out. `implicit.trend()` reads a frame per neighbourhood off the
+mineralised samples, and measured on 14 drilled properties the local
+across-body direction sits a **median of 50 to 71 degrees** off the global one —
+porphyry 68, bulk 71, orogenic 66, skarn 60, vein 50 — with the local
+neighbourhoods themselves tightly planar (third singular value 0 to 3 per cent
+of the first), so the orientation is well determined locally and genuinely
+different from place to place. One global ellipsoid really is searching ACROSS
+the body in one half of a deposit and ALONG it in the other.
+
+**It makes no difference to the surface, and that is the finding.** On a thick
+folded body — 60 m between walls, folded +-140 m, drilled on a grid, which is
+what the non-tabular styles look like — the built surface sits this far from the
+true margin:
+
+      trend off, walls inferred   median 1.07 m   p90 8.17 m
+      trend on,  walls inferred   median 1.05 m   p90 8.93 m
+      trend off, walls stated     median 1.30 m   p90 8.07 m
+      trend on,  walls stated     median 1.13 m   p90 8.92 m
+
+All four agree. A signed-DISTANCE field barely cares which way the search points
+because the values it interpolates are **already geometric**; the frame's
+orientation matters to a GRADE estimate, where the value really does vary along
+the structure. `model3d.estimate_blocks` is where a trend would pay, and that is
+the tonnage path, so it needs its own corpus run before it goes near a default.
+
+Two things were tried on the way and are kept behind flags with their
+measurements, so neither gets re-derived from scratch:
+
+- **`MMP_TREND=on`** — the varying frame above. Also worth knowing: given the
+  CORRECT frame, the old estimator got *worse*, which is informative. Inverse
+  distance cannot extrapolate past the range of its own data, so on the outward
+  side of a wall every constraint in reach is ore (negative) or contact (zero)
+  and the field has nothing positive to cross. What placed the wall was far
+  barren samples being pulled in by a frame that does NOT suppress the
+  across-body direction — a node 20 m outside the wall had 3 barren samples
+  among its nearest sixteen globally and **none** locally, so the field stayed
+  negative out to 25 m and the surface drew itself 15.7 m off its contacts.
+- **`MMP_WALLSIDE=on`** — offset constraints a short step beyond each logged
+  wall, positive, which is how implicit modelling states a contact whose sense
+  it knows. It fixes the above in principle and buys nothing measurable (table
+  above). On a vein it cannot help at all: **a 4.8 m vein against a 6 m
+  smoothing length is below the lattice's resolution** whatever constraints it
+  is given, which is why a vein goes through `veins.py` and not through the
+  field.
+- **`MMP_BARRENBOUND=on`** — the barren drilling bounding the body
+  geometrically (`F >= -distance to nearest barren sample`) rather than by
+  interpolation weight. Correct and only ever subtracts, so it needs its own
+  tonnage run before it ships.
+
+**The general lesson, and it cost most of a day: when two residuals are
+compared, check they are the same KIND of distance.** Perpendicular against
+horizontal, and horizontal against vertical, are the two mistakes here, and
+each one hid a working mechanism behind a number that said it did not work.
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.

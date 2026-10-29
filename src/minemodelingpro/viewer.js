@@ -755,6 +755,9 @@ function drawVeins(){
     // the vein's own attitude, where it was found as a plane through the
     // contacts rather than assumed from the shape of the drilled ground
     if(q.dip!=null)bits.push(Math.round(q.dip)+"° / "+String(Math.round(q.dip_dir)).padStart(3,"0"));
+    if(q.rejoined>1)bits.push(q.rejoined+" stretches joined");
+    else if(q.draped)bits.push("folded");
+    else if(q.unrolled)bits.push("curved");
     return `Vein ${n}${bits.length?` <small style="opacity:.72">· ${bits.join(" · ")}</small>`:""}`;};
   const head=curZone?`Veins in this body · ${mine.length}`
     :(mine.length>VEIN_CHIP_CAP?`Veins · ${mine.length}, ${VEIN_CHIP_CAP} largest`
@@ -766,6 +769,15 @@ function drawVeins(){
       const why="Drawn on its own, with the wall contacts it was fitted through."
         +(q.dip!=null?` Dips ${Math.round(q.dip)}° toward ${Math.round(q.dip_dir)}°, `
           +`measured from those contacts.`:"")
+        // how the body was described matters to a reader: a vein followed round
+        // its own bend is a different claim from one flattened onto a plane
+        +(q.draped?` Drawn as a folded horizon rather than flattened onto a `
+          +`plane, so where the bed rolls the shape rolls with it.`
+          :q.unrolled?` Followed round its own bend rather than flattened onto a `
+          +`plane, so where it twists in strike the shape follows it.`
+          :` Described as a plane, which its contacts fit.`)
+        +(q.rejoined>1?` Put back together from ${q.rejoined} stretches that `
+          +`plane-fitting had split, because one curved sheet holds them all.`:"")
         +(q.closed_by?` Closed off where ${q.closed_by} hole${q.closed_by===1?"":"s"} `
           +`went through it and cut nothing.`:"");
       return `<button class="chip${curVein===v.id?" on":""}" data-v="${v.id}" `
