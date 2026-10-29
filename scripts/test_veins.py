@@ -540,5 +540,49 @@ check("the drape refuses a steep body",
 check("MMP_VEINDRAPE=off puts the old behaviour back",
       VN._drape_sheet(fold, hwb, fwb) is not None)
 
+
+# ---------------------------------------------------------------------------
+print("\n== a vein keeps its pinch and swell")
+# Thickness is not a constant. A vein narrows and widens along strike and down
+# dip, and one side can be closing while the other opens, so the SPREAD of its
+# intercept widths is part of the measurement. The old ceiling was three times
+# a single number out of the report's prose, and where the prose sat below the
+# drilling it flattened every intercept to itself: at Avino the core measures
+# 3.00 to 13.20 m and all EIGHTEEN intercepts came back as 3.00 m.
+avino = np.array([3.0, 7.88, 7.88, 13.2])          # measured, with the prose at 1-3 m
+cap_a = VN._width_cap(avino, 3.0)
+check("the prose cannot pull the ceiling under the drilling",
+      cap_a is None or cap_a >= avino.max(), cap_a)
+check("so a vein that swells fourfold keeps every intercept",
+      cap_a is None or int((avino > cap_a).sum()) == 0,
+      int((avino > cap_a).sum()) if cap_a else 0)
+
+# but a hole drilled down the dip of a vein is not a thickness, and one of
+# those among nine still has to go
+dipped = np.array([4.14, 20.0, 30.0, 43.53, 50.0, 55.0, 60.0, 70.0, 152.05])
+cap_d = VN._width_cap(dipped, 36.0)
+check("a hole down the dip is still rejected", cap_d is not None and cap_d < 152.0,
+      round(cap_d, 1) if cap_d else None)
+check("and only that one is trimmed", cap_d is not None and int((dipped > cap_d).sum()) == 1,
+      int((dipped > cap_d).sum()) if cap_d else None)
+
+# the guard: a ceiling that would take a large share is describing the vein
+grading = np.array([2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0, 12.0])
+cap_g = VN._width_cap(grading, 2.0)
+check("a vein that doubles along its length is left alone",
+      cap_g is None or int((grading > cap_g).sum()) == 0,
+      int((grading > cap_g).sum()) if cap_g else 0)
+# counting intercepts rather than their share is what makes the small-body case
+# work: a share alone gives up on nine intercepts where one is bad
+nine = np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 400.0])
+cap_n = VN._width_cap(nine, None)
+check("one bad hole in nine is trimmed rather than tolerated",
+      cap_n is not None and int((nine > cap_n).sum()) == 1,
+      (round(cap_n, 2) if cap_n else None,
+       int((nine > cap_n).sum()) if cap_n else None))
+check("too few intercepts to judge falls back to the stated width",
+      VN._width_cap(np.array([2.0, 9.0]), 4.0) == 4.0,
+      VN._width_cap(np.array([2.0, 9.0]), 4.0))
+
 print("\n%d passed, %d failed" % (len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

@@ -108,7 +108,7 @@ _VIEWER_TMPL = os.path.join(_HERE, "model3d_viewer.html")
 #      isosurfaced, instead of triangulated: it uses the holes that cut nothing
 #      as evidence of where the body is not, and a shape that folds costs no
 #      more than a flat one. Halves the bodies that got no shape at all.
-MODEL_VERSION = 22
+MODEL_VERSION = 23
 # the most domain cells to send to a browser; beyond this the envelope is drawn
 # on a coarser lattice, which is a picture of the same shape
 BODY_MAX_CELLS = 120_000
@@ -458,8 +458,141 @@ def anisotropy(pts, g, ratios, trend=None):
         return None, None
 
 
+def body_cells(dom, lo, bsz, dilate=1):
+    """The block cells the modelled body itself occupies, as sorted keys.
+
+    The bound stated at the grid's own resolution, which is the only way it can
+    be both tight and safe. A distance test cannot be: the wireframe fills the
+    body on its own in-plane lattice, so any tolerance loose enough to keep a
+    body's interior blocks is loose enough to admit blocks well outside it —
+    bounding a 3 m vein that way left it 56 m thick, because the tolerance it
+    needed ALONG the body became its tolerance ACROSS it.
+
+    A cell either holds part of the body or it does not. `dilate` grows the set
+    by one cell in each direction so a block whose centre falls just outside a
+    body thinner than the block is not lost, which is the one thing a
+    rasterisation can get wrong.
+    """
+    dom = np.asarray(dom, float)
+    bsz = np.asarray(bsz, float)
+    c = np.floor((dom - np.asarray(lo, float)) / bsz).astype(np.int64)
+    c = np.unique(c, axis=0)
+    if dilate:
+        r = np.arange(-int(dilate), int(dilate) + 1)
+        off = np.stack(np.meshgrid(r, r, r, indexing="ij"), -1).reshape(-1, 3)
+        c = np.unique((c[:, None, :] + off[None, :, :]).reshape(-1, 3), axis=0)
+    origin = c.min(0)
+    c = c - origin
+    span = c.max(0) + 1
+    keys = c[:, 0] * (span[1] * span[2]) + c[:, 1] * span[2] + c[:, 2]
+    return np.sort(keys), span, origin
+
+
+def _cell_keys(fine, origin, span):
+    """Block indices as the same int64 keys, with -1 for cells off the body's
+    own lattice so they can never match."""
+    f = np.asarray(fine, np.int64) - np.asarray(origin, np.int64)
+    bad = np.any((f < 0) | (f >= np.asarray(span, np.int64)), axis=1)
+    k = f[:, 0] * (span[1] * span[2]) + f[:, 1] * span[2] + f[:, 2]
+    k[bad] = -1
+    return k
+
+
+def trend_metrics(pts, g, rot, aniso):
+    """A search metric per neighbourhood, instead of one for the whole deposit.
+
+    The search ellipsoid is oriented by the principal axes of the whole
+    mineralised cloud, once. That is right for a slab and wrong for anything
+    that bends, and the error is not small: measured on 14 drilled properties
+    the local across-body direction sits a median of 50 to 71 degrees off the
+    global one, with the local neighbourhoods themselves tightly planar. One
+    ellipsoid is therefore searching ACROSS the body in one half of a deposit
+    and ALONG it in the other.
+
+    For a SURFACE that turned out not to matter — a signed-distance field
+    interpolates geometry, so it barely cares which way the search points
+    (`implicit.py` has that measurement). For a GRADE it matters a great deal,
+    because the value really does vary along the structure. Measured at real
+    block centres, the share of each block's own neighbours that changes tracks
+    how anisotropic the style is:
+
+        porphyry (1.00, 0.96, 0.90)   overlap 1.00   median grade change  0.9%
+        skarn    (1.00, 0.92, 0.75)   overlap 0.85                        4.9%
+        sedex    (1.00, 0.95, 0.45)   overlap 0.71                       10.0%
+        vein     (1.00, 0.90, 0.22)   overlap 0.26                       53.9%
+
+    On a vein three quarters of each block's neighbour set changes. The mean
+    grade moves 3%, so this is a REDISTRIBUTION rather than an inflation, which
+    is exactly why it is scored against the filed statements before it ships.
+
+    Returns (anchors, metric per anchor) or None. The metric is symmetric and
+    positive definite, which is what makes this tractable: tensors average
+    cleanly between anchors, with no rotation to orthonormalise.
+    """
+    try:
+        from minemodelingpro import implicit as IM
+        P = np.asarray(pts, float)
+        ore = P[np.asarray(g, float) > 0]
+        tr = IM.trend(ore)
+        if tr is None:
+            return None
+        A, RR = tr
+        a = np.asarray(aniso, float)
+        a = np.where(a > 1e-6, a, 1.0)
+        Wl = np.stack([(RR[i].T / a) @ RR[i] for i in range(len(A))])
+        if not np.isfinite(Wl).all():
+            return None
+        return np.asarray(A, float), Wl
+    except Exception:
+        return None
+
+
+def _knn_varying(ctr, pts, ptree, A, Wl, upper, k):
+    """The k nearest composites to each block, each in ITS OWN neighbourhood's
+    metric, in the shape a single global query would have returned.
+
+    Blocks are grouped by nearest anchor so that one tree serves a whole cell —
+    a per-block metric cannot share a tree, and the anchor frames are smoothed
+    against their neighbours upstream, so adjacent cells' metrics already agree
+    closely and there is no surface here for a seam to move.
+
+    Each cell's tree is built over only the composites that cell could reach:
+    its blocks' bounding box, grown by the search radius. That is exact — the
+    anisotropy's largest ratio is 1.0, so nothing inside the ellipsoid lies
+    further away in the world than `upper` — and it is what keeps this from
+    holding one tree per anchor over every composite on the property, which on
+    a client database would be most of a gigabyte.
+    """
+    from scipy.spatial import cKDTree
+    n = len(ctr)
+    dd = np.full((n, k), np.inf)
+    ii = np.zeros((n, k), np.int64)
+    own = cKDTree(A).query(ctr, k=1)[1]
+    for a in np.unique(own):
+        sel = np.nonzero(own == a)[0]
+        C = ctr[sel]
+        lo = C.min(0) - upper
+        hi = C.max(0) + upper
+        mask = np.all((pts >= lo) & (pts <= hi), axis=1)
+        cand = np.nonzero(mask)[0]
+        if not len(cand):
+            continue
+        Wa = Wl[int(a)]
+        kk = int(min(k, len(cand)))
+        d, j = cKDTree(pts[cand] @ Wa.T).query(C @ Wa.T, k=kk,
+                                               distance_upper_bound=upper)
+        if kk == 1:
+            d, j = d[:, None], j[:, None]
+        ok = np.isfinite(d)
+        cols = np.arange(kk)
+        dd[np.ix_(sel, cols)] = d
+        ii[np.ix_(sel, cols)] = np.where(ok, cand[np.where(ok, j, 0)], 0)
+    return dd, ii
+
+
 def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None,
-                    domain_pts=None, domain_radius=None, domain_reach=None):
+                    domain_pts=None, domain_radius=None, domain_reach=None,
+                    domain_surf=None):
     """Grade estimate on a regular grid of `block` (bx,by,bz) cells, only within
     max_gap of real composites and informed by >= min_holes holes. Returns
     (origin, block, ijk, grade, params).
@@ -573,6 +706,79 @@ def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None,
         tree = cKDTree(pts)
     dtree = cKDTree(dom @ W.T if (dom is not None and W is not None) else dom) \
         if dom is not None else None
+    # The deposit's orientation WHERE EACH BLOCK IS, for choosing and weighting
+    # that block's composites. Off by default: this is the tonnage path, and a
+    # redistribution of which samples inform which block can move a filing
+    # either way, so it ships on a corpus score and nothing less.
+    tmet = None
+    GRADETREND = (os.environ.get("MMP_GRADETREND") or "").lower()
+    if W is not None and GRADETREND in ("on", "weight"):
+        tmet = trend_metrics(pts, g, rot, aniso)
+    wtree = cKDTree(pts) if tmet is not None else None
+    # THE BODY AS A BOUND, not only as extra reach.
+    #
+    # A block joins the model by being within `max_gap` of a composite in the
+    # stretched frame, and nothing in that test refers to the width the core
+    # measured. The wireframe does know it — it is built from the logged walls
+    # with an interpolated thickness — and it has been forbidden from removing
+    # anything: "the skeleton ADDS reach; it must never take any away". That
+    # rule was right when the skeleton was a handful of intercept centroids and
+    # seeding from it shrank every model. It is wrong now that the domain is a
+    # real surface, and what it costs is measurable: against the true widths
+    # the reports themselves state, the block model is a median 5.1x too thick,
+    # and profiled across its own plane it is ONE continuous slab, not several
+    # veins. Avino's 3.0 m vein comes out 74 m across; Doc-Hans's 2.1 m vein
+    # comes out 186 m across.
+    #
+    # The bound is in WORLD distance, not the stretched frame: "inside the
+    # body" is a geometric question, and measuring it in a frame that inflates
+    # across-body distance 4.5x would bound the body tightly across and loosely
+    # along, which is the opposite of what a tabular deposit needs.
+    bkeys = bspan = borigin = None
+    bshield = None
+    if dom is not None and os.environ.get("MMP_BODYBOUND") == "on":
+        # ONLY the parts of the domain that are a surface. A body one or two
+        # holes have seen comes back as the intercepts themselves, which is the
+        # honest picture of it and the wrong thing to bound a block model to:
+        # bounding to a string of points down a drill hole confines the model to
+        # the holes. Measured, Desmaraisville fell to 0.034 of its filed tonnage
+        # and Bama Star to 0.192 that way, both of them carrying a dozen
+        # surfaceless bodies.
+        dsurf = dom
+        if domain_surf is not None and len(domain_surf) == len(dom):
+            m_ = np.asarray(domain_surf, bool)
+            dsurf = dom[m_] if m_.any() else np.zeros((0, 3))
+        if len(dsurf) >= 8:
+            bkeys, bspan, borigin = body_cells(dsurf, lo, np.array([bx, by, bz]),
+                                               dilate=1)
+        # THE BOUND MAY ONLY SPEAK WHERE THE BODY WAS DRAWN.
+        #
+        # A body that one or two holes have seen gets no surface — three
+        # intercepts are needed for a triangle — so it contributes no fill
+        # points and has no cells. Bounding blocks to cells it does not have
+        # deletes it: measured, Desmaraisville went from 1.070 to 0.013 of its
+        # filed tonnage and Bama Star from 0.603 to 0.076, both of them
+        # projects carrying a dozen bodies with no surface between them. That
+        # is not the bound working, it is the bound answering a question the
+        # wireframe never asked.
+        #
+        # So a block is bounded only when its own nearest composite sits inside
+        # the body. Where the drilling is modelled, the model is held to it;
+        # where it is not, nothing is taken away — which is the old rule kept
+        # exactly where it was right.
+        if bkeys is not None:
+            try:
+                ck_p = _cell_keys(
+                    np.floor((pts - lo) / np.array([bx, by, bz])).astype(np.int64),
+                    borigin, bspan)
+                inside_p = np.zeros(len(pts), bool)
+                gp = ck_p >= 0
+                if gp.any():
+                    ps_ = np.clip(np.searchsorted(bkeys, ck_p[gp]), 0, len(bkeys) - 1)
+                    inside_p[gp] = bkeys[ps_] == ck_p[gp]
+                bshield = inside_p
+            except Exception:
+                bkeys = None
     ijk_out, g_out, c_out = [], [], []
     # Blocks are estimated in chunks, and the chunk is sized by the arrays the
     # search builds, not by the block count: every block carries its 24 nearest
@@ -591,10 +797,41 @@ def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None,
             dsd, _di = dtree.query(ctr @ W.T if W is not None else ctr, k=1,
                                    distance_upper_bound=dr)
             in_domain = np.isfinite(dsd)
+        in_body = None
+        if bkeys is not None:
+            ck = _cell_keys(fine, borigin, bspan)
+            in_body = np.zeros(len(fine), bool)
+            good = ck >= 0
+            if good.any():
+                pos = np.clip(np.searchsorted(bkeys, ck[good]), 0, len(bkeys) - 1)
+                in_body[good] = bkeys[pos] == ck[good]
         # the last pass reaches further for its samples, because inside the body the
         # nearest hole may be most of a drill spacing away
-        dd, ii = tree.query(ctr @ W.T if W is not None else ctr, k=24,
-                            distance_upper_bound=max(radius, d_reach) if dom is not None else radius)
+        up = max(radius, d_reach) if dom is not None else radius
+        # WHICH samples inform a block and HOW FAR the body carries are two
+        # different questions, and one distance was answering both. The varying
+        # frame is right about the first — it picks the composites that lie
+        # along the structure the block sits on — and changing the second with
+        # it moves the deposit's EXTENT, because the pass tiers gate on this
+        # same distance. The global frame is the drilled cloud's principal
+        # axes, so it points along the DRILL PATTERN; drilling crosses the
+        # geology, which is why a search aligned with the pattern finds samples
+        # easily and one aligned with the rock does not. `weight` keeps the
+        # measured extent and takes only the better choice of samples.
+        dd = ii = None
+        if tmet is not None:
+            dl, il = _knn_varying(ctr, pts, wtree, tmet[0], tmet[1], up, 24)
+            if GRADETREND == "weight":
+                dd, ii = tree.query(ctr @ W.T if W is not None else ctr, k=24,
+                                    distance_upper_bound=up)
+                loc = (dl, il)
+            else:
+                dd, ii = dl, il
+                loc = None
+        else:
+            dd, ii = tree.query(ctr @ W.T if W is not None else ctr, k=24,
+                                distance_upper_bound=up)
+            loc = None
         near = np.isfinite(dd)
         iis0 = np.where(near, ii, 0)
         hh = np.where(near, hid[iis0], -1)
@@ -621,11 +858,39 @@ def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None,
             # a pass only counts samples inside its own, shorter range
             if p_rad < radius:
                 ok &= (np.where(near, dd, np.inf) <= p_rad).sum(1) >= p_samp
+            # and the body has the last word on where it is — but only where
+            # there IS a body. A block whose nearest composite was never
+            # modelled (a lens one hole has seen) is left to the old rule.
+            if in_body is not None:
+                judged = (bshield[iis0[:, 0]] & near[:, 0]) if bshield is not None \
+                    else np.ones(len(fine), bool)
+                ok &= (in_body | ~judged)
             cls[ok] = pi
         keep = cls > 0
         if not keep.any():
             continue
-        dd, ii, fine, cls = dd[keep], ii[keep], fine[keep], cls[keep]
+        if loc is not None:
+            # the gate decided WHICH blocks exist; the estimate now uses the
+            # samples the block's own neighbourhood says belong to it
+            dl, il = loc
+            dg, ig = dd[keep], ii[keep]
+            dd, ii = dl[keep], il[keep]
+            nearl = np.isfinite(dd)
+            hhl = np.where(nearl, hid[np.where(nearl, ii, 0)], -1)
+            nearl = _limit_per_hole(hhl, nearl, max_per_hole)
+            dd = np.where(nearl, dd, np.inf)
+            # A block the gate admitted has to come back with a grade. Its own
+            # neighbourhood can be empty where the global ellipsoid's was not —
+            # the two point differently, which is the whole point — and a block
+            # with no samples left divides by zero and reports NaN, which reads
+            # downstream as a hole in the deposit rather than as a missing
+            # estimate. Those blocks keep the samples the gate used.
+            bare = ~nearl.any(1)
+            if bare.any():
+                dd[bare], ii[bare] = dg[bare], ig[bare]
+            fine, cls = fine[keep], cls[keep]
+        else:
+            dd, ii, fine, cls = dd[keep], ii[keep], fine[keep], cls[keep]
         nearm = np.isfinite(dd)
         iis = np.where(nearm, ii, 0)
         if method == "nn":
@@ -651,6 +916,9 @@ def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None,
               "domain_radius_m": round(dr, 1) if dom is not None else None,
               "domain_reach_m": round(d_reach, 1) if dom is not None else None,
               "anisotropy": [round(float(x), 2) for x in aniso] if aniso is not None else None,
+              "trend_anchors": int(len(tmet[0])) if tmet is not None else None,
+              "trend_mode": GRADETREND or None,
+              "body_cells": int(len(bkeys)) if bkeys is not None else None,
               "passes": [{"range_m": round(r, 1), "max_gap_m": round(gp, 1),
                           "min_holes": mh, "min_samples": ms, "class": CLASSES[i]}
                          for i, (r, gp, mh, ms) in enumerate(passes)]}
@@ -1857,7 +2125,7 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                     _szone = (ZON.assign(_smid, zone_pts, zlab, zreach, rot=rot_d,
                                          aniso=an_d) if len(_smid)
                               else np.zeros(0, np.int32))
-                    parts, zinfo, part_zone = [], [], []
+                    parts, zinfo, part_zone, part_surf = [], [], [], []
                     for z in (zlist or []):
                         belong = zof == z["id"]
                         if belong.sum() < (1 if len(_smid) else 6):
@@ -1871,6 +2139,10 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                             segments=zsg, at=_at, vein_nodes=_vbudget,
                             vein_reach=zreach, style=skey, traces=_traces,
                             face_budget=_fbudget)
+                        # BEFORE _keep_mesh, which pops `_mesh` out of the
+                        # info dict — reading it afterwards gave False for
+                        # every body and the bound then had nothing to bound to
+                        _surfaced = bool((zi or {}).get("_mesh") is not None)
                         _keep_mesh(zi, z["id"])
                         if zp is not None and len(zp):
                             if len(zp) <= 2:
@@ -1880,6 +2152,13 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                             # so the envelope can be read zone by zone instead of
                             # as one undifferentiated shape
                             part_zone.append(np.full(len(zp), int(z["id"]), np.int32))
+                            # and whether a SURFACE was actually built for it. A
+                            # body one or two holes have seen comes back as the
+                            # intercepts themselves, which is the right picture
+                            # and the wrong thing to bound a block model to:
+                            # bounding to a string of points down a drill hole
+                            # confines the model to the holes.
+                            part_surf.append(np.full(len(zp), _surfaced))
                             zinfo.append({**{k: v for k, v in z.items() if k != "idx"},
                                           "points": int(len(zp))})
                             zone_list.append({k: v for k, v in z.items() if k != "idx"})
@@ -1913,10 +2192,12 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                                 rot=rot_d, aniso=an_d, reach=reach,
                                 step=max(float(blk[0]), 3.0),
                                 thickness=PS.get("true_width_m") or med_w)
+                            _lsurf = bool((_li or {}).get("_mesh") is not None)
                             _keep_mesh(_li, 0)
                             if lp is not None and len(lp):
                                 parts.append(lp)
                                 part_zone.append(np.zeros(len(lp), np.int32))
+                                part_surf.append(np.full(len(lp), _lsurf))
                                 leftover_bodies = 1
                         elif left.any():
                             # Built exactly as a named zone is: cluster the
@@ -1953,12 +2234,14 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                                     segments=lsg, at=_at, vein_nodes=_vbudget,
                                     vein_reach=zreach, style=skey, traces=_traces,
                                     face_budget=_fbudget)
+                                _lsurf = bool((_li or {}).get("_mesh") is not None)
                                 _keep_mesh(_li, 0)
                                 if lp is not None and len(lp):
                                     if len(lp) <= 2:
                                         flat_bodies += 1
                                     parts.append(lp)
                                     part_zone.append(np.zeros(len(lp), np.int32))
+                                    part_surf.append(np.full(len(lp), _lsurf))
                                     placed |= (llab == lz["id"])
                                     nbod += 1
                             # a lone intercept is a point of the body and
@@ -1967,11 +2250,14 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                             if (~placed).any():
                                 parts.append(lpts[~placed])
                                 part_zone.append(np.zeros(int((~placed).sum()), np.int32))
+                                part_surf.append(np.zeros(int((~placed).sum()), bool))
                                 nbod += 1
                             leftover_bodies = nbod
                     if parts:
                         dom_pts = np.concatenate(parts)
                         dom_zone = np.concatenate(part_zone) if part_zone else None
+                        dom_surf = (np.concatenate(part_surf)
+                                    if len(part_surf) == len(parts) and part_surf else None)
                         dom_info = {"from": "mineralised intercepts, zone by zone",
                                     "intercepts": int(mz.sum()), "zones": zinfo,
                                     "bodies": len(parts),
@@ -2016,6 +2302,7 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
             lo, bsz, ijk, gr, params, bcls = estimate_blocks(
                 pts, g, hid, blk, spacing, opts=eopts,
                 domain_pts=dom_pts, domain_radius=dom_r,
+                domain_surf=dom_surf,
                 domain_reach=dom_reach)
             if dom_info:
                 params["domain"] = dom_info

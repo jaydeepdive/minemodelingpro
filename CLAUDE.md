@@ -1753,6 +1753,161 @@ compared, check they are the same KIND of distance.** Perpendicular against
 horizontal, and horizontal against vertical, are the two mistakes here, and
 each one hid a working mechanism behind a number that said it did not work.
 
+## A vein's thickness is not a number (2026-10-29)
+
+Jordan: "thickness is not a constant number when it comes to geology. these
+things pinch, swell, twist, turn, get narrow then wider. sometimes one side of
+deposit is pinching while the other is swelling ... im certain you are measuring
+thicknesses incorrectly on some of these."
+
+He was right, and the evidence was sitting in the model's own output:
+
+      avino-asm    core width   min 3.0   median 3.0   max 3.0   (n=9)
+      doc-hans     core width   min 0.3   median 2.1   max 9.3   (n=22)
+
+Nine intercepts of a vein at EXACTLY 3.00 m. No vein does that. It is the cap.
+
+`domain._vein` passed `max_thick = float(thickness) * 3`, where `thickness` is
+`true_width_m` — one number, out of the report's prose. Avino's report says
+"1 to 3 m true width"; Avino's core measures **3.00 to 13.20 m** with a
+coefficient of variation of 0.48. The prose and the rock disagree fourfold, the
+code believed the prose, and **all eighteen intercepts were pinned to 3.00 m.**
+
+A ceiling can only ever remove swells, never pinches, so the error is
+one-directional: every body comes out narrower than its own drilling, and a
+vein that fattens at depth or along strike is drawn flat. And it is luck of the
+draw which project it hits — Doc-Hans lost 1 intercept of 34 because its cap
+happened to sit above its widths; Cruz de Plata lost 23 of 144, including 10 of
+one body's 22.
+
+The ceiling still has a real job. Cruz de Plata's widest "true widths" are
+140.85 m and 152.05 m against a 25 m median — a hole drilled down the dip of a
+vein measures core, not thickness. So `veins._width_cap` does that job from the
+drilling's own distribution instead of from one number:
+
+- a robust ceiling, 2.5x the median of the measured widths, floored at the
+  upper quartile so a vein whose widths are tightly grouped is not trimmed at
+  all;
+- `true_width_m` may RAISE it — a report describing a wider body than this hole
+  saw is evidence — and may never lower it below what was measured;
+- and the guard that is the whole point: a ceiling that would clamp more than
+  one intercept, or more than 10% of them, is describing the vein rather than
+  its outliers, so it is refused and nothing is clamped. **Counting intercepts
+  and not only their share is what makes a small body work** — nine intercepts
+  with one bad hole puts 11% above any sane ceiling, so a share-only rule gives
+  up and keeps the artefact.
+
+Measured on the three projects that found it:
+
+      avino-asm        3.0 / 3.0 / 3.0   ->   3.0 /  6.5 / 13.2   (nothing trimmed)
+      doc-hans         0.3 / 2.1 / 9.3   ->   0.3 /  2.1 / 13.3   (the swell survives)
+      cruz-de-plata    0.3 /23.3 /36.0   ->   trims the 152 m hole, keeps the rest
+
+`MMP_VEINCAP=prose` restores the old rule. Seven checks in `test_veins.py` pin
+the three cases that matter: a vein that swells fourfold keeps every intercept,
+a hole down the dip is still rejected, and a vein that doubles along its length
+is left alone.
+
+**Measured on 68 projects with a filed statement, same projects each arm, and
+it is the first real accuracy gain in a long run of neutral results:**
+
+| | median ratio | med abs log err | within 2x | worse than 10x |
+|---|---|---|---|---|
+| before (prose cap) | 0.879 | 1.000 | 24 | 15 |
+| **measured thickness** | **0.905** | **0.910** | 25 | 16 |
+| and bounded to the body | 0.708 | 0.995 | **29** | 15 |
+
+The thickness fix moves the median toward its filing AND tightens the symmetric
+error by 9% — both, which is what distinguishes an accuracy gain from a bias
+knob. Nothing in the sample moved away from its filing: aurmac 0.992 -> 1.002,
+cruz-de-plata 0.899 -> 0.958, beatons-creek 0.874 -> 0.925, and the flat ones
+are the projects whose cap never bit. Bodies get thicker where the core says so
+(triangles 262,313 -> 290,116).
+
+### The block model and the wireframe are not the same body
+
+Found while chasing the same question, and it is the larger fault. Bounding
+blocks to the cells the wireframe itself occupies:
+
+      avino-asm    291,695 blocks  ->  47,328     6.2x smaller
+      doc-hans     176,499 blocks  ->  19,473     9.1x smaller
+
+A block joins the model by being within `max_gap` of a composite in the
+stretched frame. The body is never consulted, because of a policy stated in
+`estimate_blocks`: *"The skeleton ADDS reach; it must never take any away."*
+That was right when it was written — the skeleton was then a handful of
+intercept centroids and seeding from it shrank every model (error 0.54 -> 0.11,
+recorded in the comment). It is wrong now that the domain is a real surface
+built from logged walls with an interpolated thickness. So **the wireframe on
+screen and the tonnage underneath it have never been the same body**, which is
+why toggling the shape layer never explained the numbers.
+
+`MMP_BODYBOUND=on` bounds them, as exact membership of the body's own block
+cells (`model3d.body_cells`) rather than as a distance — a distance test cannot
+do it, because any tolerance loose enough to keep a body's interior blocks is
+loose enough to admit blocks well outside it: bounding a 3 m vein that way left
+it 56 m thick, the tolerance it needed ALONG the body having become its
+tolerance ACROSS it.
+
+**It is not on by default, and the reason is in the table above.** Measured
+against a body that has the right thickness, the bound is a BIAS TRADE and not
+an accuracy gain: five more projects land within 2x (24 -> 29) and the symmetric
+error does not improve (0.910 -> 0.995). It tightens the upper tail hard, which
+is exactly what stopping a model bridging into barren rock should do —
+blue-moon 6.78 -> 5.29, chinchillas 31.3 -> 24.3, alliance 8.2 -> 3.4,
+candelaria 2.98 -> 1.79, caber 2.22 -> 1.60 — and it pushes every already-short
+model further down, because those were leaning on the bridging to reach their
+tonnage at all.
+
+Which is the same conclusion the two-leg measurement reached from the other
+end: **the volume has two wrong legs and fixing one alone cannot pay.** The
+bound is the across-body leg. The along-strike leg is still open — the body's
+extent is set by where holes happen to be, and `extent.py` has read the strike
+length and down-dip extent out of the reports' own prose since 2026-10-25
+without that ever being applied to anything. That is the other half, and the
+bound should be re-scored with it rather than on its own.
+
+Three ways this fix was wrong before it was right, all of them silent:
+
+- **Bounding to a body that has no surface.** A lens one or two holes have seen
+  comes back as the intercepts themselves, so bounding to its cells confines
+  the model to the drill holes: Desmaraisville 1.070 -> 0.013, Bama Star
+  0.603 -> 0.192. The bound now uses only the parts of the domain that are a
+  surface, and only judges a block whose own nearest composite sits inside one.
+- **A distance test instead of cell membership.** Any tolerance loose enough to
+  keep a body's interior blocks is loose enough to admit blocks well outside
+  it; a 3 m vein bounded that way came out 56 m thick, the tolerance it needed
+  ALONG the body having become its tolerance ACROSS it.
+- **Reading `_mesh` after `_keep_mesh` popped it.** `_keep_mesh` pops `_mesh`,
+  `_thick`, `_contacts` and the rest out of the info dict. Reading it afterwards
+  marked every body as surfaceless, so the bound silently never fired — and an
+  arm that never fires looks exactly like an arm that changes nothing. **Capture
+  anything you need from a wireframe's info dict BEFORE `_keep_mesh` sees it.**
+
+### Measuring a deposit's shape: two traps, both fallen into
+
+Both of these produced confident numbers that did not survive checking, and
+both are easy to fall into again.
+
+**A property is not a lens.** `_coverage` compares the whole project's block
+model against `extent.volume`, which is strike x down-dip x true width — "an
+upper bound on ONE lens", as its own docstring says. On a corpus where 71 of 79
+models carry more than one zone that comparison is meaningless, and it duly
+reported a model **690x** the volume its report describes. That is why the
+correlation CLAUDE.md once quoted at +0.91 and later at -0.17 has been
+correlating against noise, and why this check has always been "reported, never
+applied".
+
+**An across-axis through a property sums its veins.** Measuring thickness as
+volume over footprint on the whole model gave Avino 74 m and Doc-Hans 186 m
+against 3.0 m and 2.1 m cores, and the profile looked like one continuous
+hump — so I reported a 2.1 m vein drawn as a 186 m slab. Split into connected
+pieces, the wireframe's own bodies are 4.4 to 8.7 m (Avino, 12 of them) and 1.8
+to 8.2 m (Doc-Hans, 18 of them). The bodies were about right; the measurement
+was summing twelve veins spread over 60 m of across-strike ground. **Cut a
+deposit into its connected bodies BEFORE measuring any dimension of it**, or
+the number describes the property's scatter rather than the rock.
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.

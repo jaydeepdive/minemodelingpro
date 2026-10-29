@@ -1263,10 +1263,33 @@ def _one(c, rot=None, aniso=None, reach=60.0, step=None, min_thick=0.3,
         Q = mid @ R.T                               # u, v in the plane; w across
         u, v, w = Q[:, 0], Q[:, 1], Q[:, 2]
         t_true = true_width(c["hw"], c["fw"], nrm)
-    # a hole almost parallel to the vein measures a width that is mostly core
+    # A hole almost parallel to the vein measures a width that is mostly core,
+    # so a ceiling is needed. What it must NOT do is flatten the vein.
+    #
+    # A vein pinches and swells — that is what a vein is, and one side can be
+    # closing while the other opens — so its intercepts span a range and the
+    # spread IS the measurement. The ceiling used to be three times a single
+    # number taken from the report's prose, and where the prose and the core
+    # disagree it deleted the vein's shape wholesale: at Avino the drilling
+    # measures 3.00 to 13.20 m with a coefficient of variation of 0.48 and ALL
+    # EIGHTEEN intercepts were pinned to 3.00 m, because the report says "1 to
+    # 3 m true width" and the code believed it over the rock. A ceiling can
+    # only ever remove swells, never pinches, so the error is one-directional:
+    # the body comes out narrower than its own core everywhere.
+    #
+    # So the ceiling is read off the drilling's own distribution and the prose
+    # is only allowed to raise it, never to lower it below what was measured.
+    # A hole down the dip of a vein is a long way outside that distribution —
+    # Cruz de Plata's 140 m and 152 m "true widths" against a 25 m median — and
+    # a robust multiple of the spread rejects those while leaving a vein that
+    # doubles in thickness alone.
     t_true = np.maximum(t_true, min_thick)
-    if max_thick:
-        t_true = np.minimum(t_true, float(max_thick))
+    if os.environ.get("MMP_VEINCAP") == "prose":
+        cap = max_thick                      # the old rule, for the A/B
+    else:
+        cap = _width_cap(t_true, max_thick)
+    if cap:
+        t_true = np.minimum(t_true, float(cap))
 
     # How far the sheet may run past its outermost contact. It used to also
     # SIZE the lattice for a one-contact vein, so that a lone intercept came
@@ -1374,6 +1397,45 @@ def _one(c, rot=None, aniso=None, reach=60.0, step=None, min_thick=0.3,
             # naming this vein has to say to be worth reading
             "span_m": round(float(max(u.max() - u.min(), v.max() - v.min())), 1),
             "area_nodes": int(M.sum())}
+
+
+def _width_cap(t, stated=None, mult=2.5, share=0.10):
+    """The widest a vein may be taken to be, from its own measured widths.
+
+    Two jobs, and the old ceiling confused them: reject a hole drilled down the
+    dip of a vein, and leave the vein's own pinch and swell alone. A single
+    number from the prose cannot do both — where it sits below the drilling it
+    flattens every intercept to itself.
+
+    The drilling's distribution does. A robust ceiling — a multiple of the
+    median, floored at the upper quartile so a vein whose widths are tightly
+    grouped is not trimmed at all — sits above the real swells and below a hole
+    that went down-dip. `stated` may RAISE it (a report that describes a wider
+    body than this hole saw is evidence) and may never lower it.
+
+    The guard is the point: a ceiling that would clamp more than `share` of the
+    intercepts is not describing outliers, it is describing the vein, so it is
+    refused and nothing is clamped. That is the test the old rule would have
+    failed on 100 per cent of Avino's intercepts.
+    """
+    t = np.asarray(t, float)
+    t = t[np.isfinite(t) & (t > 0)]
+    if len(t) < 4:
+        return float(stated) if stated else None
+    med = float(np.median(t))
+    q3 = float(np.percentile(t, 75))
+    cap = max(mult * med, q3)
+    if stated:
+        cap = max(cap, float(stated))
+    # The guard counts intercepts, not only their share. A share alone gives up
+    # on small bodies exactly where one bad hole does most damage: a 9-intercept
+    # body with one 152 m "true width" has 11% above any sane ceiling, so a 10%
+    # rule refuses the ceiling and keeps the artefact. Trimming ONE intercept is
+    # always allowed; past that the share decides, and if the ceiling would take
+    # more it is describing the vein rather than its outliers.
+    if int((t > cap).sum()) > max(1, int(share * len(t))):
+        return None
+    return cap
 
 
 def _nodes(U, V, REF, THK, R, side, unroll=None):
