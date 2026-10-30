@@ -1033,5 +1033,20 @@
   "size_kb": 6155,
   "collected": "2026-10-29T20:17:20Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_ARO-2026-10-29-technical-report-ni-43-101-english-1c10.pdf"
+ },
+ {
+  "file": "ceo_OCG-2026-10-29-technical-report-ni-43-101-english-9b56.pdf",
+  "filing_ref": "OCG-2026-10-29-technical-report-ni-43-101-english-9b56.pdf",
+  "company": "OCG",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-10-29",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/OCG-2026-10-29-technical-report-ni-43-101-english-9b56.pdf",
+  "source": "ceo.ca",
+  "size_kb": 13240,
+  "collected": "2026-10-30T00:59:21Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_OCG-2026-10-29-technical-report-ni-43-101-english-9b56.pdf"
  }
 ]
