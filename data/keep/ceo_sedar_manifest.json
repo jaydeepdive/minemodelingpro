@@ -1063,5 +1063,35 @@
   "size_kb": 29867,
   "collected": "2026-10-30T14:08:07Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_AGX-2026-10-30-technical-report-ni-43-101-english-df3b.pdf"
+ },
+ {
+  "file": "ceo_ECR-2026-10-30-technical-report-ni-43-101-english-c569.pdf",
+  "filing_ref": "ECR-2026-10-30-technical-report-ni-43-101-english-c569.pdf",
+  "company": "ECR",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-10-30",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/ECR-2026-10-30-technical-report-ni-43-101-english-c569.pdf",
+  "source": "ceo.ca",
+  "size_kb": 3264,
+  "collected": "2026-10-30T19:21:28Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_ECR-2026-10-30-technical-report-ni-43-101-english-c569.pdf"
+ },
+ {
+  "file": "ceo_ORE-2026-10-30-technical-report-ni-43-101-english-20f7.pdf",
+  "filing_ref": "ORE-2026-10-30-technical-report-ni-43-101-english-20f7.pdf",
+  "company": "ORE",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-10-30",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/ORE-2026-10-30-technical-report-ni-43-101-english-20f7.pdf",
+  "source": "ceo.ca",
+  "size_kb": 11824,
+  "collected": "2026-10-30T19:21:34Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_ORE-2026-10-30-technical-report-ni-43-101-english-20f7.pdf"
  }
 ]
