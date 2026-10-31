@@ -1093,5 +1093,20 @@
   "size_kb": 11824,
   "collected": "2026-10-30T19:21:34Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_ORE-2026-10-30-technical-report-ni-43-101-english-20f7.pdf"
+ },
+ {
+  "file": "ceo_CLV-2026-10-30-technical-report-ni-43-101-english-4bd8.pdf",
+  "filing_ref": "CLV-2026-10-30-technical-report-ni-43-101-english-4bd8.pdf",
+  "company": "CLV",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-10-30",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/CLV-2026-10-30-technical-report-ni-43-101-english-4bd8.pdf",
+  "source": "ceo.ca",
+  "size_kb": 6144,
+  "collected": "2026-10-31T05:39:13Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_CLV-2026-10-30-technical-report-ni-43-101-english-4bd8.pdf"
  }
 ]
