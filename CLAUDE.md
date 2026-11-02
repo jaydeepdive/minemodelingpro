@@ -1937,6 +1937,93 @@ was summing twelve veins spread over 60 m of across-strike ground. **Cut a
 deposit into its connected bodies BEFORE measuring any dimension of it**, or
 the number describes the property's scatter rather than the rock.
 
+## Structural controls: built, measured, and NOT wired in (2026-11-02)
+
+Jordan: "we need to ensure we are properly mapping major fault splays, bends
+and relay zones, places where east-west deformation corridors cross other
+faults, fold hinges, contacts between rocks of differing strength, and areas
+with a high density of fractures."
+
+`src/minemodelingpro/structure.py` finds five of those from the body geometry
+the vein work left behind, and `scripts/test_structure.py` holds 20 checks on
+it — a straight vein yields no bend, two bodies a kilometre apart in depth are
+not a relay, a plane-dipping horizon has no hinge, a shale against a siltstone
+is not a competency contact.
+
+- **bends** — a change of trend along a body's own trace, measured over an ARM
+  that scales with the body (a seventh of the trace). Adjacent-bin angles miss
+  a 50-degree bend entirely, because the trace has to be smoothed (an
+  unsmoothed trace reports the sampling's wobble as geology) and smoothing
+  spreads the turn across several segments: the same bend reads 0, then 24,
+  then 36 degrees as the arm grows.
+- **hinges** — the same construction in section. The fold closes along the plan
+  direction in which the ELEVATION varies most, which is not the body's second
+  plan axis: a horizon folded along its own long axis has no elevation change
+  across that axis, and looking there finds a textbook arch perfectly flat.
+- **splays, relays, intersections** — relations between two bodies: strikes
+  converging with ends approaching; sub-parallel and overlapping along strike
+  while standing apart across it; crossing at a high angle. Depth has to
+  overlap or a plan-view coincidence is read as a relation.
+- **corridors** — trends shared by three or more bodies, and where two trends
+  cross. Inferred from the BODIES because the geophysics cannot be read: 93
+  projects mention surveys and every mention is prose with a method and a page
+  number, no coordinates.
+- Capped at the 40 largest bodies (`PAIR_MAX`), because the pairwise tests are
+  quadratic and Alamos comes back with 239 bodies — 30,000 candidate relations
+  is not a structural map, it is a fragmented model.
+
+### The measurement, and it is a flat negative
+
+The easy half of this feature is drawing a circle where two veins cross. The
+half that decides whether it belongs is whether the grade is actually there,
+and the naive test is rigged — sites sit on the bodies and so do the
+composites, so "ore is near a site" is true of any point on a vein. So every
+site is compared against DECOYS drawn at random positions on the same traces.
+
+LIFT = the share of a project's top-decile composites within R of a site, over
+the share of ALL its composites within R. 43 projects, four radii:
+
+| radius | real sites | decoys | real beats its own decoy | sign test |
+|---|---|---|---|---|
+| 40 m | 1.00 | 0.96 | 17/31 | p=0.36 |
+| 80 m | 1.10 | 0.99 | 16/36 | p=0.80 |
+| 150 m | 1.04 | 1.03 | 21/39 | p=0.38 |
+| 300 m | 1.03 | 1.02 | 9/25 | p=0.95 |
+
+**Nothing, at any scale.** A separate run on mean grade rather than top-decile
+lift agreed: real 1.010 against decoy 1.062, real winning 23 of 54 (43%),
+p=0.89. By kind at 150 m, relay 1.20 and splay 1.13 are nominally above one and
+their decoys are too.
+
+**And the reason is structural, not statistical.** MMP's bodies are defined by
+the drilling, and the drilling was aimed at the grade — so the geometry is
+DOWNSTREAM of where ore was already found. A bend in a vein whose shape was
+drawn from ore intercepts is not independent evidence of a dilational site; it
+is a reflection of where the holes went. It cannot say where to drill next
+because it already contains where people drilled.
+
+So this does not drive the model or the targets. It is kept because it is
+correct, tested, and ready for the input that would make it work, and because
+the next person should not rebuild it to find the same thing.
+
+### What the two that could NOT be built would need
+
+- **Contacts between rocks of differing strength.** `competency_contacts` and a
+  `COMPETENCE` ranking are written and tested (a granite against a shale is a
+  contact; a shale against a siltstone is not), and they return nothing on the
+  public corpus by construction: **0 of 758 projects carry any logged
+  lithology.** `rock_units` arrives only with an uploaded drill database, so
+  this fires the moment a client uploads logged geology — and that is the one
+  piece of structural evidence here that is independent of the assays.
+- **Fracture density.** Needs RQD or fracture counts. Even a client's assay
+  table rarely carries them; they belong to a geotech log.
+
+The honest path to what was asked is an INPUT, not an inference: accept mapped
+structure the way `domain_units` accepts logged geology — a fault trace, a
+lithology log, a geophysical grid with coordinates — and measure against that.
+Inferring structure from the orebody will keep returning this same null,
+however good the geometry gets.
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.
