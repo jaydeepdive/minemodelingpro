@@ -1108,5 +1108,35 @@
   "size_kb": 6144,
   "collected": "2026-10-31T05:39:13Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_CLV-2026-10-30-technical-report-ni-43-101-english-4bd8.pdf"
+ },
+ {
+  "file": "ceo_MNO-2026-11-01-technical-report-ni-43-101-english-936a.pdf",
+  "filing_ref": "MNO-2026-11-01-technical-report-ni-43-101-english-936a.pdf",
+  "company": "MNO",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-11-01",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/MNO-2026-11-01-technical-report-ni-43-101-english-936a.pdf",
+  "source": "ceo.ca",
+  "size_kb": 117567,
+  "collected": "2026-11-02T06:00:51Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_MNO-2026-11-01-technical-report-ni-43-101-english-936a.pdf"
+ },
+ {
+  "file": "ceo_GER-2026-11-02-technical-report-ni-43-101-english-2f6e.pdf",
+  "filing_ref": "GER-2026-11-02-technical-report-ni-43-101-english-2f6e.pdf",
+  "company": "GER",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-11-02",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/GER-2026-11-02-technical-report-ni-43-101-english-2f6e.pdf",
+  "source": "ceo.ca",
+  "size_kb": 2894,
+  "collected": "2026-11-02T06:01:00Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_GER-2026-11-02-technical-report-ni-43-101-english-2f6e.pdf"
  }
 ]
