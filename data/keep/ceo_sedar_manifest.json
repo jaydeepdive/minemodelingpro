@@ -1183,5 +1183,20 @@
   "size_kb": 14702,
   "collected": "2026-11-03T06:46:25Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_GCC-2026-11-03-technical-report-ni-43-101-english-76b3.pdf"
+ },
+ {
+  "file": "ceo_AWR-2026-11-03-technical-report-ni-43-101-english-bb85.pdf",
+  "filing_ref": "AWR-2026-11-03-technical-report-ni-43-101-english-bb85.pdf",
+  "company": "AWR",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-11-03",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/AWR-2026-11-03-technical-report-ni-43-101-english-bb85.pdf",
+  "source": "ceo.ca",
+  "size_kb": 5635,
+  "collected": "2026-11-03T15:07:10Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_AWR-2026-11-03-technical-report-ni-43-101-english-bb85.pdf"
  }
 ]
