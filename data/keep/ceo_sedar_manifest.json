@@ -1153,5 +1153,35 @@
   "size_kb": 9024,
   "collected": "2026-11-02T23:30:45Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_EQTY-2026-11-02-technical-report-ni-43-101-english-7713.pdf"
+ },
+ {
+  "file": "ceo_MEEDP-2026-11-02-technical-report-ni-43-101-english-f8bc.pdf",
+  "filing_ref": "MEEDP-2026-11-02-technical-report-ni-43-101-english-f8bc.pdf",
+  "company": "MEEDP",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-11-02",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/MEEDP-2026-11-02-technical-report-ni-43-101-english-f8bc.pdf",
+  "source": "ceo.ca",
+  "size_kb": 5198,
+  "collected": "2026-11-03T06:46:19Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_MEEDP-2026-11-02-technical-report-ni-43-101-english-f8bc.pdf"
+ },
+ {
+  "file": "ceo_GCC-2026-11-03-technical-report-ni-43-101-english-76b3.pdf",
+  "filing_ref": "GCC-2026-11-03-technical-report-ni-43-101-english-76b3.pdf",
+  "company": "GCC",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-11-03",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/GCC-2026-11-03-technical-report-ni-43-101-english-76b3.pdf",
+  "source": "ceo.ca",
+  "size_kb": 14702,
+  "collected": "2026-11-03T06:46:25Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_GCC-2026-11-03-technical-report-ni-43-101-english-76b3.pdf"
  }
 ]
