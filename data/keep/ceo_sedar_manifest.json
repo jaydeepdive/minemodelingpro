@@ -1198,5 +1198,20 @@
   "size_kb": 5635,
   "collected": "2026-11-03T15:07:10Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_AWR-2026-11-03-technical-report-ni-43-101-english-bb85.pdf"
+ },
+ {
+  "file": "ceo_ALTA-2026-11-04-technical-report-ni-43-101-english-cb6a.pdf",
+  "filing_ref": "ALTA-2026-11-04-technical-report-ni-43-101-english-cb6a.pdf",
+  "company": "ALTA",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-11-04",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/ALTA-2026-11-04-technical-report-ni-43-101-english-cb6a.pdf",
+  "source": "ceo.ca",
+  "size_kb": 16012,
+  "collected": "2026-11-04T17:15:15Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_ALTA-2026-11-04-technical-report-ni-43-101-english-cb6a.pdf"
  }
 ]
