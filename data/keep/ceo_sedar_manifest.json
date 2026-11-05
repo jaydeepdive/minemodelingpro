@@ -1228,5 +1228,20 @@
   "size_kb": 5285,
   "collected": "2026-11-04T22:39:54Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_CCO-2026-11-04-technical-report-ni-43-101-english-7772.pdf"
+ },
+ {
+  "file": "ceo_AURR-2026-11-04-technical-report-ni-43-101-english-b2c5.pdf",
+  "filing_ref": "AURR-2026-11-04-technical-report-ni-43-101-english-b2c5.pdf",
+  "company": "AURR",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-11-04",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/AURR-2026-11-04-technical-report-ni-43-101-english-b2c5.pdf",
+  "source": "ceo.ca",
+  "size_kb": 7253,
+  "collected": "2026-11-05T03:29:42Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_AURR-2026-11-04-technical-report-ni-43-101-english-b2c5.pdf"
  }
 ]
