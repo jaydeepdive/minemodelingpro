@@ -1243,5 +1243,50 @@
   "size_kb": 7253,
   "collected": "2026-11-05T03:29:42Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_AURR-2026-11-04-technical-report-ni-43-101-english-b2c5.pdf"
+ },
+ {
+  "file": "ceo_SPA-2026-11-05-technical-report-ni-43-101-english-230c.pdf",
+  "filing_ref": "SPA-2026-11-05-technical-report-ni-43-101-english-230c.pdf",
+  "company": "SPA",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-11-05",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/SPA-2026-11-05-technical-report-ni-43-101-english-230c.pdf",
+  "source": "ceo.ca",
+  "size_kb": 73541,
+  "collected": "2026-11-05T20:40:38Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_SPA-2026-11-05-technical-report-ni-43-101-english-230c.pdf"
+ },
+ {
+  "file": "ceo_SLG-2026-11-05-technical-report-ni-43-101-english-d294.pdf",
+  "filing_ref": "SLG-2026-11-05-technical-report-ni-43-101-english-d294.pdf",
+  "company": "SLG",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-11-05",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/SLG-2026-11-05-technical-report-ni-43-101-english-d294.pdf",
+  "source": "ceo.ca",
+  "size_kb": 2747,
+  "collected": "2026-11-05T20:40:45Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_SLG-2026-11-05-technical-report-ni-43-101-english-d294.pdf"
+ },
+ {
+  "file": "ceo_BRVO-2026-11-05-technical-report-ni-43-101-english-8b11.pdf",
+  "filing_ref": "BRVO-2026-11-05-technical-report-ni-43-101-english-8b11.pdf",
+  "company": "BRVO",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-11-05",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/BRVO-2026-11-05-technical-report-ni-43-101-english-8b11.pdf",
+  "source": "ceo.ca",
+  "size_kb": 24707,
+  "collected": "2026-11-05T20:40:53Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_BRVO-2026-11-05-technical-report-ni-43-101-english-8b11.pdf"
  }
 ]
