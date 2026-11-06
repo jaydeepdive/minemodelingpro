@@ -23,17 +23,27 @@
 # is retried before anyone is told.
 name: mmp-do-deploy
 
+# WHAT IS NOT HERE, and why: `site/**` and the daily build.
+#
+# Every deployment of this app is an outage. There is one web instance, so the
+# new container has to pass a health check before anything serves again, and
+# redeploying for content that does not need a restart buys a 503 window for
+# nothing. The gallery does not need one: `studio/sitesync.py` mirrors `site/`
+# from the GitHub tarball to Spaces in the WORKER (`mirror()`, every 600 s) and
+# the WEB pulls it (`pull()`, every 180 s) and serves it in place of the baked
+# copy whenever it is fresher. A nightly gallery build therefore reaches the
+# live site within about thirteen minutes, with no deployment at all.
+#
+# `mmp-daily-build` commits only `site/` and the shards under `data/keep/`, so
+# a `workflow_run` trigger on it was one guaranteed outage a day to publish
+# content that was already arriving on its own.
 on:
-  workflow_run:
-    workflows: ["mmp-daily-build"]
-    types: [completed]
   push:
     branches: [main]
     paths:
       - "Dockerfile"
       - "studio/**"
       - "src/**"
-      - "site/**"
       - ".do/**"
   workflow_dispatch:
 
@@ -45,6 +55,58 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      # `.do/app.yaml` is a REFERENCE COPY — the live spec is in the DO console,
+      # and the two have drifted (the file asks 2 GB for the modeler; the live
+      # one runs 1 GB). So this does NOT apply the file: applying it wholesale
+      # would silently resize components and change the bill.
+      #
+      # It reconciles ONE field, the web service's health-check start delay,
+      # because that field is the length of every deployment's outage and there
+      # is no other way to reach it from here. Reads the LIVE spec, changes that
+      # one number if it differs from the file, and puts it back. Idempotent: it
+      # acts once and then never again. Never blocks a deployment.
+      - name: Keep the health-check delay in step with .do/app.yaml
+        continue-on-error: true
+        env:
+          TOKEN: ${{ secrets.DO_DEPLOY_TOKEN }}
+          APP_ID: d8920ba3-ecb3-47a8-a9a0-b5ead409277e
+        run: |
+          [ -z "$TOKEN" ] && { echo "no token — skipping"; exit 0; }
+          python3 - <<'EOF'
+          import json, os, re, urllib.request
+
+          want = None
+          try:
+              for line in open(".do/app.yaml"):
+                  m = re.match(r"\s*initial_delay_seconds:\s*(\d+)", line)
+                  if m:
+                      want = int(m.group(1))
+                      break
+          except OSError as e:
+              print("cannot read .do/app.yaml (%s) — nothing to do" % e); raise SystemExit
+          if want is None:
+              print("no initial_delay_seconds in .do/app.yaml — nothing to do"); raise SystemExit
+          api = "https://api.digitalocean.com/v2/apps/" + os.environ["APP_ID"]
+          hdr = {"Authorization": "Bearer " + os.environ["TOKEN"],
+                 "Content-Type": "application/json"}
+          app = json.load(urllib.request.urlopen(
+              urllib.request.Request(api, headers=hdr), timeout=30))["app"]
+          spec = app["spec"]
+          web = [s for s in spec.get("services") or [] if s.get("name") == "web"]
+          if not web:
+              print("no web service in the live spec"); raise SystemExit
+          hc = web[0].setdefault("health_check", {})
+          have = hc.get("initial_delay_seconds")
+          if have == want:
+              print("live health check already starts at %ss" % want); raise SystemExit
+          hc["initial_delay_seconds"] = want
+          req = urllib.request.Request(api, method="PUT", headers=hdr,
+                                       data=json.dumps({"spec": spec}).encode())
+          urllib.request.urlopen(req, timeout=60).read()
+          print("health-check start delay %s -> %ss (every deployment's outage "
+                "is at least this long)" % (have, want))
+          EOF
+
       - name: Trigger a deployment
         env:
           TOKEN: ${{ secrets.DO_DEPLOY_TOKEN }}

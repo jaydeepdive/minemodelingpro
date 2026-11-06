@@ -21,14 +21,24 @@ services:
     http_port: 8080
     health_check:
       http_path: /api/health
-      # 15, not 60. There is ONE instance, so a deployment replaces it: until
-      # the new container passes a health check there is nothing for the edge
-      # to route to, and the whole site answers 503 for the length of this
-      # delay. 60 s was right when startup waited up to a minute for Postgres
-      # to attach; since the app starts degraded and serves the gallery without
-      # a database, it is ready in about two seconds, and the minute was pure
-      # outage on every push.
-      initial_delay_seconds: 15
+      # 3, not 15, and not 60. There is ONE instance, so a deployment replaces
+      # it: until the new container passes a health check there is nothing for
+      # the edge to route to, and the whole site answers 503 for the length of
+      # this delay. 60 s was right when startup waited up to a minute for
+      # Postgres to attach; since the app starts degraded and serves the
+      # gallery without a database, it is ready in about two seconds.
+      #
+      # 15 was still a FLOOR of fifteen seconds of 503 on every deployment,
+      # whatever the app did — the probe is not even attempted before then.
+      # Measured over 14 days, 50 commits touched the paths that redeploy this
+      # app, so that floor was being paid three or four times a day in
+      # unpredictable fifteen-second windows, which is exactly what a person
+      # reloading the site runs into.
+      #
+      # Dropping it is safe in the other direction: a slow start now costs a
+      # failed probe, not a failed deployment, because failure_threshold (5) x
+      # period_seconds (20) still allows a hundred seconds to come up.
+      initial_delay_seconds: 3
       period_seconds: 20
       failure_threshold: 5
     routes:

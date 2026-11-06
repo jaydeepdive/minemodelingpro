@@ -2024,6 +2024,74 @@ lithology log, a geophysical grid with coordinates — and measure against that.
 Inferring structure from the orebody will keep returning this same null,
 however good the geometry gets.
 
+## Why the site keeps answering 503 (2026-11-06)
+
+Jordan, on a 503 at /app/: "Why does this keep happening."
+
+Not a crash. **Every deployment of this app is an outage, and it deploys three
+or four times a day.** `.do/app.yaml` already said the first half, in a comment
+I wrote on 2026-10-27 and then stopped reading:
+
+> There is ONE instance, so a deployment replaces it: until the new container
+> passes a health check there is nothing for the edge to route to, and the
+> whole site answers 503 for the length of this delay.
+
+`initial_delay_seconds` was 15, which is not a timeout but a FLOOR: the probe is
+not attempted before then, so every deployment was at least fifteen seconds of
+503 however fast the app came up (it starts degraded and serves the gallery
+without a database, so it is ready in about two). And the trigger was wide:
+
+      commits in 14 days touching Dockerfile|studio|src|site|.do    50
+      of those, site/ only                                           2
+
+So the driver was not the nightly gallery build — **it was ordinary code
+pushes, mine, at three or four a day**, each buying a fifteen-second window in
+which anyone reloading the site gets a 503. Over a fortnight that is a dozen
+minutes of hard downtime scattered unpredictably through the day, which is
+exactly what being hit by it repeatedly looks like.
+
+Three changes, none of which costs anything:
+
+- **The floor, 15 s -> 3 s.** Safe in the other direction: a slow start now
+  costs a failed probe rather than a failed deployment, because
+  `failure_threshold` (5) x `period_seconds` (20) still allows a hundred
+  seconds to come up.
+- **`site/**` and the `workflow_run` on `mmp-daily-build` dropped from
+  `do-deploy.yml`.** The gallery does not need a restart to publish:
+  `studio/sitesync.py` mirrors `site/` from the GitHub tarball to Spaces in the
+  WORKER (`mirror()`, 600 s) and the WEB pulls it (`pull()`, 180 s) and serves
+  it over the baked copy when it is fresher — so a nightly build reaches the
+  live site in about thirteen minutes with no deployment at all. The daily
+  build commits only `site/` and the shards under `data/keep/`, so that trigger
+  was one guaranteed outage a day to publish content already arriving on its
+  own. `autodeploy.py` has treated these paths as content-only since it was
+  written; the workflow simply never agreed with it.
+- **And fewer pushes.** Three deploys a day is a choice, not a fact. Batch
+  unrelated commits rather than pushing each one.
+
+### `.do/app.yaml` is a reference copy, so a fix in it changes nothing
+
+This is the trap that nearly made the above pointless. The live spec is in the
+DO console and the two have drifted — the file asks `apps-s-1vcpu-2gb` for the
+modeler and `/api/health` reports `mem 1048 MB`. Editing the file is a comment,
+not a change.
+
+`do-deploy.yml` gains a step that reconciles exactly ONE field: it reads the
+LIVE spec, sets the web service's `health_check.initial_delay_seconds` to what
+the file says, and puts it back. **It does not apply the file**, because
+applying it wholesale would resize the modeler and change the bill. It is
+idempotent (acts once, then never again), and `continue-on-error` so it can
+never take a deployment down with it.
+
+Six checks in `test_do_deploy.py` run that step's own python against a stand-in
+API, including the one that matters: after the reconcile, the modeler's size in
+the body that goes back is **exactly what the live spec had**.
+
+*Caught by the existing tests:* they took `steps[0]["run"]`, so putting a step
+ahead of the deploy step silently pointed every scenario at the wrong script —
+five failures that looked like the deploy logic breaking. **Address a workflow
+step by name, never by position.**
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.

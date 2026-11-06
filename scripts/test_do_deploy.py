@@ -73,7 +73,10 @@ except ImportError:
     sys.exit(0)
 
 wf = yaml.safe_load(open(WF, encoding="utf-8"))
-step = wf["jobs"]["deploy"]["steps"][0]["run"]
+# BY NAME, not by position. This took the first step, so adding one ahead of it
+# silently pointed every scenario at the wrong script.
+_steps = {s.get("name"): s for s in wf["jobs"]["deploy"]["steps"]}
+step = _steps["Trigger a deployment"]["run"]
 check("the workflow is valid YAML with a deploy step", bool(step))
 
 tmp = os.path.join("/tmp", "mmp-do-deploy-test")
@@ -159,6 +162,91 @@ if AD is not None:
           AD._age({"commit": {"committer": {"date": "yesterday"}}}) == 0.0)
     check("the author date stands in when there is no committer date",
           AD._age(doc(30, "author")) >= AD.GRACE)
+
+
+# ---------------------------------------------------------------------------
+# The step that reconciles the health-check delay onto the LIVE spec.
+#
+# This one touches the app's configuration rather than asking for a deployment,
+# so the things worth pinning are what it must NOT do: never apply the file
+# wholesale (the file and the live spec have drifted, and the file asks for a
+# bigger modeler than the one that is paid for), never act when the value
+# already matches, and never take a deployment down with it.
+print("\n== the health-check reconcile")
+
+_rec = _steps["Keep the health-check delay in step with .do/app.yaml"]
+check("it cannot block a deployment", _rec.get("continue-on-error") is True,
+      _rec.get("continue-on-error"))
+
+import textwrap
+_src = _rec["run"]
+_py = _src[_src.index("python3 - <<'EOF'") + len("python3 - <<'EOF'"):]
+_py = _py[:_py.rindex("EOF")]
+_py = textwrap.dedent(_py)
+
+
+def reconcile(live_delay, file_delay, spec_extra=None):
+    """Run the step's own python against a stand-in API; return (output, PUT body)."""
+    import tempfile
+    d = tempfile.mkdtemp()
+    os.makedirs(os.path.join(d, ".do"), exist_ok=True)
+    if file_delay is not None:
+        with open(os.path.join(d, ".do", "app.yaml"), "w") as f:
+            f.write("services:\n  - name: web\n    health_check:\n"
+                    "      initial_delay_seconds: %d\n" % file_delay)
+    spec = {"name": "minemodelingpro",
+            "services": [{"name": "web", "instance_size_slug": "apps-s-1vcpu-1gb-fixed",
+                          "health_check": ({"initial_delay_seconds": live_delay}
+                                           if live_delay is not None else {})},
+                         {"name": "modeler", "instance_size_slug": "apps-s-1vcpu-1gb"}]}
+    if spec_extra:
+        spec.update(spec_extra)
+    put = os.path.join(d, "put.json")
+    shim = os.path.join(d, "shim.py")
+    with open(shim, "w") as f:
+        f.write(
+            "import json, urllib.request\n"
+            "SPEC = json.loads(%r)\n"
+            "PUT = %r\n"
+            "class R:\n"
+            "    def __init__(self, b): self.b = b\n"
+            "    def read(self): return self.b\n"
+            "    def __enter__(self): return self\n"
+            "    def __exit__(self, *a): return False\n"
+            "def _open(req, timeout=None):\n"
+            "    m = getattr(req, 'get_method', lambda: 'GET')()\n"
+            "    if m == 'PUT':\n"
+            "        open(PUT, 'wb').write(req.data)\n"
+            "        return R(b'{}')\n"
+            "    return R(json.dumps({'app': {'spec': SPEC}}).encode())\n"
+            "urllib.request.urlopen = _open\n" % (json.dumps(spec), put))
+    body = "import sys; sys.path.insert(0, %r); import shim\n" % d + _py
+    env = dict(os.environ, APP_ID="test-app", TOKEN="test-token")
+    r = subprocess.run(["python3", "-c", body], cwd=d, env=env,
+                       capture_output=True, text=True, timeout=60)
+    sent = None
+    if os.path.exists(put):
+        sent = json.load(open(put))
+    return (r.stdout + r.stderr), sent
+
+
+out, sent = reconcile(live_delay=15, file_delay=3)
+check("a live delay that differs is written back", sent is not None, out.strip()[:90])
+if sent:
+    web = [x for x in sent["spec"]["services"] if x["name"] == "web"][0]
+    check("to the value the file asks for",
+          web["health_check"]["initial_delay_seconds"] == 3,
+          web["health_check"])
+    mod = [x for x in sent["spec"]["services"] if x["name"] == "modeler"][0]
+    check("and the modeler's size is left exactly as the LIVE spec had it",
+          mod["instance_size_slug"] == "apps-s-1vcpu-1gb",
+          mod["instance_size_slug"])
+
+out, sent = reconcile(live_delay=3, file_delay=3)
+check("a value that already matches writes nothing", sent is None, out.strip()[:80])
+
+out, sent = reconcile(live_delay=15, file_delay=None)
+check("no app.yaml writes nothing", sent is None, out.strip()[:80])
 
 print("\n%d passed, %d failed" % (len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)
