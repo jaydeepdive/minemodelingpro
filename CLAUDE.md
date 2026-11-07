@@ -2092,6 +2092,128 @@ ahead of the deploy step silently pointed every scenario at the wrong script —
 five failures that looked like the deploy logic breaking. **Address a workflow
 step by name, never by position.**
 
+## It was never 503 — it was 504, and the cause was the event loop (2026-11-07)
+
+Jordan: "This is still fucking happening. I can't even load a model on my phone."
+After the deploy-window fix. **Because that was a different fault.** His
+screenshot carries the answer in a red box: the dashboard HTML renders — nav,
+"My projects", the New project button — and then **504**. Probing confirmed the
+code: `504 504 200 200 200 200 200 200 200 200`.
+
+**503 is no healthy upstream; 504 is a gateway timeout.** The deploy work
+(`429d6c9f`) addressed the first and could not touch the second. A 504 means the
+container is up and the request was never answered in time.
+
+### The web process has one event loop, and eleven endpoints were blocking it
+
+FastAPI hands a `def` endpoint to a worker thread, where it may block all it
+likes. An `async def` endpoint runs **on the loop** — so every millisecond it
+spends in Postgres, in scrypt or in object storage is a millisecond in which the
+process answers **no other request at all**: not the dashboard, not a static
+file, not `/api/health`. The edge waits, gives up, and returns 504.
+
+Eleven handlers and the auth gate were doing exactly that:
+
+      async POST  /api/auth/login              DB + scrypt
+      async POST  /api/auth/signup             DB + scrypt
+      async POST  /api/auth/password           DB + scrypt
+      async POST  /api/invites                 DB
+      async POST  /api/projects                DB
+      async PATCH /api/projects/{pid}          DB
+      async POST  /api/projects/{pid}/publish  DB
+      async POST  /api/projects/{pid}/uploads  DB + up to 200 MB to Spaces
+      async POST  .../sources/preview          DB + the whole importer
+      async POST  .../sources                  DB + storage
+      async POST  /api/adopt                   DB
+      the `gate` middleware                    a DB round trip on EVERY page
+                                               view of every signed-in session
+
+`Depends(require)` was never the problem — FastAPI threads sync dependencies.
+The handler bodies were.
+
+**Measured, paired, on a local Postgres with the real app.** `/api/health` is
+open, needs no database and runs in the threadpool, so its latency is a clean
+reading of whether the loop is free:
+
+| 24 concurrent requests | wall | health latency while it ran |
+|---|---|---|
+| POST /api/auth/login (async, on the loop) | 0.96 s | idle 3 ms, **max 952 ms** |
+| GET /api/projects (sync, threadpool) | 0.03 s | idle 2 ms, max 18 ms |
+| **POST /api/auth/login, after the fix** | **0.68 s** | idle 3 ms, **max 70 ms** |
+
+A 13x cut in the worst stall, and the logins got *faster* because they now run
+across threads instead of queueing on one loop. And 24 logins is the gentle
+case: an upload pushes up to 200 MB to Spaces and a paste preview runs the
+importer, both of which held the loop for as long as they took. **That is the
+504 — a 40 s import is 40 s in which the whole site answers nothing.**
+
+### The fix
+
+`off_loop = run_in_threadpool`, named for why it exists. An `async def` handler
+now awaits the request body and nothing else; the work goes to `off_loop`. The
+blocking bodies were extracted as plain sync functions (`_login`, `_upload_record`,
+`_preview_source`, …). `upload` keeps its `await f.read()` — reading the parts is
+real async I/O — and threads `files().usage()` and every `put`.
+
+### `/api/health` could not see any of this, by design
+
+CLAUDE.md records that health was moved to a snapshot thread so it never touches
+the database — right for the question the edge asks, and the reason weeks of
+504s went unseen. **It answers 200 in a millisecond while every real request
+times out**, so polling it told me the site was fine while Jordan could not load
+his dashboard. I repeated that to him more than once. Health being green was a
+misleading instrument, not evidence.
+
+So health now reports **loop lag**: an async task sleeps 250 ms and reports how
+late it woke. Waking late means the loop was busy with something that should not
+have been on it, and a loop busy for seconds *is* the 504. It costs one task and
+no I/O, and it is the one number that sees this class.
+
+      "loop_lag_ms": 1.8, "loop_lag_worst_5m_ms": 10.6,
+      "loop_lag_worst_ms": 10.6, "loop_lag_worst_at": "2026-11-07T10:38:26+00:00"
+
+Idle 0.4 ms; 2–11 ms under the load that used to stall it ~950 ms. The status
+code stays 200 on a busy loop — the edge is asking whether the process is alive,
+and it is. The number is there to be read.
+
+### `scripts/test_event_loop.py` — 49 checks, and it guards the class
+
+A static guard, so an endpoint added next year cannot reintroduce this: every
+`async def` route handler may await the request body and `off_loop`, and must
+touch nothing blocking. **It follows calls**, which matters — the first version
+read only the handler's own body, and putting the fault back as
+`return _login(b)` sailed straight past it. Verified against all three shapes:
+
+      blocking call inlined in the handler    caught
+      moved one call deep (`return _login(b)`) caught
+      `F.put` on the loop inside upload        caught
+      the gate calling `me()` directly         caught
+
+And it does not trust the name `off_loop`: it runs a blocking call through it and
+watches the loop tick (on the loop 404 ms, through off_loop 16 ms), then blocks
+the loop for 800 ms and asserts the lag instrument reports it (650 ms).
+
+### Measured and NOT changed: the connection pool
+
+With the work threaded, a loop stall becomes pool contention — 40 anyio threads
+over `max_size=4` — so that had to be checked rather than assumed:
+
+      4 concurrent /api/projects   wall 0.02s  p95  13 ms  health max  3 ms
+     20                            wall 0.05s  p95  48 ms  health max 34 ms
+     40                            wall 0.12s  p95 102 ms  health max 55 ms
+     80                            wall 0.18s  p95 162 ms  health max 87 ms
+
+Linear, no cliff, no errors, nothing stalled. The pool is not the bottleneck and
+was left alone.
+
+**The lesson, and it is the same one as the duplicate `id` and the vein
+residuals: check the instrument before theorising.** I polled health through
+every one of these failures and read its 200 as proof the site was well. The
+endpoint cannot see this failure and never could, so for weeks "health is green"
+meant only that the process was running — which was never in doubt.
+
+MODEL_VERSION unchanged: this alters nothing about what a model contains.
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.

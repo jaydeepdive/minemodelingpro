@@ -25,6 +25,7 @@ Run locally:
 import os
 import re
 import sys
+import asyncio
 import json
 import time
 import uuid
@@ -33,6 +34,7 @@ import base64
 import hashlib
 import secrets
 import datetime
+import collections
 import shutil
 import threading
 import mimetypes
@@ -41,6 +43,7 @@ import urllib.parse
 from fastapi import FastAPI, Request, Response, UploadFile, File, Form, HTTPException, Depends
 from fastapi.responses import JSONResponse, FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(_HERE)
@@ -64,6 +67,26 @@ VERSION = os.environ.get("MMP_VERSION") or datetime.date.today().isoformat()
 PUBLIC_GALLERY = (os.environ.get("MMP_PUBLIC_GALLERY", "0") or "0").lower() not in ("0", "false", "no", "")
 
 app = FastAPI(title="MineModelingPro Studio", docs_url=None, redoc_url=None, openapi_url=None)
+
+
+# ------------------------------------------- blocking work is NOT for the loop
+# This process runs one asyncio event loop. A `def` endpoint is handed to a
+# worker thread by FastAPI and may block all it likes; an `async def` endpoint
+# runs ON the loop, so every millisecond it spends in Postgres, in scrypt or in
+# object storage is a millisecond in which this process cannot answer ANY other
+# request — not the dashboard, not a static file, not /api/health. The edge then
+# waits and gives up, which is a **504**, and it looks nothing like a crash:
+# the container is up, the logs are quiet, health is green the moment it is
+# asked. Eleven endpoints and the auth gate were doing exactly this. Measured
+# locally, 24 concurrent logins (one DB query and one scrypt each) stalled
+# /api/health for **952 ms** while the same 24 through a sync endpoint stalled
+# it 18 ms; an upload is far worse, because `files().put()` pushes up to 200 MB
+# to Spaces.
+#
+# So: an `async def` handler awaits the request body and NOTHING else. The work
+# goes to `off_loop`, which is `run_in_threadpool` under a name that says why.
+# `Depends(...)` on a sync function is already threaded by FastAPI and is fine.
+off_loop = run_in_threadpool
 
 
 # --------------------------------------------------------------- passwords
@@ -344,6 +367,49 @@ def _facts_loop():
         time.sleep(_FACTS_EVERY)
 
 
+# ------------------------------------------- the instrument this failure needed
+# /api/health deliberately never touches the database — correct for the question
+# the edge asks, and the reason weeks of 504s went unseen: it answers 200 in a
+# millisecond while every real request times out, so polling it said the site was
+# fine while the dashboard would not load. Loop lag is the number that sees this
+# class. An async task sleeps a fixed interval and reports how LATE it woke;
+# waking late means the loop was busy with something that should not have been on
+# it, and a loop busy for seconds IS the 504. It costs one task and no I/O.
+_LAG_EVERY = 0.25
+_LAG_WINDOW = 300.0
+_LAG = collections.deque(maxlen=2000)
+LOOP_LAG = {"ms": 0.0, "worst_ms": 0.0, "worst_at": None}
+
+
+async def _loop_lag():
+    while True:
+        t = time.perf_counter()
+        await asyncio.sleep(_LAG_EVERY)
+        late = max(0.0, (time.perf_counter() - t - _LAG_EVERY) * 1000)
+        now = time.time()
+        _LAG.append((now, late))
+        LOOP_LAG["ms"] = round(late, 1)
+        if late > LOOP_LAG["worst_ms"]:
+            LOOP_LAG["worst_ms"] = round(late, 1)
+            LOOP_LAG["worst_at"] = datetime.datetime.now(
+                datetime.timezone.utc).isoformat(timespec="seconds")
+
+
+def loop_lag():
+    """Now, the worst of the last five minutes, and the worst ever seen."""
+    now = time.time()
+    recent = [v for t, v in _LAG if now - t <= _LAG_WINDOW]
+    return {"loop_lag_ms": LOOP_LAG["ms"],
+            "loop_lag_worst_5m_ms": round(max(recent), 1) if recent else 0.0,
+            "loop_lag_worst_ms": LOOP_LAG["worst_ms"],
+            "loop_lag_worst_at": LOOP_LAG["worst_at"]}
+
+
+@app.on_event("startup")
+async def _watch_the_loop():
+    asyncio.ensure_future(_loop_lag())
+
+
 @app.get("/api/health")
 def health():
     """Is this process answering — and, as information, is the rest of it well?
@@ -358,6 +424,9 @@ def health():
     out = {"version": VERSION}
     out.update({k: v for k, v in _FACTS.items() if k != "at"})
     out.setdefault("ok", False)
+    # the status code stays 200 on a busy loop: the edge is asking whether this
+    # process is alive, and it is. The number is here to be READ.
+    out.update(loop_lag())
     age = time.time() - (_FACTS.get("at") or 0)
     # a snapshot nobody has refreshed is not evidence of anything
     if not _FACTS.get("at") or age > max(_FACTS_EVERY * 4, 60):
@@ -369,6 +438,10 @@ def health():
 @app.post("/api/auth/signup")
 async def signup(request: Request):
     b = await request.json()
+    return await off_loop(_signup, b, request.client.host if request.client else "?")
+
+
+def _signup(b, host):
     email = (b.get("email") or "").strip().lower()
     pw = b.get("password") or ""
     code = (b.get("invite") or "").strip()
@@ -376,7 +449,7 @@ async def signup(request: Request):
         raise HTTPException(400, "that does not look like an email address")
     if len(pw) < 10:
         raise HTTPException(400, "use a password of at least 10 characters")
-    throttle("signup:" + (request.client.host if request.client else "?"))
+    throttle("signup:" + host)
     d = store.db()
     inv = d.one("select * from invites where code = %s", code)
     if not inv or inv["used_by"] or (inv["expires_at"] and inv["expires_at"] < datetime.datetime.now(
@@ -398,6 +471,10 @@ async def signup(request: Request):
 @app.post("/api/auth/login")
 async def login(request: Request):
     b = await request.json()
+    return await off_loop(_login, b)
+
+
+def _login(b):
     email = (b.get("email") or "").strip().lower()
     throttle("login:" + email)
     u = store.db().one("select * from users where lower(email) = %s", email)
@@ -433,6 +510,10 @@ def whoami(request: Request):
 @app.post("/api/auth/password")
 async def change_password(request: Request, u=Depends(require)):
     b = await request.json()
+    return await off_loop(_change_password, b, u)
+
+
+def _change_password(b, u):
     if not check_pw(b.get("current") or "", u["pw"]):
         raise HTTPException(403, "current password is wrong")
     new = b.get("password") or ""
@@ -455,6 +536,10 @@ def list_invites(u=Depends(require_admin)):
 @app.post("/api/invites")
 async def make_invite(request: Request, u=Depends(require_admin)):
     b = await request.json()
+    return await off_loop(_make_invite, b, u)
+
+
+def _make_invite(b, u):
     code = secrets.token_urlsafe(9)
     days = float(b.get("days") or 30)
     row = store.db().one(
@@ -484,6 +569,10 @@ def list_projects(request: Request, u=Depends(require)):
 @app.post("/api/projects")
 async def create_project(request: Request, u=Depends(require)):
     b = await request.json()
+    return await off_loop(_create_project, b, u)
+
+
+def _create_project(b, u):
     name = (b.get("name") or "").strip()
     if not name:
         raise HTTPException(400, "the project needs a name")
@@ -517,8 +606,12 @@ def get_project(pid: str, request: Request, u=Depends(require)):
 
 @app.patch("/api/projects/{pid}")
 async def patch_project(pid: str, request: Request, u=Depends(require)):
-    p = project_or_404(u, pid)
     b = await request.json()
+    return await off_loop(_patch_project, pid, b, u)
+
+
+def _patch_project(pid, b, u):
+    p = project_or_404(u, pid)
     d = store.db()
     sets, args, errors = [], [], []
     if "name" in b and (b["name"] or "").strip():
@@ -599,8 +692,12 @@ def build(pid: str, request: Request, u=Depends(require)):
 
 @app.post("/api/projects/{pid}/publish")
 async def publish(pid: str, request: Request, u=Depends(require)):
-    p = project_or_404(u, pid)
     b = await request.json()
+    return await off_loop(_publish, pid, b, u)
+
+
+def _publish(pid, b, u):
+    p = project_or_404(u, pid)
     want = bool(b.get("public", True))
     j = queue("publish", p["owner"], p["id"], payload={"public": want})
     event(u["id"], "project.publish", project=pid, public=want)
@@ -623,13 +720,12 @@ async def upload(pid: str, request: Request, files: list[UploadFile] = File(...)
                  hemisphere: str = Form("N"), datum: str = Form("WGS84"),
                  crs_mode: str = Form("auto"), azimuth_ref: str = Form("auto"),
                  u=Depends(require)):
-    p = project_or_404(u, pid)
+    # reading the parts is async I/O and belongs here; the quota lookup and
+    # every push to object storage are not, and a 200 MB put on the loop takes
+    # the whole site down for the length of the transfer
+    await off_loop(project_or_404, u, pid)
     F = store.files()
-    used = 0
-    try:
-        used = F.usage(f"{u['id']}/")
-    except Exception:
-        pass
+    used = await off_loop(_usage, F, u)
     saved, total = [], 0
     for f in files:
         data = await f.read()
@@ -639,7 +735,7 @@ async def upload(pid: str, request: Request, files: list[UploadFile] = File(...)
         if used + total > (u["quota_bytes"] or 0):
             raise HTTPException(413, "this account's storage quota is full")
         key = f"{u['id']}/{pid}/uploads/{uuid.uuid4().hex[:8]}-{os.path.basename(f.filename)}"
-        F.put(key, data, f.content_type or "application/octet-stream")
+        await off_loop(F.put, key, data, f.content_type or "application/octet-stream")
         saved.append({"filename": os.path.basename(f.filename), "key": key, "bytes": len(data)})
     if not saved:
         raise HTTPException(400, "no files were uploaded")
@@ -650,6 +746,17 @@ async def upload(pid: str, request: Request, files: list[UploadFile] = File(...)
             if (crs_mode or "auto").lower() in ("auto", "utm", "epsg", "latlon", "local") else "auto",
             "azimuth_ref": (azimuth_ref or "auto").lower()
             if (azimuth_ref or "auto").lower() in ("auto", "magnetic", "true") else "auto"}
+    return await off_loop(_upload_record, pid, saved, total, opts, name, u)
+
+
+def _usage(F, u):
+    try:
+        return F.usage(f"{u['id']}/")
+    except Exception:
+        return 0
+
+
+def _upload_record(pid, saved, total, opts, name, u):
     d = store.db()
     ds = d.one("insert into datasets (project_id, owner, name, files, options, bytes) "
                "values (%s,%s,%s,%s,%s,%s) returning *",
@@ -742,6 +849,12 @@ async def _body(request):
 
 @app.post("/api/projects/{pid}/sources/preview")
 async def preview_source(pid: str, request: Request, u=Depends(require)):
+    b = await _body(request)
+    # the importer reads the paste, which is seconds of CPU on a real release
+    return await off_loop(_preview_source, pid, b, u)
+
+
+def _preview_source(pid, b, u):
     """Read a paste and say what is in it — before anything is stored.
 
     The counts that matter are not the row counts: they are how many of this
@@ -749,7 +862,6 @@ async def preview_source(pid: str, request: Request, u=Depends(require)):
     holes with no collar, because those cannot be placed in 3D at all."""
     from minemodelingpro import holeid
     p = project_or_404(u, pid)
-    b = await _body(request)
     text = (b.get("text") or "")
     if len(text.encode("utf-8")) > MAX_PASTE_BYTES:
         raise HTTPException(413, "that is more text than a paste should carry — upload it as a file")
@@ -799,10 +911,14 @@ async def preview_source(pid: str, request: Request, u=Depends(require)):
 
 @app.post("/api/projects/{pid}/sources")
 async def add_source(pid: str, request: Request, u=Depends(require)):
+    b = await _body(request)
+    return await off_loop(_add_source, pid, b, u)
+
+
+def _add_source(pid, b, u):
     """Keep a pasted source and model with it. It is stored as the text file it
     is, so "Read the files again" re-reads it like any other upload."""
     p = project_or_404(u, pid)
-    b = await _body(request)
     text = (b.get("text") or "")
     if len(text.encode("utf-8")) > MAX_PASTE_BYTES:
         raise HTTPException(413, "that is more text than a paste should carry — upload it as a file")
@@ -1209,6 +1325,10 @@ async def adopt(request: Request, u=Depends(require)):
     """Open one of MMP's own public models in Studio, so its parameters can be
     changed and the model rebuilt — the public pages themselves are static."""
     b = await request.json()
+    return await off_loop(_adopt, b, u)
+
+
+def _adopt(b, u):
     slug = re.sub(r"[^a-z0-9-]", "", (b.get("slug") or "").lower())[:64]
     if not slug:
         raise HTTPException(400, "which model?")
@@ -1333,7 +1453,9 @@ async def gate(request: Request, call_next):
     path = request.url.path
     if _is_open(path) or path.startswith("/api/"):
         return await call_next(request)          # /api/* enforces its own auth
-    if me(request):
+    # a DB round trip, so off the loop: this runs on every page view of every
+    # signed-in session, and on the loop one slow query stalls the whole process
+    if await off_loop(me, request):
         return await call_next(request)
     if path.endswith((".json", ".js", ".css", ".map")):
         return JSONResponse({"detail": "sign in first"}, status_code=401)
