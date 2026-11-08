@@ -2214,6 +2214,146 @@ meant only that the process was running — which was never in doubt.
 
 MODEL_VERSION unchanged: this alters nothing about what a model contains.
 
+## Quebec's magnetic data, and what the rest of Canada publishes (2026-11-07)
+
+Jordan: "all geophysics and magnetic data is uploaded to quebecs public system.
+I need you to pull ALL of that data and structure it in a manner that it can be
+used on any deposit or project located in quebec" — then, "review all data
+published by other Canadian jurisdictions".
+
+This is the INPUT the structural work needed. `structure.py` measured a flat
+null (lift 1.00-1.10 against decoys, p=0.36 to 0.95) and the reason was
+structural, not statistical: MMP's bodies are drawn from the drilling and the
+drilling chased the grade, so the geometry is downstream of the answer.
+Magnetics is independent of MMP's drill holes, so for the first time the
+question can be asked honestly.
+
+### The GeoTIFF is a picture. The data is in a format GDAL cannot read.
+
+Geologie Quebec publishes the province-wide compilation twice, and this is the
+trap: `Quebec_MAG_TIFF.zip` (3.06 GB) is **3-band uint8 RGB** — a rendered
+colour image of the magnetic field, 255/255/255 across the middle of the
+province. Anything built on it is a screenshot wearing a raster's clothes. I
+downloaded it before checking the band count and dtype, which is the lesson:
+**check dtype and band count before downloading three gigabytes, not after.**
+
+The values are in the Geosoft Oasis montaj `.grd`, and GDAL has no Geosoft
+driver — only unrelated drivers that claim the `.grd` extension (Golden Software
+Surfer, Northwood), which answer "not recognized as being in a supported file
+format". So `src/minemodelingpro/geosoft_grid.py` reads the format: a 512-byte
+little-endian header (ES, SF, NE, NV, KX, then DE, DV, X0, Y0, ROT, ZBASE,
+ZMULT as doubles), data following, vectors stored **south to north** so a
+north-up raster needs them reversed, dummies at +-1e32.
+
+Two checks make that safe rather than hopeful, and both are asserted in the
+reader and the tests:
+
+- **`512 + ES*NE*NV` must equal the file size exactly** — 2,572,153,632 bytes
+  to the byte. That identity pins ES, NE and NV together; misread one and it
+  breaks.
+- **the georeferencing must reproduce the ministry's own rendered GeoTIFF
+  bounds**, and it does to the metre: (-877012.5, 13462.5, 829987.5, 2132437.5)
+  against the published (-877012, 13462, 829989, 2132436).
+
+      ES=4  SF=2 (IEEE float)  NE=22,760  NV=28,253  75 m  EPSG:32198
+      643M cells, 1,707 x 2,119 km, 31.8% of the province surveyed
+
+### Four products, as COGs
+
+residual total field, first vertical derivative, analytic signal, tilt
+derivative — the ministry's own MAGMAP output rather than my recomputation, so
+there is no question of whether my analytic signal matches theirs.
+`scripts/qc_mag_to_cog.py` converts each in about 50 seconds:
+
+      qc_mag_residual.tif          741 MB   -29196.2 to 58957.9 nT
+      qc_mag_dv1.tif               837 MB     -219.2 to   363.0
+      qc_mag_analytic_signal.tif   783 MB        0.0 to   363.5
+      qc_mag_tilt.tif              823 MB       -1.6 to     1.6
+
+A COG because a project is a few kilometres across, the grid is a province, and
+the modeller has a gigabyte: **five 3 km windows read in 0.08 s** out of 643
+million cells. The province is never loaded.
+
+**Three independent correctness checks, all passing**, chosen because a
+byte-order or type error breaks them:
+
+- an analytic signal is a magnitude and is never negative — min 0.0;
+- a tilt derivative is an arctangent and cannot leave +-pi/2 — max |tilt| 1.55;
+- and the geological one: **Lac Tio, the largest ilmenite deposit on earth,
+  must be the strongest anomaly.** It is, by an order of magnitude.
+
+      Lac Tio 9,948 nT   Casa Berardi 659   Renard 350   Eleonore 286
+      (magnetic relief over a 3 km window)
+
+A grid read with its rows flipped or its axes swapped puts that signal
+somewhere else, so this is a real regression test and not a victory lap.
+`scripts/test_geosoft_grid.py` is 27 checks; the province-wide ones skip
+cleanly where the COGs are absent.
+
+### The licence is unresolved, and that is the blocker
+
+**Availability is not the constraint; commercial redistribution is.** Studio is
+a paid product and the gallery is on the public internet.
+
+- The **vector** geophysics (EM anomaly picks) on Donnees Quebec is explicitly
+  **CC BY 4.0**. Clear.
+- The **magnetic rasters** state **no licence at all** — not on the download
+  directory, not in the readme. The same host carries
+  `documents/sigeom/Licence.pdf`, an end-use licence limiting use to the
+  licensee's own premises, forbidding transfer to third parties, permitting
+  intranet/extranet but not the public internet, and requiring **written MERN
+  authorisation** for anything else.
+- A third-party catalogue lists SIGEOM as CC BY 4.0. That is confirmed for the
+  Donnees Quebec vector sets only, and is NOT what the raster directory says.
+
+Downloading and evaluating internally is fine on any reading. Shipping derived
+products to clients is not established. The resolution is one written question
+to service.mines@mern.gouv.qc.ca. **Do not put these rasters behind a client
+feature until that answer is in hand.**
+
+### What the rest of Canada publishes
+
+`data/keep/mmp_geodata_sources.json` — 19 sources, 14 jurisdictions. Each entry
+carries `verified`: **`source`** means I read the agency's own page or licence
+in this session (6 entries); **`catalogue`** means it came from a third-party
+index and the agency's terms have NOT been checked (13 entries). Do not build a
+client-facing feature on a `catalogue` entry.
+
+The strategically important finding: **the federal compilation is the right
+baseline.** NRCan's national aeromagnetic compilation (700+ surveys since 1947)
+is 200 m and 1 km — coarser than Quebec's 75 m — but it covers the whole
+country under **Open Government Licence Canada 2.0**, which is unambiguous for
+commercial use. So the architecture is federal everywhere, with provincial
+high-resolution data as an uplift where licensing permits, rather than a
+province-by-province patchwork with a different legal question each time.
+
+**Its download host blocks automated access** (`gdr.agg.nrcan.gc.ca`,
+robots-disallowed), so this session cannot fetch it; it needs a manual download
+or an alternate mirror.
+
+Two non-geophysical entries are worth as much as the magnetics:
+
+- **BC's assessment-report drillhole database** (GeoFile 2025-11/2026-11) is
+  drill holes **with assays**, already extracted and structured — the same
+  thing `drill_tables.py` works to recover from PDFs, done.
+- **SIGEOM's bedrock geology** is province-wide logged lithology.
+  `structure.py`'s competency-contact arm returns nothing because **0 of 758
+  projects carry any logged lithology**; this supplies it, and independently of
+  the assays.
+
+And one exclusion: the NWT catalogue entry reports **non-commercial use only**,
+which would put it out of reach for Studio. Verify before using anything from
+there.
+
+### Not done yet
+
+The COGs are in this container, not in Spaces, so the app cannot reach them
+yet; there is no viewer layer and no per-project sampling in the model; and
+**the question that decides whether any of this earns a place — does the
+magnetic signature actually predict where ore is — is not yet measured.** That
+measurement gets the same decoy treatment `structure.py` got, because a
+magnetic high near a mine proves nothing if magnetic highs are everywhere.
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.
