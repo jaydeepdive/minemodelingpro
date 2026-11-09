@@ -2354,6 +2354,87 @@ magnetic signature actually predict where ore is — is not yet measured.** That
 measurement gets the same decoy treatment `structure.py` got, because a
 magnetic high near a mine proves nothing if magnetic highs are everywhere.
 
+## Magnetics predicts ore — measured, with the confound killed (2026-11-09)
+
+The first positive targeting result in this file. `structure.py` returned a flat
+null and the reason was structural: MMP's bodies are drawn from the drilling and
+the drilling chased the grade, so the geometry already contained the answer. **A
+magnetic survey was flown without reference to where anyone later found ore**,
+so for the first time the question can be asked honestly.
+
+44 Québec projects from `models_index.json`, each compared against decoys drawn
+from an annulus of nearby **surveyed** ground — surveyed, because otherwise this
+measures flight coverage rather than rock. Deciles from 1,008 decoy windows.
+
+| 1.5 km window | deposits | ordinary ground | ratio | beats own decoys | sign p |
+|---|---|---|---|---|---|
+| residual field relief | 358.8 nT | 108.5 | **3.31x** | 33/40 | 0.0000 |
+| analytic signal p90 | 1.312 | 0.320 | **4.10x** | 34/40 | 0.0000 |
+| horizontal gradient, median | 0.368 | 0.100 | **3.68x** | 36/40 | 0.0000 |
+| tilt edge fraction | 0.120 | 0.118 | 1.01 | 21/40 | 0.875 |
+
+Note the fourth row. "How much contact structure is here" discriminates
+**nothing**, while field relief and gradient magnitude discriminate strongly.
+A blanket win across every feature would have been the suspicious result.
+
+At a 5 km window the same contrast is 2.2-2.9x — weaker, which is what a signal
+local to the deposit should do and not what a regional artefact would do.
+
+### The confound, and the control that killed it
+
+**Deposits get flown at tighter line spacing.** Tighter lines resolve more
+short-wavelength signal, and more short-wavelength signal *is* higher relief,
+higher analytic signal and higher gradient. That alternative explanation
+produces this entire table with no geology in it, so it had to be excluded
+rather than acknowledged.
+
+| arm | relief | analytic p90 | gradient |
+|---|---|---|---|
+| baseline, decoys 6-45 km | 3.10x (p<0.0001) | 3.75x (p<0.0001) | 3.30x (p<0.0001) |
+| **control 1** decoys 2-8 km, same survey block | 2.07x (p=0.039) | 2.53x (p=0.039) | 2.26x (p=0.0002) |
+| **control 2** low-passed to 450 m | 3.26x (p<0.0001) | **4.21x** (p<0.0001) | 3.30x (p<0.0001) |
+| control 1+2 together | 2.14x (p=0.039) | 2.35x (p=0.081, ns) | 1.94x (p=0.017) |
+
+**Control 2 is the decisive one.** Low-passing to 450 m throws away exactly the
+wavelengths where a line-spacing difference lives. A resolution artefact would
+have died there; the effect instead got *stronger* (4.21x on analytic signal).
+It is rock, not flight planning.
+
+Control 1 halves the effect, and that is expected rather than damaging: ground
+2-8 km from a deposit is often the same mineralised structure, so those decoys
+are partly real deposits and the contrast is diluted on purpose. Under the
+hardest arm (both controls at once) the effect is ~2x and holds on relief and
+gradient; analytic signal loses significance at n=40.
+
+### What shipped, and the limit of the claim
+
+`src/minemodelingpro/magnetics.py` — `sample(region, lat, lon)` returns the
+magnetic signature of a window, `favourability()` returns where that ground sits
+in the measured distribution of ordinary ground, 0 to 1. Calibration is baked in
+(deciles of the 1,008 decoy windows) so it needs no data file. `MMP_MAG_DIR`
+points at the COGs; **a region with no grid, or ground that was never flown,
+returns None or `surveyed: False` — never a number it cannot support.**
+
+      Lac Tio (ilmenite)     0.90        Casa Berardi (Au)      0.50
+      Éléonore (Au)          0.73        Montréal (no deposit)  0.23
+      Renard (kimberlite)    0.60        unsurveyed Laurentides None
+
+**This is a prior over ground, not a drill target, and it is reported as one.**
+What was measured is that known deposits sit on magnetically active ground. That
+is not the same claim as "the high-scoring spot inside a project is where to put
+the next hole" — that is a finer question, at a scale this measurement never
+tested, and it needs the drill-hole-level comparison that is the next piece of
+work. Do not let a favourability score become a target until that is measured.
+
+`scripts/test_magnetics.py` (27 checks) pins the direction of the effect, that
+the score is bounded, and above all that unsurveyed ground gets no score.
+`scripts/mag_calibrate.py` rebuilds the calibration.
+
+*Caught while calibrating:* `rasterio.warp.transform` returns `(xs, ys)`, so
+naming the result `la, lo` sends every decoy to a mirrored point off the grid
+and the ordinary-ground population comes back empty. The crash was an
+`IndexError` inside `np.percentile` — four frames from the actual mistake.
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.
