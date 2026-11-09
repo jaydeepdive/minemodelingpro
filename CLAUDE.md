@@ -2435,6 +2435,48 @@ naming the result `la, lo` sends every decoy to a mirrored point off the grid
 and the ordinary-ground population comes back empty. The crash was an
 `IndexError` inside `np.percentile` — four frames from the actual mistake.
 
+### And within a property it is a null (2026-11-09)
+
+The 3.3x result above is between-place: known deposits sit on magnetically
+active ground. The drill-targeting question is finer and has to be asked inside
+one property, where the belt-scale signal is held constant. It was, and the
+answer is no.
+
+Every mineralised segment of each Québec model desurveyed to its real plan
+position (an angled hole puts its intercept 100 m+ from the collar, which
+matters at 75 m), binned at 150 m, each bin's best grade against that bin's
+magnetic features, Spearman **within** each project and only then combined —
+25 projects, `scripts/mag_within_project.py`:
+
+| | median rho | positive | sign p |
+|---|---|---|---|
+| residual field relief | +0.045 | 16/25 | 0.230 |
+| analytic signal p90 | -0.008 | 12/25 | 1.000 |
+| horizontal gradient | -0.063 | 12/25 | 1.000 |
+| *control A* grades shuffled among the same bins | -0.061 | 12/25 | 1.000 |
+| *control B* magnetics sampled 400 m off each bin | +0.003 | 13/25 | 1.000 |
+
+**The real arm is indistinguishable from its own null controls.** So the
+province-wide compilation discriminates between properties and says nothing
+about where to drill inside one.
+
+Three reasons, and the first is sufficient: a 75 m grid flown on 100-300 m
+line spacing cannot resolve a target tens of metres across — the information is
+not in the data. Second, what the magnetics is seeing is the host (iron
+formation, mafic volcanics, alteration) at deposit scale, not the ore shoot
+within it. Third, grade truth here exists only where someone drilled, and
+drilling already followed the best ground, so the within-property variance is
+compressed before the test starts.
+
+**So `favourability()` stays what it says it is: a prior over ground, for
+comparing properties.** It must not be presented as a drill target, and the
+earlier result does not license that however good it looked.
+
+What would answer the within-property question is higher-resolution data over
+the property itself — a company's own ground or drone magnetic survey, which is
+typically flown at 25-50 m line spacing and published in technical reports as a
+FIGURE. That is the gap the report-image importer exists to close.
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.
