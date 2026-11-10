@@ -1318,5 +1318,20 @@
   "size_kb": 11888,
   "collected": "2026-11-07T10:04:43Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_EM-2026-11-06-technical-report-ni-43-101-english-b086.pdf"
+ },
+ {
+  "file": "ceo_ATC-2026-11-09-technical-report-ni-43-101-english-2e1d.pdf",
+  "filing_ref": "ATC-2026-11-09-technical-report-ni-43-101-english-2e1d.pdf",
+  "company": "ATC",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-11-09",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/ATC-2026-11-09-technical-report-ni-43-101-english-2e1d.pdf",
+  "source": "ceo.ca",
+  "size_kb": 6880,
+  "collected": "2026-11-10T09:49:18Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_ATC-2026-11-09-technical-report-ni-43-101-english-2e1d.pdf"
  }
 ]
