@@ -1348,5 +1348,20 @@
   "size_kb": 18314,
   "collected": "2026-11-10T23:18:49Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_SALT-2026-11-10-amended-restated-technical-report-ni-43-101-english-24a9.pdf"
+ },
+ {
+  "file": "ceo_BIRD-2026-11-12-technical-report-ni-43-101-english-781e.pdf",
+  "filing_ref": "BIRD-2026-11-12-technical-report-ni-43-101-english-781e.pdf",
+  "company": "BIRD",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-11-12",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/BIRD-2026-11-12-technical-report-ni-43-101-english-781e.pdf",
+  "source": "ceo.ca",
+  "size_kb": 11208,
+  "collected": "2026-11-12T18:54:54Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_BIRD-2026-11-12-technical-report-ni-43-101-english-781e.pdf"
  }
 ]
