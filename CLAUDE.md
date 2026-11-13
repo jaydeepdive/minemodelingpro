@@ -2477,6 +2477,98 @@ the property itself — a company's own ground or drone magnetic survey, which i
 typically flown at 25-50 m line spacing and published in technical reports as a
 FIGURE. That is the gap the report-image importer exists to close.
 
+## Reading values off a published geophysical figure (2026-11-09)
+
+Jordan: "i also need you to be able to import geomagnetic images etc from
+technical reports or news releases. youve avoided this in the past and thats no
+longer acceptable."
+
+Correct on both counts. This file previously said *"Do not promise inversion of
+a published map image"* and left it there. That was the right caution about the
+wrong thing: inverting the **physics** from a picture is not possible, but
+**reading the map** is — the figure carries a colour ramp with numeric labels
+saying what each colour means, and a coordinate frame saying where each pixel
+is. A geologist does it by eye. `src/minemodelingpro/geophys_figure.py` does it
+arithmetically.
+
+### Measured, against grids the figures were drawn from
+
+Real Québec magnetic windows rendered as report-style plates, recovered, and
+compared cell by cell with the data they came from — `scripts/test_geophys_figure.py`,
+10 windows per condition:
+
+| condition | figures read | median error | p90 |
+|---|---|---|---|
+| clean PNG, viridis | 10/10 | **2.13%** | 17.1% |
+| clean PNG, jet | 10/10 | 2.14% | 17.1% |
+| clean PNG, turbo | 10/10 | 2.11% | 17.0% |
+| clean PNG, plasma | 10/10 | 2.14% | 17.1% |
+| vertical legend | 10/10 | 2.11% | 17.9% |
+| JPEG 85 | 10/10 | 2.18% | 17.2% |
+| JPEG 70, jet | 10/10 | 2.16% | 17.1% |
+| JPEG 50 | 10/10 | 2.24% | 18.0% |
+| JPEG 30 | 10/10 | 2.41% | **64.4%** |
+
+Error is a share of the legend's own range. **Roughly 2% of range, stable
+across four colour maps, both legend orientations, and JPEG down to quality
+50.** The p90 near 17% is the honest other half: the worst tenth of cells —
+annotation edges, anomaly boundaries, the resampling in the comparison itself —
+are far worse than the median, so this is good for reading a field and bad for
+reading any single pixel. At JPEG 30 the tail collapses and the figure should
+not be used.
+
+### The bug that mattered, and why the first numbers were wrong
+
+The detector kept choosing **a vertical slice through the map** instead of the
+legend. A slice of a real magnetic map traverses the same colours in roughly
+the same order, so neither smoothness, nor ramp length, nor "how much of the
+image does this palette explain" (all of which I tried) can separate them.
+
+What separates them is the physical definition of a colour bar: **it is constant
+across its width.** Measured on a real plate, the legend reads `across = 0.000`
+and every slice through the map reads 0.55 to 1.56. The original threshold was
+6.0, which admitted all of them.
+
+That single number was also the whole of the "JPEG problem". JPEG recovery had
+measured **25.3%** error and I had already written a median-blur to fix it;
+with the legend correctly located, the same JPEG plate recovers at **1.93%**.
+The denoise stayed because it is cheap and right, but it was never the cause —
+**a 25% error that looks like codec noise was a detector reading the wrong
+rectangle.**
+
+Three other gates earn their place, each pinned by a test:
+
+- **a greyscale legend is refused.** Grey is not injective against black
+  annotation and a white page; measured error 45% of range. It returns a
+  refusal, not a grid.
+- **off-ramp share is measured over the pixels asked for**, not the whole
+  image. Measured over the image it is dominated by the page around the panel
+  and every correct figure looks unreadable — which is exactly what happened,
+  and 0 of 6 good figures were read until it was fixed.
+- **fewer than 3 coordinate control points refuses.** A figure with no readable
+  frame has no place on the ground, and assuming the image spans some bounding
+  box would put a client's anomaly in the wrong township.
+
+### What it does and does not do
+
+`read_figure(img, points=, vrange=, map_box=)` → `Recovered`, with `ok` False
+and `why` naming the failed gate. `figures_in_pdf()` pulls the raster plates out
+of a report, largest first, because a magnetic plate is the biggest picture on
+its page and a logo is not. `find_colour_bar`, `read_bar_labels` (OCR, tesseract)
+and `affine_from_points` are separable so a half-readable figure can be driven
+manually.
+
+It does not invent a coordinate frame, extrapolate past the legend's range, or
+read a greyscale plate. Those refuse. Reading the frame's tick labels by OCR is
+implemented but is the weakest link in the chain — on a scanned plate it is
+worth passing control points explicitly.
+
+**Why this matters more than it looks:** the within-property magnetic null
+above is a resolution limit, not a geological verdict — a 75 m regional grid
+cannot resolve a target tens of metres across. A company's own ground or drone
+survey over its property is flown at 25-50 m and exists, in public, only as a
+figure in its technical report. This is the path to that data.
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.
