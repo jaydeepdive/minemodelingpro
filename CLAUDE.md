@@ -2569,6 +2569,47 @@ cannot resolve a target tens of metres across. A company's own ground or drone
 survey over its property is flown at 25-50 m and exists, in public, only as a
 figure in its technical report. This is the path to that data.
 
+## A CI failure that was never MMP's (2026-11-13)
+
+Jordan forwarded a GitHub email: `mmp-ceo-sedar: All jobs have failed`, 10m 52s,
+3 annotations.
+
+**It had already self-healed.** Run #257 failed; #258 to #264 all passed, at the
+usual ~1m 30s. Worth reading the run list before reading the logs — "is this
+still happening" is a cheaper question than "why did it happen", and the answer
+changes how urgent the second one is.
+
+The cause, at `#step:4:372`:
+
+      E: Failed to fetch .../fonts-ipafont-gothic_00303-23ubuntu1_all.deb
+         Temporary failure resolving 'security.ubuntu.com'
+      Failed to install browsers
+      Error: Installation process exited with code: 100
+
+`playwright install --with-deps chromium` shells out to **apt-get**, so an
+Ubuntu mirror having a bad minute takes the job with it. The runner could not
+resolve `archive.ubuntu.com`, `security.ubuntu.com` or
+`azure.archive.ubuntu.com`; apt retried for ten minutes and exited 100. Nothing
+to do with MMP's code, with ceo.ca, or with the collector — which was verified
+working in this container the same day: 52 slugs in 9 seconds.
+
+And the packages it died over are **fonts** — ipafont, freefont, unifont,
+xfonts-cyrillic, xfonts-scalable — which a headless scrape of a text feed never
+renders.
+
+**The fix** splits the browser out of the deps step and lets it survive a bad
+mirror: try `--with-deps` three times, and failing that install the browser
+alone rather than losing the hour's collection to someone else's DNS. The runner
+image already carries most of chromium's shared libraries; the fonts are what
+come from apt. A fallback that ITSELF fails still fails the step — verified
+across all three paths, because a retry wrapper that swallows a real breakage is
+worse than the flake it was added for.
+
+*Also in those annotations, benign and present on the passing runs too:* Node 20
+deprecation on `actions/checkout@v4` and `actions/setup-python@v5`, and the
+`ubuntu-latest` migration to Ubuntu 26 from 2026-10-19. Neither failed anything;
+both are worth doing before they do.
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.

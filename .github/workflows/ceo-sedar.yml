@@ -37,7 +37,26 @@ jobs:
       - name: Python deps
         run: |
           pip install -r requirements.txt
-          python -m playwright install --with-deps chromium
+      - name: Browser for the feed
+        # `playwright install --with-deps` shells out to apt-get, so an Ubuntu
+        # mirror having a bad minute takes this job down with it. Run #257 spent
+        # TEN MINUTES failing to resolve archive.ubuntu.com and security.ubuntu.com,
+        # exited 100 and failed the run -- over font packages (fonts-ipafont,
+        # xfonts-cyrillic, unifont) that a headless feed scrape never renders.
+        # The collector itself was fine, and the seven runs after it passed.
+        #
+        # So: try with deps, retry, and failing that install the BROWSER alone
+        # rather than losing the hour's collection to someone else's DNS. The
+        # runner image already carries most of chromium's shared libraries; it is
+        # the fonts that come from apt.
+        run: |
+          for i in 1 2 3; do
+            python -m playwright install --with-deps chromium && exit 0
+            echo "::warning::playwright install --with-deps failed (attempt $i/3)"
+            sleep 20
+          done
+          echo "::warning::apt is unreachable; installing the browser without system deps"
+          python -m playwright install chromium
       - name: Collect NI 43-101s from ceo.ca public feed
         run: |
           PYTHONPATH=src python -m minemodelingpro.ceo_sedar --scrolls "${{ github.event.inputs.scrolls || 12 }}"
