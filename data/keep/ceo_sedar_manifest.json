@@ -1378,5 +1378,35 @@
   "size_kb": 36496,
   "collected": "2026-11-17T03:52:11Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_NILI-2026-11-16-technical-report-ni-43-101-english-80d7.pdf"
+ },
+ {
+  "file": "ceo_NVRO-2026-11-17-amended-restated-technical-report-ni-43-101-english-aa30.pdf",
+  "filing_ref": "NVRO-2026-11-17-amended-restated-technical-report-ni-43-101-english-aa30.pdf",
+  "company": "NVRO",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-11-17",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/NVRO-2026-11-17-amended-restated-technical-report-ni-43-101-english-aa30.pdf",
+  "source": "ceo.ca",
+  "size_kb": 7356,
+  "collected": "2026-11-17T22:21:34Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_NVRO-2026-11-17-amended-restated-technical-report-ni-43-101-english-aa30.pdf"
+ },
+ {
+  "file": "ceo_FPYP-2026-11-17-technical-report-ni-43-101-english-23cf.pdf",
+  "filing_ref": "FPYP-2026-11-17-technical-report-ni-43-101-english-23cf.pdf",
+  "company": "FPYP",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-11-17",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/FPYP-2026-11-17-technical-report-ni-43-101-english-23cf.pdf",
+  "source": "ceo.ca",
+  "size_kb": 22495,
+  "collected": "2026-11-17T22:21:41Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_FPYP-2026-11-17-technical-report-ni-43-101-english-23cf.pdf"
  }
 ]
