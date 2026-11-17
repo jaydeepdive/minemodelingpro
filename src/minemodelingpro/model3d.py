@@ -108,7 +108,7 @@ _VIEWER_TMPL = os.path.join(_HERE, "model3d_viewer.html")
 #      isosurfaced, instead of triangulated: it uses the holes that cut nothing
 #      as evidence of where the body is not, and a shape that folds costs no
 #      more than a flat one. Halves the bodies that got no shape at all.
-MODEL_VERSION = 24
+MODEL_VERSION = 25
 # the most domain cells to send to a browser; beyond this the envelope is drawn
 # on a coarser lattice, which is a picture of the same shape
 BODY_MAX_CELLS = 120_000
@@ -1698,11 +1698,29 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
     """Build one project model. `settings` (or data/keep/mmp_model_params.json via
     the project slug, or ds["params"] from an imported dataset) overrides any of
     the data-driven defaults — see minemodelingpro.params."""
+    # The region chooses the block size and the bulk density whenever no report
+    # states them (auto_params -> regional), so it has to be the region the
+    # drilling is actually IN. It was read off the dataset here and then
+    # recomputed from the coordinates nine hundred lines later, at output time,
+    # and the two disagreed: a silver camp at Cobalt, Ontario was modelled on a
+    # block size and density "typical for deposits in British Columbia" and then
+    # labelled Ontario on the page. Resolve it once, from the coordinates,
+    # before anything reads it.
+    fr = ds["frame"]
+    region = ds.get("region")
+    _la, _lo = fr.get("lat0"), fr.get("lon0")
+    if _la is not None and _lo is not None:
+        try:
+            from minemodelingpro import terrain as _t
+            region = _t.region_of(_la, _lo) or region
+        except Exception:
+            pass
+    if region and region != ds.get("region"):
+        ds = {**ds, "region": region}
     base, base_src = auto_params(ds)
     PS, PORIGIN = PARAMS.layered(ds.get("slug"), base=base,
                                  extra={**(ds.get("params") or {}), **(settings or {})})
     max_elements = int(PS.get("max_elements") or max_elements)
-    fr = ds["frame"]
     holes = [h for h in ds["holes"].values() if h.get("_ok")]
     if not holes:
         raise ValueError("no located holes")
@@ -2587,7 +2605,9 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
         except Exception as e:
             if verbose:
                 print("  collar terrain failed", e)
-    region = ds.get("region")
+    # already resolved from the frame before the parameters were chosen; the
+    # frame's centre can shift during the build (recentring), so take the better
+    # position if there is one, but never fall back to a stale dataset label.
     if geo:
         try:
             from minemodelingpro import terrain as _t

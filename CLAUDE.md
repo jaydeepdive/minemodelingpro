@@ -2676,6 +2676,35 @@ distinguishes them.** Shape without height is not a place.
   For a narrow vein system the default view answers the wrong question.
 - **No scale bar, no depth readout, nothing saying open pit or underground.**
 
+### And the region that chose the parameters was not the region on the page
+
+Found immediately after, on the same project, and it is why fixing the zone did
+not on its own fix the model:
+
+      region:       "Ontario"
+      block_source: "typical for deposits in British Columbia (5 reports)"
+
+`auto_params` takes the block size and the bulk density from what is typical for
+the project's REGION whenever no report states them. It read that region off the
+dataset at the top of `build_project` (line 1701) — while the real one was
+recomputed from the coordinates nine hundred lines further down (line 2590), at
+output time. `fr = ds["frame"]` sat four lines BELOW the call that needed it.
+
+So a silver camp at Cobalt, Ontario was estimated on a British Columbia block
+size and density, and then labelled Ontario. The stale label had come off the
+attached public project's BC news releases; the coordinates said Ontario all
+along and nothing asked them until it was too late to matter.
+
+The region is now resolved from the frame once, before anything reads it, and
+the output reuses that value rather than recomputing from a stale fallback.
+`scripts/test_region_params.py` (6 checks) pins that the coordinates override a
+stale label, that a correct label is left alone, that a local grid with no map
+position still uses the dataset's own region, and that real British Columbia
+coordinates still give British Columbia. Verified to catch the regression: with
+the old order 2 of 6 fail.
+
+MODEL_VERSION 25 — this changes what a model contains.
+
 ## Two properties called Tower (2026-11-17)
 
 Jordan: "you've tied together 3 reports for the tower gold project with 1 for
