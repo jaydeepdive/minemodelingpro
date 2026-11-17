@@ -766,6 +766,9 @@ def _utm_candidates(e, n, datum="WGS84"):
     return out
 
 
+OFFSET_SLACK_M = 35.0     # a GPS z is an ellipsoid height; the geoid is tens of metres out
+
+
 def infer_utm(en, notes, datum="WGS84"):
     """Which UTM zone places these collars on the ground their elevations describe.
 
@@ -819,10 +822,31 @@ def infer_utm(en, notes, datum="WGS84"):
         if not fine:
             continue
         f, c = fine[0]
-        rival = next((t for t in fine[1:] if t[1]["epsg"] != c["epsg"]), None)
+        # A rival has to be comparable on BOTH numbers. `mad` says the ground has
+        # the same SHAPE; `off` says it is at the same HEIGHT, and only the pair
+        # identifies a place. Comparing shape alone is pathological on flat
+        # ground, because every flat place on earth has the same shape: Langis
+        # (Cobalt, Ontario — 42 m of relief over 3 km) matched zone 17N to a
+        # misfit of 1.9 m and a mean offset of 2.5 m, and was thrown away as
+        # "ambiguous" against zone 33N in AUSTRIA, whose misfit was 2.6 m and
+        # whose elevations were out by 92 m. 602 real drill collars with perfect
+        # UTM 17N coordinates ended up in a local grid with no map position, and
+        # the project was then labelled British Columbia and given a BC block
+        # size and density.
+        #
+        # A constant offset is still forgiven — a GPS z is an ellipsoid height,
+        # and the geoid is tens of metres out in places — so the allowance is
+        # generous. Ninety-two metres is not a rival to two.
+        def _rival_ok(t):
+            return abs(t[0]["off"]) <= max(3.0 * abs(f["off"]), abs(f["off"]) + OFFSET_SLACK_M)
+        rival = next((t for t in fine[1:]
+                      if t[1]["epsg"] != c["epsg"] and _rival_ok(t)), None)
         if f["mad"] > 35:
             continue
-        if rival and rival[0]["mad"] < max(2.5 * f["mad"], f["mad"] + 8):
+        # and when the winning fit is excellent, a flat +8 m slack invents rivals:
+        # it makes a 1.9 m fit indistinguishable from a 9.9 m one. Scale with the
+        # fit, with only a small floor for noise.
+        if rival and rival[0]["mad"] < max(2.5 * f["mad"], f["mad"] + 3):
             notes.append("coordinates: no UTM zone given, and the collar elevations fit two places "
                          "equally well (zone %d%s in %s to %d m, zone %d%s in %s to %d m) — modelled "
                          "in its own grid. Set the zone on the upload form."

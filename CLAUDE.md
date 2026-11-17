@@ -2610,6 +2610,72 @@ deprecation on `actions/checkout@v4` and `actions/setup-python@v5`, and the
 `ubuntu-latest` migration to Ubuntu 26 from 2026-10-19. Neither failed anything;
 both are worth doing before they do.
 
+## 602 real drill collars with no map position (2026-11-17)
+
+Jordan, on his own Langis upload: "DO YOU SERIOUSLY HAVE THE FUCKING MODEL WHERE
+I HAVE GIVEN YOU EVERY FUCKING DRILL HOLE CONDUCTED AT LANGIS ALONG WITH THE
+FUCKING COORDINATES SET AS BEING IN FUCKING BRITISH COLUMBIA."
+
+His coordinates were perfect. The model had no map position at all.
+
+      frame: {"kind": "local", "lat0": null, "lon0": null}
+      region: "British Columbia"
+      block_source: "typical for deposits in British Columbia (5 reports)"
+
+`region_of` cannot have produced that label — it only runs when holes carry
+lat/lon, and these had none. The label came off the attached public project,
+whose news releases include Brixton's BC properties, and it then chose the
+**block size and density** for an Ontario silver camp from British Columbia
+statistics.
+
+### Why a flat property cannot be placed, and the guard that guaranteed it
+
+`infer_utm` matches collar elevations against the terrain each candidate zone
+would put them on. Two numbers come back: `mad`, how well the SHAPE of the
+ground matches, and `off`, whether it is at the same HEIGHT. The ambiguity guard
+compared **only `mad`**. On his 602 collars:
+
+      17N Ontario     mad 1.94   off    2.5 m     <-- the truth
+      33N Austria     mad 2.62   off   92.2 m
+      threshold = max(2.5 x 1.94, 1.94 + 8) = 9.94   ->  2.62 < 9.94  -> "ambiguous"
+
+Comparing shape alone is pathological on flat ground, because **every flat place
+on earth has the same shape**. Langis is 42 m of relief over 3 km. Austria's
+elevations were out by ninety-two metres and still counted as an equal rival.
+
+The flat `+8 m` slack made it worse in exactly the wrong direction: the better
+the true fit, the more rivals it manufactures. A 1.9 m fit was indistinguishable
+from a 9.9 m one.
+
+**The fix:** a rival must be comparable on BOTH numbers. A constant offset is
+still forgiven — a GPS z is an ellipsoid height and the geoid is tens of metres
+out — so `OFFSET_SLACK_M` is a generous 35 m. Ninety-two is not a rival to two.
+The mad slack scales with the fit instead of a flat +8.
+
+      after: infer_utm -> EPSG:26917 (Ontario), 47.5808 N -79.5704 W
+
+`scripts/test_utm_zone.py` (8 checks) pins the real collars resolving to 17N and
+landing in Ontario, and pins that the guard still guards — a rival that matches
+on shape AND height still forces a refusal rather than a guess. Verified to
+catch the regression: with the old rule, 3 of the 8 fail and the real collars
+come back REFUSED.
+
+**The lesson is the same one as the vein residuals and the colour bar: when two
+things are compared, check that the comparison uses every number that
+distinguishes them.** Shape without height is not a place.
+
+### Still open on that model, found in the same pass
+
+- **A shallow population is being modelled as rock.** 101 of 602 holes are under
+  20 m, p10 is 3.05 m, the shallowest is 0.18 m, against a median of 161 m and a
+  maximum of 501 m. Jordan: "we have seemingly mixed a tailings pile that sits
+  on surface with what is contained in rock below the surface." MMP has no
+  concept of surface fill, and nothing separates it.
+- **The headline is the zero-cut-off number.** 76.39 Mt at 2.65 g/t Ag is the
+  whole rock mass; the same model at its 15 g/t cut-off is 4.04 Mt at 31.4 g/t.
+  For a narrow vein system the default view answers the wrong question.
+- **No scale bar, no depth readout, nothing saying open pit or underground.**
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.
