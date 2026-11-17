@@ -632,7 +632,18 @@ def assemble(min_holes=3, min_intervals=8, verbose=False, include_imports=True,
         istrong = strong_keys(ikeys)
         rn = name_key(rep_name(r) or "")
         rc = (rep_company(r) or "").lower()
-        rcenter = r.get("center") if (r.get("crs") or {}).get("kind") in ("utm", "latlon") else None
+        # A report's centre is lat/lon wherever it came from — the drill table's
+        # own CRS, or the words on the cover. `crs.kind` describes the COLLAR
+        # coordinates, not the property's position, so gating on it threw the
+        # centre away for every report whose holes sit in a mine grid: 906 of
+        # 4,973 reports carry a perfectly good centre that this never looked at,
+        # and none of them is implausible as a latitude and longitude. The
+        # 150 km guard below therefore never ran for them, which is how three
+        # reports on STLR's Tower (Timmins) attached to Thunder Gold's Tower
+        # Mountain, 700 km away.
+        rcenter = r.get("center")
+        if rcenter and not (-90 <= rcenter[0] <= 90 and -180 <= rcenter[1] <= 180):
+            rcenter = None
         best, best_s = None, 0
         for p in projs:
             s = 0
@@ -643,8 +654,18 @@ def assemble(min_holes=3, min_intervals=8, verbose=False, include_imports=True,
             if rj and pc and rj != pc and not (rj in pc or pc in rj):
                 s -= 12
             pn = name_key(p["project"] or "")
-            if rn and pn and (rn == pn or (len(rn) > 4 and (rn in pn or pn in rn))):
+            # An EXACT name match is good evidence. A substring is not: across
+            # the corpus, of 792 located report pairs whose names contain one
+            # another, 435 — fifty-five per cent — are more than 150 km apart.
+            # "polaris" and "newpolaris" are 10,943 km apart; "storm" and
+            # "goldstorm" 3,818. So a substring scores less than the attach
+            # threshold on its own and has to be corroborated by the company or
+            # the location; "tower" inside "towermountain" used to be worth
+            # exactly the threshold and attached unaided.
+            if rn and pn and rn == pn:
                 s += 6
+            elif rn and pn and len(rn) > 4 and len(pn) > 4 and (rn in pn or pn in rn):
+                s += 3
             if rc and any(rc == c.lower() for c in p["companies"]):
                 s += 3
             if rcenter:

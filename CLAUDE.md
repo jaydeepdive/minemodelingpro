@@ -2676,6 +2676,54 @@ distinguishes them.** Shape without height is not a place.
   For a narrow vein system the default view answers the wrong question.
 - **No scale bar, no depth readout, nothing saying open pit or underground.**
 
+## Two properties called Tower (2026-11-17)
+
+Jordan: "you've tied together 3 reports for the tower gold project with 1 for
+the tower mountain project and yet you still only have FOUR FUCKING HOLES."
+
+Both halves were real, and they are different faults.
+
+### The merge
+
+Three reports on STLR's **Tower** (Timmins, centre 48.4934 -80.0028) attached to
+Thunder Gold's **Tower Mountain** (Thunder Bay), 700 km away, so one project
+page showed four unrelated filed resources from two companies.
+
+`name_key("tower")` is a substring of `name_key("towermountain")`, a substring
+scored **+6**, and the attach threshold is **>= 6** — so a substring name match
+attached unaided, with no company agreement and no location check. Measured
+over the corpus, that is wrong more often than right:
+
+      located report pairs whose names contain one another   792
+      of those, more than 150 km apart                       435  (55%)
+      "polaris" vs "newpolaris"                           10,943 km
+      "storm" vs "goldstorm"                               3,818 km
+
+And the 150 km guard that would have caught it **never ran**. It read a report's
+centre only when `crs.kind` was utm/latlon, and all four Tower reports are
+`local` — a mine grid. But `crs.kind` describes the COLLAR coordinates, not the
+property's position: **840 reports carry a centre that gate ignored, and not one
+of them is implausible as a latitude and longitude.**
+
+Now: an exact name is +6, a substring is +3 and must be corroborated by the
+company or the location, and the centre is read whenever it is there.
+
+      STLR 2022-05  Tower        substring +3, far -20 (700 km)  = -17  stands alone
+      STLR 2025-05  Tower        substring +3                    =   3  stands alone
+      TGOL 2026-01  Tower Mtn    exact name +6                   =   6  ATTACHES
+
+`scripts/test_report_attach.py`, 8 checks, including that corroborated
+substrings still attach so the rule has not simply been tightened into
+uselessness.
+
+### The missing holes
+
+Separate, and not fixed by the above: those four reports hold **252 intervals
+and zero collar tables** between them. Report intervals only place in 3D when
+their holes have collars, so the drilling that reached the model came from news
+releases alone — 12 holes, 1 interval. This is extractor recall, already ranked
+first under "Still open", and it is the larger of the two problems.
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.
