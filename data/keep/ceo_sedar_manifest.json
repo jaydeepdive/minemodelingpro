@@ -1363,5 +1363,20 @@
   "size_kb": 11208,
   "collected": "2026-11-12T18:54:54Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_BIRD-2026-11-12-technical-report-ni-43-101-english-781e.pdf"
+ },
+ {
+  "file": "ceo_NILI-2026-11-16-technical-report-ni-43-101-english-80d7.pdf",
+  "filing_ref": "NILI-2026-11-16-technical-report-ni-43-101-english-80d7.pdf",
+  "company": "NILI",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-11-16",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/NILI-2026-11-16-technical-report-ni-43-101-english-80d7.pdf",
+  "source": "ceo.ca",
+  "size_kb": 36496,
+  "collected": "2026-11-17T03:52:11Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_NILI-2026-11-16-technical-report-ni-43-101-english-80d7.pdf"
  }
 ]
