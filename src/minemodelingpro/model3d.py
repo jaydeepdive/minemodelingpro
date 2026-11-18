@@ -108,7 +108,7 @@ _VIEWER_TMPL = os.path.join(_HERE, "model3d_viewer.html")
 #      isosurfaced, instead of triangulated: it uses the holes that cut nothing
 #      as evidence of where the body is not, and a shape that folds costs no
 #      more than a flat one. Halves the bodies that got no shape at all.
-MODEL_VERSION = 25
+MODEL_VERSION = 26
 # the most domain cells to send to a browser; beyond this the envelope is drawn
 # on a coarser lattice, which is a picture of the same shape
 BODY_MAX_CELLS = 120_000
@@ -1548,7 +1548,68 @@ class Phases:
 
 
 
-def surface_payload(dom_mesh, dom_cont, dom_vparts, dom_thick, dom_method):
+def _mine_width():
+    """The minimum mining width the vein builder used, asked of it directly."""
+    try:
+        from minemodelingpro import veins as _V
+        return float(_V.MINE_WIDTH_M)
+    except Exception:
+        return None
+
+
+def _pack_solid(dom_mesh, max_tris):
+    """A set of per-body meshes, quantised the way the page reads them.
+
+    The same packing the geological surface gets — sorted by body and, within a
+    body, by vein, so either can be drawn alone, and thinned evenly rather than
+    truncated so no body falls off the end of the sort.
+    """
+    MV = np.concatenate([m[0] for m in dom_mesh])
+    FA, ZS, VS, off = [], [], [], 0
+    for v, f, zid, fv in dom_mesh:
+        FA.append(np.asarray(f, np.int64) + off)
+        ZS.append(np.full(len(f), zid, np.int32))
+        VS.append(np.asarray(fv, np.int32))
+        off += len(v)
+    FA = np.concatenate(FA); ZS = np.concatenate(ZS); VS = np.concatenate(VS)
+    o = np.lexsort((VS, ZS))
+    FA, ZS, VS = FA[o], ZS[o], VS[o]
+    dropped = 0
+    if len(FA) > max_tris:
+        take = np.linspace(0, len(FA) - 1, max_tris).astype(int)
+        dropped = int(len(FA) - len(take))
+        FA, ZS, VS = FA[take], ZS[take], VS[take]
+    used, flat = np.unique(FA.ravel(), return_inverse=True)
+    MV, FA = MV[used], flat.reshape(-1, 3)
+    lo3 = MV.min(0)
+    sc = np.maximum(MV.max(0) - lo3, 1e-6) / 65535.0
+    QV = np.clip(np.round((MV - lo3) / sc), 0, 65535).astype(np.uint16)
+
+    def _runs(key, extra=None):
+        out, i = [], 0
+        while i < len(key):
+            j = i
+            while j < len(key) and key[j] == key[i]:
+                j += 1
+            g = {"id": int(key[i]), "start": int(i * 3), "count": int((j - i) * 3)}
+            if extra is not None:
+                g["body"] = int(extra[i])
+            out.append(g)
+            i = j
+        return out
+
+    wide = len(MV) > 65535
+    return {"origin": [round(float(x), 3) for x in lo3],
+            "scale": [float(x) for x in sc],
+            "v": _b64(QV), "nv": int(len(MV)),
+            "f": _b64(FA.astype(np.uint32 if wide else np.uint16)),
+            "wide": bool(wide), "tris": int(len(FA)), "dropped": dropped,
+            "bodies": int(len({g["id"] for g in _runs(ZS)})),
+            "groups": _runs(ZS), "veins": _runs(VS, ZS)}
+
+
+def surface_payload(dom_mesh, dom_cont, dom_vparts, dom_thick, dom_method,
+                    dom_mesh_mine=None, mine_vol=None, mine_width=None):
     """The body's geometry as the page receives it.
 
     Lifted out of build_project so it can be exercised on its own: it is the
@@ -1692,6 +1753,23 @@ def surface_payload(dom_mesh, dom_cont, dom_vparts, dom_thick, dom_method):
                                   65535).astype(np.uint16)),
                 "n": int(len(CV)), "groups": _cruns(CZ),
                 "veins": _cruns(CW)}
+    # ---- the mining shape
+    # The vein opened out to the narrowest width a stope can be taken at. It is
+    # a SEPARATE solid, carried beside the geological one rather than replacing
+    # it, because "what the rock is" and "what would be mined" are different
+    # questions and a reader has to be able to see them apart.
+    if dom_mesh_mine:
+        try:
+            out["mine"] = _pack_solid(dom_mesh_mine, SURFACE_MAX_TRIS)
+            if mine_width:
+                out["mine"]["width_m"] = round(float(mine_width), 2)
+            if mine_vol and float(mine_vol[0] or 0) > 0:
+                vo, vm = float(mine_vol[0]), float(mine_vol[1])
+                out["mine"]["vol_ore_m3"] = round(vo, 1)
+                out["mine"]["vol_mine_m3"] = round(vm, 1)
+                out["mine"]["dilution_pct"] = round(100.0 * (vm - vo) / vo, 1)
+        except Exception:
+            out.pop("mine", None)
     return out
 
 def build_project(ds, max_elements=3, verbose=False, settings=None):
@@ -1967,8 +2045,16 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
             # how far this deposit's own kind of filing carries grade between holes
             el_reach = float(PS.get("max_gap_m") or PS.get("reach_m") or
                              reach_for_style(skey, spacing, max(blk)))
-            dom_pts, dom_info, dom_zone = (None, None, None)
+            # `dom_surf` marks which domain points came from a real surface, and
+            # it was only ever bound inside the zoned branch — so an element that
+            # took any other path reached the estimator call with the name
+            # undefined and the build died with UnboundLocalError. Initialised
+            # with its siblings: no surface flags is "I don't know", not a crash.
+            dom_pts, dom_info, dom_zone, dom_surf = (None, None, None, None)
             dom_mesh = []
+            dom_mesh_mine = []
+            dom_mine_pts = []
+            dom_mine_vol = [0.0, 0.0]        # ore m3, mined m3
             dom_cont = []
             dom_vparts = []
             dom_vseq = [0]          # vein ids run across the whole element
@@ -1986,6 +2072,9 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                 sees one body at a time.
                 """
                 mv = (inf or {}).pop("_mesh", None)
+                mvm = (inf or {}).pop("_mesh_mine", None)
+                fvm = (inf or {}).pop("_face_vein_mine", None)
+                pmine = (inf or {}).pop("_pts_mine", None)
                 tv = (inf or {}).pop("_thick", None)
                 ct = (inf or {}).pop("_contacts", None)
                 fvn = (inf or {}).pop("_face_vein", None)
@@ -2018,6 +2107,15 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                     fv = (np.asarray(fvn, np.int32) if fvn is not None
                           and len(fvn) == nf else np.zeros(nf, np.int32))
                     dom_mesh.append((mv[0], mv[1], int(zid), fv + base))
+                if mvm is not None and len(mvm[1]):
+                    nfm = len(mvm[1])
+                    fm = (np.asarray(fvm, np.int32) if fvm is not None
+                          and len(fvm) == nfm else np.zeros(nfm, np.int32))
+                    dom_mesh_mine.append((mvm[0], mvm[1], int(zid), fm + base))
+                if pmine is not None and len(pmine):
+                    dom_mine_pts.append(np.asarray(pmine, float))
+                dom_mine_vol[0] += float((inf or {}).get("vol_ore_m3") or 0.0)
+                dom_mine_vol[1] += float((inf or {}).get("vol_mine_m3") or 0.0)
                 for q in (vps or [{"vein": 0}]):
                     e = {"id": int(base + int(q.get("vein") or 0)),
                          "body": int(zid),
@@ -2483,7 +2581,9 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
             if dom_mesh:
                 try:
                     el_out["surface"] = surface_payload(
-                        dom_mesh, dom_cont, dom_vparts, dom_thick, dom_method)
+                        dom_mesh, dom_cont, dom_vparts, dom_thick, dom_method,
+                        dom_mesh_mine=dom_mesh_mine, mine_vol=dom_mine_vol,
+                        mine_width=_mine_width())
                 except Exception as exc:                 # geometry is a bonus layer
                     if verbose:
                         print("    surface skipped: %s" % exc)

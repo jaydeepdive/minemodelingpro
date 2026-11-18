@@ -50,6 +50,36 @@ MIN_CONTACTS = 3
 # undulates by a couple of its own widths between holes is a vein; one that is
 # ten widths away is a different vein, or nothing.
 ACROSS_WIDTHS = 3.0
+# A fitted surface is only a VEIN if it holds its own contacts. `sheets` already
+# requires this of every facet it finds (tol_widths=2.0) and `_rejoin` of every
+# merge, but the whole-group spine and drape were exempt — they only had to beat
+# a PLANE, which a diffuse cloud's plane makes easy. So they claimed entire
+# connected components and `sheets` was never reached. On a real 602-hole silver
+# property one "vein" came back holding 470 contacts spread 99.6 m across its own
+# surface (p5..p95 = -28.9 to +29.6 m) on veins measuring 1.0 m in the core,
+# drawn as a 17-degree blanket, with 37% of the metal in blocks outside the
+# shape and the high-grade ones among them.
+HOLD_FLOOR_M = 4.0
+
+# Minimum mining width. A 1 m vein is not a 1 m stope: the narrowest a machine
+# can take a drive is about 2 m, so the shape that gets MINED is the vein plus
+# whatever wall rock the equipment cannot avoid. Leapfrog keeps these two
+# apart and so does this — the geological solid is what the core measured, the
+# mining shape is what a miner would break, and the difference is dilution at
+# the grade the estimator gives that rock, not at zero.
+#
+# It only ever thickens the vein. It never widens its footprint: where the
+# walls have closed there is no vein to mine, so the mining shape stops where
+# the geological one does.
+MINE_WIDTH_M = 2.0
+
+
+def holds_its_contacts(resid, width):
+    """Is a surface tight enough on its contacts to be called one vein?
+
+    `resid` is the perpendicular-equivalent spread of the contacts about the
+    surface; `width` is what the core measures across the vein."""
+    return float(resid) <= max(ACROSS_WIDTHS * float(width or 1.0), HOLD_FLOOR_M)
 # Which deposits are modelled as sheets. A plane fitted through a point cloud
 # always finds SOMETHING — on a formless cloud RANSAC carves out slabs that
 # pass every intrinsic test you can cheaply write, because a thin wide slice
@@ -949,6 +979,8 @@ def _spine_sheet(mid, hw, fw, swing=0.5, min_dip=40.0, min_pts=12, better=0.6):
     curved = float(np.percentile(np.abs(w), 90)) * float(np.sin(np.radians(dip)))
     if curved >= better * flat:
         return None                       # the spine is no real improvement
+    if not holds_its_contacts(curved, width):
+        return None                       # better than a plane, still not a sheet
     R = plane_frame(nrm)
     meta = {"ix": np.arange(len(mid)), "normal": nrm, "dip": dip,
             "dip_dir": ddir, "unroll": un, "curved_m": round(curved, 1),
@@ -1142,6 +1174,8 @@ def _drape_sheet(mid, hw, fw, swing=0.5, max_dip=45.0, min_pts=12, better=0.6):
     folded = float(np.percentile(np.abs(w), 90)) * float(np.cos(np.radians(dip)))
     if folded >= better * flat:
         return None                       # the drape is no real improvement
+    if not holds_its_contacts(folded, width):
+        return None                       # better than a plane, still not a sheet
     R = plane_frame(nrm)
     meta = {"ix": np.arange(len(mid)), "normal": nrm, "dip": dip,
             "dip_dir": ddir, "unroll": dr, "draped": True,
@@ -1197,11 +1231,23 @@ def _merge_veins(built, mid_all, c):
     """
     V, F, P, T, off = [], [], [], [], 0
     fv, cx, cv, parts = [], [], [], []
+    # the mining shape rides along beside the geological one, in its own
+    # vertex space, so either can be drawn without the other
+    VM, FM, PM, fvm, offm = [], [], [], [], 0
+    vol_o = vol_m = 0.0
     for n, (b, ix) in enumerate(built):
         V.append(b["v"])
         F.append(np.asarray(b["f"], np.int64) + off)
         off += len(b["v"])
         P.append(b["pts"])
+        if b.get("fm") is not None:
+            VM.append(b["vm"])
+            FM.append(np.asarray(b["fm"], np.int64) + offm)
+            offm += len(b["vm"])
+            fvm.append(np.full(len(b["fm"]), n, np.int32))
+            PM.append(b["pts_mine"])
+            vol_o += float(b.get("vol_ore_m3") or 0.0)
+            vol_m += float(b.get("vol_mine_m3") or 0.0)
         t = np.asarray(b["thickness"], float)
         T.append(t)
         fv.append(np.full(len(b["f"]), n, np.int32))
@@ -1210,6 +1256,7 @@ def _merge_veins(built, mid_all, c):
         q = {"vein": n, "n_contacts": int(len(ix)),
              "faces": int(len(b["f"])),
              "span_m": b.get("span_m"),
+             "mine_width_m": b.get("mine_width_m"),
              "thick_m": (round(float(np.median(t)), 2) if len(t) else None),
              "area_nodes": int(b["area_nodes"])}
         if b.get("attitude"):
@@ -1221,7 +1268,15 @@ def _merge_veins(built, mid_all, c):
     cvein = np.concatenate(cv + [np.full(len(loose), -1, np.int32)]) if cv else \
         np.full(len(loose), -1, np.int32)
     hw, fw = np.asarray(c["hw"], float), np.asarray(c["fw"], float)
-    return {"v": np.concatenate(V), "f": np.concatenate(F),
+    mine = {}
+    if FM:
+        mine = {"vm": np.concatenate(VM), "fm": np.concatenate(FM),
+                "fvm": np.concatenate(fvm),
+                "pts_mine": np.concatenate(PM) if PM else np.zeros((0, 3)),
+                "vol_ore_m3": vol_o, "vol_mine_m3": vol_m,
+                "mine_width_m": built[0][0].get("mine_width_m")}
+    return {**mine,
+            "v": np.concatenate(V), "f": np.concatenate(F),
             "pts": np.concatenate(P) if P else np.zeros((0, 3)),
             "hw": hw[order], "fw": fw[order], "mid": np.asarray(mid_all)[order],
             "thickness": np.concatenate(T) if T else np.zeros(0),
@@ -1235,7 +1290,8 @@ def _merge_veins(built, mid_all, c):
 
 def _one(c, rot=None, aniso=None, reach=60.0, step=None, min_thick=0.3,
          max_thick=None, taper=0.35, max_nodes=240_000, fill_step=None,
-         extrap=0.25, res=None, voids=None, unroll=None):
+         extrap=0.25, res=None, voids=None, unroll=None,
+         mine_width=MINE_WIDTH_M):
     """One vein: a closed surface, and the points inside it for the estimator.
 
     Three contacts minimum. One intercept is a point and two are a line, and
@@ -1399,9 +1455,10 @@ def _one(c, rot=None, aniso=None, reach=60.0, step=None, min_thick=0.3,
     if faces is None or not len(faces):
         return None
 
-    pts = _fill(U, V, REF, THK, M, R, fill_step or max(step * 0.5, 1.0), unroll)
+    fstep = fill_step or max(step * 0.5, 1.0)
+    pts = _fill(U, V, REF, THK, M, R, fstep, unroll)
     lat = (R, gu, gv, REF, M)
-    return {"v": verts, "f": faces, "pts": pts,
+    res_one = {"v": verts, "f": faces, "pts": pts,
             "hw": c["hw"], "fw": c["fw"], "mid": mid, "veins": 1,
             "thickness": t_true, "n_contacts": int(len(mid)),
             "lat": lat,
@@ -1411,6 +1468,25 @@ def _one(c, rot=None, aniso=None, reach=60.0, step=None, min_thick=0.3,
             # naming this vein has to say to be worth reading
             "span_m": round(float(max(u.max() - u.min(), v.max() - v.min())), 1),
             "area_nodes": int(M.sum())}
+
+    # The mining shape: the same reference surface, the same footprint, opened
+    # out to the minimum width a stope can be taken at. Where the vein is
+    # already wider than that it is left alone, so a 6 m lens is not thinned to
+    # a 2 m drive.
+    mw = float(mine_width or 0.0)
+    if mw > 0.0:
+        THM = np.maximum(THK, mw)
+        vm, fm = _skin(M, _nodes(U, V, REF, THM, R, +0.5, unroll),
+                       _nodes(U, V, REF, THM, R, -0.5, unroll), nu, nv)
+        if fm is not None and len(fm):
+            res_one["vm"], res_one["fm"] = vm, fm
+            res_one["pts_mine"] = _fill(U, V, REF, THM, M, R, fstep, unroll)
+            res_one["mine_width_m"] = mw
+            # what the widening costs, in volume, before any block model sees it
+            cell = float(np.diff(gu).mean()) * float(np.diff(gv).mean())
+            res_one["vol_ore_m3"] = float((THK[M]).sum() * cell)
+            res_one["vol_mine_m3"] = float((THM[M]).sum() * cell)
+    return res_one
 
 
 def _extrap(default=0.25):

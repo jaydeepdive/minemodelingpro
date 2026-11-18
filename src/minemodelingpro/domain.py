@@ -422,6 +422,17 @@ def _vein(segments, at, threshold, rot, aniso, reach, thickness, info,
         if len(tv):
             info["_thick"] = tv
         info["_mesh"] = (np.asarray(out["v"], float), np.asarray(out["f"], np.int64))
+        # The mining shape, beside the geological one. Two solids, not one with
+        # a fudge factor: the vein is what the core measured, the stope is what
+        # a machine would break, and a reader is entitled to see both.
+        if out.get("fm") is not None and len(out["fm"]):
+            info["_mesh_mine"] = (np.asarray(out["vm"], float),
+                                  np.asarray(out["fm"], np.int64))
+            info["_face_vein_mine"] = np.asarray(out.get("fvm", ()), np.int32)
+            info["_pts_mine"] = np.asarray(out["pts_mine"], float)
+            info["mine_width_m"] = out.get("mine_width_m")
+            info["vol_ore_m3"] = round(float(out.get("vol_ore_m3") or 0.0), 1)
+            info["vol_mine_m3"] = round(float(out.get("vol_mine_m3") or 0.0), 1)
         info["_contacts"] = (np.asarray(out["hw"], float), np.asarray(out["fw"], float))
         # which vein each face and each contact belongs to. A body is often
         # several veins, and without this the page can only show or hide the

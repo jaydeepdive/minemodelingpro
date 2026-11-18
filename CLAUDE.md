@@ -2753,6 +2753,109 @@ their holes have collars, so the drilling that reached the model came from news
 releases alone — 12 holes, 1 interval. This is extractor recall, already ranked
 first under "Still open", and it is the larger of the two problems.
 
+## The mining shape, and why the viewer looked 2D (2026-11-18)
+
+Three complaints, one session, and they turned out to be three different
+problems wearing the same face.
+
+### 1. A solid that could not occlude anything
+
+`#body-op` was `min="4" max="60" value="18"`, and the surface material carried
+`depthWrite:false`. So the deposit shape was drawn at 18% opacity with a
+**ceiling of 60%**, and never wrote depth — meaning it could not hide its own
+far wall, could not hide the blocks inside it, and could not hide a drill trace
+behind it. That is not a translucency setting, it is a flat film, and it is why
+a 3D viewer kept being described as showing 2D bodies. It also explains the
+companion complaint that "all the high-grade blocks are outside the blob":
+nothing on screen distinguished a block inside the body from one behind it.
+
+Now `min="10" max="100" value="60"`, and the material writes depth from 55% up.
+The geometry never changed — it was a closed two-wall mesh with a rim all
+along (`veins._skin`). Only the rendering said otherwise.
+
+### 2. The mining shape
+
+A 1 m vein is not a 1 m stope. The narrowest a machine can take a drive is
+about 2 m, so what gets BROKEN is the vein plus the wall rock the equipment
+cannot avoid — and the difference is dilution carried at the grade the
+estimator gives that rock, not at zero.
+
+Leapfrog keeps the geological solid and the mining shape apart, and so does
+this. `veins._one` already built the geological solid properly (reference
+surface through the contact midpoints, thickness interpolated in the vein's own
+frame, min/max thickness, pinch-out where the walls close, voids where drilling
+proved the vein absent). It now builds a second shell on the SAME lattice at
+`MINE_WIDTH_M = 2.0`:
+
+        THM = np.maximum(THK, mine_width)
+
+It only ever thickens, and it never widens the footprint — where the walls have
+closed there is no vein to mine, so the mining shape stops where the geological
+one does. A lens already wider than the drive is left alone (measured: a 6 m
+lens comes back at ratio 1.000, a 1 m vein at 1.96).
+
+Carried through `domain.wireframe` → `model3d._keep_mesh` → `surface_payload`
+as its own `mine` block (`_pack_solid`, same body/vein draw ranges as the
+geological surface), with `vol_ore_m3`, `vol_mine_m3` and `dilution_pct`.
+
+On the public Langis model: 42,058 triangles, 6 veins, thickness 0.3–31.1 m
+(median 2.1), mining shape **+15.0%** by volume. Small, and correctly so —
+most of that deposit is already wider than a 2 m drive, so only the thin parts
+open out. A rule that inflated everything by a fixed factor would have been
+wrong here and would not have shown it.
+
+### 3. The viewer: three views, not two
+
+`Shape · Mining shape · Cells`. The mining shell is drawn amber and always
+see-through (`MINE_OP = 0.26`, no depth write) **around** the vein rather than
+instead of it, so a reader sees how much of what gets broken is ore. Grey was
+tried first and was invisible against grey terrain; opaque was tried and simply
+hid the vein.
+
+### A surface that held nothing
+
+`_spine_sheet` and `_drape_sheet` only had to beat a PLANE, never to hold their
+own contacts within a vein width. Both are now gated on
+`holds_its_contacts(resid, width)` — `resid <= max(3 * width, 4 m)`, the same
+bar every facet from `sheets()` and every merge in `_rejoin` already faced.
+Better than a plane is not the same as being a sheet.
+
+**Recorded because it nearly shipped as a lie:** the diffuse-cloud evidence for
+this gate was measured against a SYNTHETIC stand-in I generated to mirror a
+client project's shape, not against that project. In that fixture every hole
+carries one vein at the same downhole depth on a flat collar grid — which
+genuinely is a horizontal sheet, so the "17 degree blanket" it produced was the
+fixture being flat, not the modeller being broken. Re-probed on synthetic vein
+swarms, the ungated fitters correctly refuse all 11 geometries tried. The gate
+is right on its own terms; the diagnosis it came from was not evidence about
+the client's data. **Check whether the thing you measured is the thing you are
+talking about.**
+
+### Two latent crashes found on the way
+
+- `dom_surf` was only ever bound inside the zoned branch of `build_project`, so
+  an element taking any other path reached the estimator call with the name
+  undefined — `UnboundLocalError`, whole build dead. Initialised with its
+  siblings.
+- `updHud()` looked up `#scalebar .sb` with no guard, so any shell without the
+  bar threw and took the compass down with it, leaving the viewer with **no
+  distance reference at all**. Each piece is now set only if it is on the page.
+
+`scripts/test_vein_hold.py` (10 checks) covers the hold gate. Suites run green
+after: veins 65, vein_hold 10, surface 39, viewer_render 130, zones 15,
+implicit 14, attitude 26, structure 20, targets 22, region_params 6,
+report_attach 8, utm_zone 8.
+
+### Still open on this thread
+
+- Tonnes and grade reported separately for the mineralised body and the mining
+  shape (the shapes and volumes are there; the block sums are not split yet).
+- The invariant: no above-cut-off block outside the volume the tonnage came
+  from. Last measured at 1,584 blocks / 37.1% of metal outside, of which 1,219
+  were exactly one cell out — the undocumented `body_cells(..., dilate=1)` skin.
+- Tailings on surface vs rock below; open-pit vs underground; the default
+  zero cut-off headline.
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.

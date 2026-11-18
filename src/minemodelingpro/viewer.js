@@ -205,13 +205,17 @@ const ZCOL=["#8d98a7","#2f7ed8","#d94f3d","#1f9d55","#8e5bd1","#d99a00","#0f9fb0
             "#c2447a","#6b8e23","#4a5bbd","#b5651d","#2aa198"];
 function zoneColor(id){return id?ZCOL[((id-1)%(ZCOL.length-1))+1]:ZCOL[0];}
 
-let bodyMesh=null,BD=null,surfMesh=null,SF=null,contMesh=null,CT=null;
+let bodyMesh=null,BD=null,surfMesh=null,SF=null,contMesh=null,CT=null,mineMesh=null,MN=null;
+/* the mined envelope is a shell you look THROUGH at the vein inside it */
+const MINE_OP=0.26;
 let bodyStyle=store.get("bodystyle","shape");
 function buildBody(){
   if(bodyMesh){scene.remove(bodyMesh);bodyMesh.geometry.dispose();bodyMesh.material.dispose();bodyMesh=null;}
   if(surfMesh){scene.remove(surfMesh);surfMesh.geometry.dispose();surfMesh.material.dispose();surfMesh=null;SF=null;}
   if(contMesh){scene.remove(contMesh);contMesh.geometry.dispose();contMesh.material.dispose();contMesh=null;CT=null;}
+  if(mineMesh){scene.remove(mineMesh);mineMesh.geometry.dispose();mineMesh.material.dispose();mineMesh=null;MN=null;}
   buildSurface();
+  buildMine();
   const E=M.elements[EL],B=E&&E.body;
   const cb=$("L-body"),row=$("body-op-row"),why=$("body-why");
   if(cb)cb.disabled=!B&&!SF;
@@ -332,9 +336,16 @@ function buildSurface(){
   geo.setIndex(new THREE.BufferAttribute(IX,1));
   geo.computeVertexNormals();
   geo.computeBoundingSphere();
+  /* A deposit shape is a SOLID. Drawn at 18% with depth-writing off it cannot
+     occlude anything — not the blocks inside it, not its own far wall — so a
+     vein came out looking like a flat film and a reader could not tell a block
+     within the body from one behind it. That is what made a 3D viewer look 2D.
+     Opaque enough to read, and it writes depth once it is opaque enough for
+     that to mean anything. */
+  const _op=+((ctl("body-op")||{}).value||60)/100;
   surfMesh=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({
-    vertexColors:true,transparent:true,opacity:+((ctl("body-op")||{}).value||18)/100,
-    depthWrite:false,side:THREE.DoubleSide}));
+    vertexColors:true,transparent:_op<0.99,opacity:_op,
+    depthWrite:_op>=0.55,side:THREE.DoubleSide}));
   surfMesh.renderOrder=2;
   scene.add(surfMesh);
   SF={tris:S.tris,groups:groups,total:IX.length,dropped:S.dropped||0,bodies:S.bodies||0,
@@ -424,7 +435,38 @@ function applySurface(){
     else if(g)mesh.geometry.setDrawRange(g.start,g.count);
     else mesh.geometry.setDrawRange(0,0);};
   if(contMesh&&CT)pick(contMesh,CT.groups,CT.veins,CT.total);
-  if(surfMesh&&SF)pick(surfMesh,SF.groups,SF.veins,SF.total);}
+  if(surfMesh&&SF)pick(surfMesh,SF.groups,SF.veins,SF.total);
+  if(mineMesh&&MN)pick(mineMesh,MN.groups,MN.veins,MN.total);}
+
+/* The mining shape: the vein opened out to the narrowest width a stope can be
+   taken at. A separate solid, so "what the rock is" and "what would be mined"
+   can be looked at apart — and drawn in a flatter tint, because the extra
+   width is wall rock carried for access, not vein. */
+function buildMine(){
+  const E=M.elements[EL],S=E&&E.surface,Q=S&&S.mine;
+  if(!Q||!Q.tris)return;
+  const QV=b64(Q.v,Uint16Array),F=b64(Q.f,Q.wide?Uint32Array:Uint16Array);
+  const o=Q.origin,sc=Q.scale,nv=Q.nv;
+  const pos=new Float32Array(nv*3);
+  for(let i=0;i<nv;i++){
+    const p=V(o[0]+QV[i*3]*sc[0],o[1]+QV[i*3+1]*sc[1],o[2]+QV[i*3+2]*sc[2]);
+    pos[i*3]=p.x;pos[i*3+1]=p.y;pos[i*3+2]=p.z;}
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute("position",new THREE.BufferAttribute(pos,3));
+  geo.setIndex(new THREE.BufferAttribute(F,1));
+  geo.computeVertexNormals();geo.computeBoundingSphere();
+  /* Amber, and always see-through: the mining shape is drawn AROUND the vein
+     rather than instead of it, so a reader can see how much of what gets
+     broken is ore and how much is wall rock carried for access. Grey on grey
+     terrain was invisible, and drawn opaque it simply hid the vein. */
+  mineMesh=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({
+    color:0xE8A33D,transparent:true,opacity:MINE_OP,
+    depthWrite:false,side:THREE.DoubleSide}));
+  mineMesh.renderOrder=3;mineMesh.visible=false;
+  scene.add(mineMesh);
+  MN={tris:Q.tris,groups:Q.groups||[],veins:Q.veins||[],total:F.length,
+      width:Q.width_m||null,vol_ore:Q.vol_ore_m3||null,vol_mine:Q.vol_mine_m3||null,
+      dil:(Q.dilution_pct==null?null:Q.dilution_pct)};}
 
 /* which of the two the envelope toggle shows */
 function bodyNote(){
@@ -442,6 +484,14 @@ function bodyNote(){
   const how=(SF&&SF.method==="vein")?" · vein surfaces through the contacts"
     :(SF&&SF.method==="implicit")?" · implicit surfaces, from what the drilling "
       +"says is inside the body and what it says is outside":"";
+  // The mining shape is a different question from the vein, so it reports its
+  // own numbers: how wide it was opened to, and what that costs in dilution.
+  if(MN&&bodyStyle==="mine"){
+    const bits=[fmtN(MN.tris)+" triangles"];
+    if(MN.width)bits.push("mined at a minimum width of "+MN.width+" m");
+    if(MN.dil!=null)bits.push(MN.dil.toFixed(0)+"% more volume than the vein");
+    bits.push("vein shown inside it");
+    ctl("body-note").textContent=bits.join(" · ");return;}
   ctl("body-note").textContent=
     (SF&&bodyStyle==="shape")?(fmtN(SF.tris)+" triangles"+t+how)
       :(B?(fmtN(B.n)+" cells"):(SF?fmtN(SF.tris)+" triangles"+t+how:"not built"));}
@@ -450,30 +500,39 @@ function bodyVis(){
   // The chosen view, where the model has it; the other one where it does not,
   // so the layer is never silently empty because of which button is lit.
   const on=!!(ctl("L-body").checked);
-  const shape=bodyStyle==="shape" ? !!SF : !BD;
-  if(surfMesh)surfMesh.visible=on&&shape;
-  if(contMesh)contMesh.visible=on&&shape&&!!(ctl("L-contacts").checked);
-  if(bodyMesh)bodyMesh.visible=on&&!shape;
-  const cr=$("cont-row");if(cr)cr.style.display=(on&&shape&&CT)?"":"none";
+  // three views of the same deposit: the mineralised body as the core measured
+  // it, the shape that would be mined, and the block lattice
+  let want=bodyStyle;
+  if(want==="shape"&&!SF)want=BD?"cells":"shape";
+  if(want==="mine"&&!MN)want=SF?"shape":(BD?"cells":"mine");
+  const shape=want==="shape",mine=want==="mine";
+  if(surfMesh)surfMesh.visible=on&&(shape||mine);
+  if(mineMesh)mineMesh.visible=on&&mine;
+  if(contMesh)contMesh.visible=on&&(shape||mine)&&!!(ctl("L-contacts").checked);
+  if(bodyMesh)bodyMesh.visible=on&&want==="cells";
+  const cr=$("cont-row");if(cr)cr.style.display=(on&&(shape||mine)&&CT)?"":"none";
   const r=$("zlab-row");if(r)r.style.display=on?"":"none";
   // The switch is shown whenever there is an envelope at all — hiding it left a
   // reader unable to tell "this model has only one view" from "this control
   // does not exist". A view the model does not carry is disabled and says why.
   const sw=$("body-style");
   if(sw){
-    sw.style.display=(SF||BD)?"":"none";
+    sw.style.display=(SF||BD||MN)?"":"none";
     const why={shape:SF?"":"This model has no surface: a body needs three "
                  +"intercepts to triangulate one. Showing the cells instead.",
+               mine:MN?"":"This model carries no mining shape. It is built from "
+                 +"vein surfaces, so a deposit modelled another way has none.",
                cells:BD?"":"This model carries no block-lattice envelope."};
     sw.querySelectorAll("[data-bs]").forEach(b=>{
-      const have=b.dataset.bs==="shape"?!!SF:!!BD;
+      const have=b.dataset.bs==="shape"?!!SF:(b.dataset.bs==="mine"?!!MN:!!BD);
       b.disabled=!have;
       b.style.opacity=have?"":"0.45";
       b.style.cursor=have?"":"default";
       if(!have)b.title=why[b.dataset.bs];});
     const note=sw.querySelector(".bs-note");
     if(note)note.textContent=(bodyStyle==="shape"&&!SF)?why.shape
-      :((bodyStyle==="cells"&&!BD)?why.cells:"");}}
+      :((bodyStyle==="mine"&&!MN)?why.mine
+      :((bodyStyle==="cells"&&!BD)?why.cells:""));}}
 
 /* Which of the envelope is drawn: everything, or one body when a zone is picked.
    Same rule as the blocks, so the two always show the same deposit. */
@@ -1554,6 +1613,9 @@ ctl("L-body").onchange=e=>{store.set("body",e.target.checked);bodyVis();drawLabe
    d.style.cssText="display:none;margin:4px 0 2px;font-size:11px";
    d.innerHTML='<button class="chip" data-bs="shape" title="The surface through the '
      +'intercepts, at the thickness each one shows">Shape</button>'
+     +'<button class="chip" data-bs="mine" title="The vein opened out to the '
+     +'narrowest width a stope can be taken at: the vein plus the wall rock a '
+     +'machine cannot avoid">Mining shape</button>'
      +'<button class="chip" data-bs="cells" title="The same body on the block '
      +'lattice, cell by cell">Cells</button>'
      +'<div class="bs-note" style="color:var(--mut,#6b7684);font-size:10.5px;'
@@ -1584,9 +1646,14 @@ ctl("L-contacts").onchange=e=>{store.set("contacts",e.target.checked);bodyVis();
 ctl("L-zlabels").onchange=e=>{store.set("zlabels",e.target.checked);drawLabels();};
 {const v=store.get("zlabels",false);const c=$("L-zlabels");if(c)c.checked=v;}
 ctl("body-op").oninput=e=>{const v=+e.target.value;ctl("body-op-v").textContent=v+"%";
-  for(const m of [bodyMesh,surfMesh])if(m){m.material.opacity=v/100;m.material.needsUpdate=true;}
+  for(const m of [bodyMesh,surfMesh])if(m){
+    m.material.opacity=v/100;m.material.transparent=v<99;
+    m.material.depthWrite=v>=55;m.material.needsUpdate=true;}
+  // the shell tracks the slider but stays see-through, or it hides the vein
+  if(mineMesh){mineMesh.material.opacity=Math.min(v/100,MINE_OP*1.6);
+    mineMesh.material.needsUpdate=true;}
   store.set("bodyop",v);};
-{const v=store.get("bodyop",18);ctl("body-op").value=v;ctl("body-op-v").textContent=v+"%";
+{const v=store.get("bodyop",60);ctl("body-op").value=v;ctl("body-op-v").textContent=v+"%";
  ctl("L-body").checked=store.get("body",false);}
 /* hole labels (nearest ~80 to screen centre) */
 const LBL=$("labels");let lblOn=false;$("L-labels").onchange=e=>{lblOn=e.target.checked;LBL.innerHTML="";drawLabels();};
@@ -1818,8 +1885,16 @@ addEventListener("keydown",e=>{
 /* scale bar + compass */
 function niceNum(x){const p=Math.pow(10,Math.floor(Math.log10(x)));const f=x/p;return(f<1.5?1:f<3.5?2:f<7.5?5:10)*p;}
 function updHud(){const mpp=2*dist*Math.tan(camera.fov*Math.PI/360)/Hh();const n=niceNum(90*mpp);
-  document.querySelector("#scalebar .sb").style.width=Math.max(20,Math.min(200,n/mpp))+"px";$("sb-l").textContent=n>=1000?(n/1000)+" km":Math.round(n)+" m";
-  $("needle").setAttribute("transform",`rotate(${(-yaw*180/Math.PI+180).toFixed(1)})`);}
+  // The distance reference is the one thing on screen that makes a footprint
+  // readable, and an unguarded lookup here threw on any shell without the bar —
+  // which took the compass down with it and left the viewer with no scale at
+  // all. Each piece is now set only if it is actually on the page.
+  const sb=document.querySelector("#scalebar .sb");
+  if(sb)sb.style.width=Math.max(20,Math.min(200,n/mpp))+"px";
+  const lb=$("sb-l");
+  if(lb)lb.textContent=n>=1000?(n/1000)+" km":Math.round(n)+" m";
+  const nd=$("needle");
+  if(nd)nd.setAttribute("transform",`rotate(${(-yaw*180/Math.PI+180).toFixed(1)})`);}
 
 /* ---- what the report says about the ground between the holes --------------
    Geophysics covers the ground drilling cannot: it is why a target was drilled
