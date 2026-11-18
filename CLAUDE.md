@@ -3059,6 +3059,21 @@ are NOT mostly waste. Solid volume over the volume of the blocks flagged
 inside it is **0.92** — the lattice tracks the body closely, so "the blocks are
 five times the vein width" is not what is happening here.
 
+### The deposit shape was switched off by default
+
+Found by finally opening the client's own page and looking at it, after a day
+of reporting numbers computed from its JSON. "Deposit shape" defaulted to OFF:
+a reader opened a model and saw drill traces and a cloud of blocks, with the
+body behind a toggle they had to find. That is most of what "this doesn't give
+me a sense of what the actual model looks like" meant, and no amount of fixing
+the geometry behind it would have helped.
+
+Now on by default; the store still remembers anyone who turns it off.
+
+**Look at the page.** Every other finding this session came from measuring the
+model JSON, and all of them were real — and the single highest-impact fix was
+a default visible in one screenshot.
+
 ### Still open on this thread
 
 - **Build time**: 23 minutes on 602 holes. `sheets()` at ~8 s per large

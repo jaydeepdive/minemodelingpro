@@ -1791,7 +1791,12 @@ ctl("body-op").oninput=e=>{const v=+e.target.value;ctl("body-op-v").textContent=
     mineMesh.material.needsUpdate=true;}
   store.set("bodyop",v);};
 {const v=store.get("bodyop",60);ctl("body-op").value=v;ctl("body-op-v").textContent=v+"%";
- ctl("L-body").checked=store.get("body",false);}
+ /* ON by default. The deposit shape is the thing this product makes, and it
+    was shipped switched off: a reader opened a model, saw drill traces and a
+    cloud of blocks, and had to find a toggle to see the body at all. That is
+    most of what "I can't tell what the model looks like" meant. The store
+    still remembers anyone who turns it off. */
+ ctl("L-body").checked=store.get("body",true);}
 /* hole labels (nearest ~80 to screen centre) */
 const LBL=$("labels");let lblOn=false;$("L-labels").onchange=e=>{lblOn=e.target.checked;LBL.innerHTML="";drawLabels();};
 function drawLabels(){
