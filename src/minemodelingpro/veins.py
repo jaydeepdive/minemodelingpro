@@ -80,6 +80,39 @@ def holds_its_contacts(resid, width):
     `resid` is the perpendicular-equivalent spread of the contacts about the
     surface; `width` is what the core measures across the vein."""
     return float(resid) <= max(ACROSS_WIDTHS * float(width or 1.0), HOLD_FLOOR_M)
+
+
+def measured_width(hw, fw):
+    """How wide the DRILLING says the vein is, independent of any fitted surface.
+
+    The wall separation as a DISTANCE, not as a projection onto a surface's
+    normal. This matters for the hold test and nowhere else, because a
+    thickness measured perpendicular to the surface being tested is set partly
+    by that surface's own attitude: lay a flat sheet through a swarm of steep
+    veins and the "thickness" it reports is the veins' VERTICAL extent, which
+    is large — and a tolerance of three times that then licenses the very sheet
+    that produced it. The test justifies itself and the blanket stands.
+
+    Measured on a 602-hole silver property in the Cobalt camp, whose style is
+    read off its own core as a narrow vein system with a 1.0 m median
+    intercept: five draped surfaces held 377 of the 494 contacts at dips of
+    37.8, 17.3, 8.4, 0.0 and 12.8 degrees, reporting 4.6 to 8.9 m thick. One of
+    them carried 235 contacts across 343 m at 17 degrees. Those are steep
+    narrow veins flattened into blankets, and the projected width passed every
+    one of them.
+
+    An intercept length cannot be inflated that way — it is the hole's own
+    measurement — and it is an upper bound on true width, since a vein cut
+    obliquely reads longer than it is and never shorter. So using it is
+    conservative in the direction that keeps genuine folded horizons.
+    """
+    hw = np.asarray(hw, float)
+    fw = np.asarray(fw, float)
+    if not len(hw) or len(hw) != len(fw):
+        return 1.0
+    d = np.linalg.norm(fw - hw, axis=1)
+    d = d[np.isfinite(d) & (d > 0)]
+    return float(np.median(d)) if len(d) else 1.0
 # Which deposits are modelled as sheets. A plane fitted through a point cloud
 # always finds SOMETHING — on a formless cloud RANSAC carves out slabs that
 # pass every intrinsic test you can cheaply write, because a thin wide slice
@@ -979,7 +1012,7 @@ def _spine_sheet(mid, hw, fw, swing=0.5, min_dip=40.0, min_pts=12, better=0.6):
     curved = float(np.percentile(np.abs(w), 90)) * float(np.sin(np.radians(dip)))
     if curved >= better * flat:
         return None                       # the spine is no real improvement
-    if not holds_its_contacts(curved, width):
+    if not holds_its_contacts(curved, measured_width(hw, fw)):
         return None                       # better than a plane, still not a sheet
     R = plane_frame(nrm)
     meta = {"ix": np.arange(len(mid)), "normal": nrm, "dip": dip,
@@ -1174,7 +1207,7 @@ def _drape_sheet(mid, hw, fw, swing=0.5, max_dip=45.0, min_pts=12, better=0.6):
     folded = float(np.percentile(np.abs(w), 90)) * float(np.cos(np.radians(dip)))
     if folded >= better * flat:
         return None                       # the drape is no real improvement
-    if not holds_its_contacts(folded, width):
+    if not holds_its_contacts(folded, measured_width(hw, fw)):
         return None                       # better than a plane, still not a sheet
     R = plane_frame(nrm)
     meta = {"ix": np.arange(len(mid)), "normal": nrm, "dip": dip,

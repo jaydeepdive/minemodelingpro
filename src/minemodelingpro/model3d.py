@@ -2499,6 +2499,45 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                 except Exception as _ze:
                     print(f"[model3d] zone summary failed: {type(_ze).__name__}: {str(_ze)[:90]}",
                           flush=True)
+            # ---- which solid each block falls in
+            # "The mineralised body" and "the shape that would be mined" are
+            # different tonnages, and a reader has to be able to see them apart
+            # at whatever cut-off they choose — so the split is carried per
+            # block and summed in the page, not frozen into one headline here.
+            # 0 outside both, 1 inside the vein, 2 in the mining shape only
+            # (that is the dilution: wall rock carried for access, at whatever
+            # grade the estimator gave it, never assumed barren).
+            bshape = None
+            try:
+                if dom_pts is not None and len(dom_pts):
+                    ore_src = np.asarray(dom_pts, float)
+                    if (dom_surf is not None and len(dom_surf) == len(ore_src)
+                            and np.asarray(dom_surf, bool).any()):
+                        ore_src = ore_src[np.asarray(dom_surf, bool)]
+
+                    def _in_solid(src, ik):
+                        if src is None or len(src) < 8:
+                            return np.zeros(len(ik), bool)
+                        ck_, sp_, or_ = body_cells(src, lo, bsz, dilate=0)
+                        if ck_ is None or not len(ck_):
+                            return np.zeros(len(ik), bool)
+                        key = _cell_keys(ik, or_, sp_)
+                        got = np.zeros(len(ik), bool)
+                        ok_ = key >= 0
+                        if ok_.any():
+                            ps_ = np.clip(np.searchsorted(ck_, key[ok_]), 0, len(ck_) - 1)
+                            got[ok_] = ck_[ps_] == key[ok_]
+                        return got
+
+                    ik_keep = ijk[keep].astype(np.int64)
+                    in_ore = _in_solid(ore_src, ik_keep)
+                    in_mine = (_in_solid(np.concatenate(dom_mine_pts), ik_keep)
+                               if dom_mine_pts else np.zeros(len(ik_keep), bool))
+                    bshape = np.where(in_ore, 1, np.where(in_mine, 2, 0)).astype(np.uint8)
+            except Exception as _se:
+                print(f"[model3d] block/solid split failed: "
+                      f"{type(_se).__name__}: {str(_se)[:90]}", flush=True)
+                bshape = None
             el_out["blocks"] = {"zone": (_b64(bzone[keep].astype(np.uint8))
                                          if bzone is not None else None),
                                 "cls": (_b64(bcls[keep].astype(np.uint8))
@@ -2506,6 +2545,10 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                                 "classes": list(CLASSES),
                                 "origin": [round(float(v), 2) for v in lo], "size": list(bsz),
                                 "ijk": _b64(ijk[keep].astype(np.uint16)), "g": _b64(gr[keep].astype(np.float32)),
+                                "shape": (_b64(bshape) if bshape is not None else None),
+                                "shape_n": ([int((bshape == 0).sum()), int((bshape == 1).sum()),
+                                             int((bshape == 2).sum())]
+                                            if bshape is not None else None),
                                 "n": int(keep.sum()), "n_total": int(len(gr)), "shown_from": round(show, 4),
                                 "tonnes_per_block": round(bt, 1), "density": dens, "params": params}
             # ---- the body the model imagined, carried to the viewer

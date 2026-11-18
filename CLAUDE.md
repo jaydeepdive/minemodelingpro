@@ -2873,6 +2873,36 @@ assayed intercept, CLOSER than the inside blocks at 9.8 m, and 0% beyond 30 m.
 Stated on the page in those words rather than quietly folded into the headline.
 Disclosure is not the fix.
 
+### The hold test was measuring with a ruler the suspect had bent
+
+`holds_its_contacts` took its width from the thickness measured PERPENDICULAR
+TO THE SURFACE BEING TESTED — and that quantity is set partly by the surface's
+own attitude. Lay a flat sheet through a swarm of steep veins and the thickness
+it reports is the veins' VERTICAL extent, which is large; three times that then
+licenses the very sheet that produced it. The test justified itself and the
+blanket stood.
+
+Found on the client's own 602-hole Cobalt-camp property, whose style MMP reads
+off its own core as a **narrow vein system, 1.0 m median intercept**:
+
+      5 draped surfaces held 377 of the 494 contacts
+      dips 37.8, 17.3, 8.4, 0.0, 12.8 degrees
+      reporting 4.6 to 8.9 m thick
+      one of them: 235 contacts across 343 m at 17 degrees
+
+Steep narrow veins flattened into blankets, and the projected width passed
+every one. So the hold test now uses `measured_width(hw, fw)` — the wall
+separation as a DISTANCE, the hole's own measurement, which no fitted surface
+can inflate, and which is an upper bound on true width (a vein cut obliquely
+reads longer, never shorter) so it errs towards keeping real folded horizons.
+
+Synthetic check both ways: a 78-degree narrow-vein swarm drilled by vertical
+holes measures 1.02 m, is refused by the drape, and `sheets()` then finds 8
+veins; a real folded 5 m horizon measures 4.97 m and is still taken whole.
+The public Langis model is UNCHANGED by this (its intercepts really are 2.1 m
+median, so its allowance is legitimately wider) — the fix bites where the
+drilling says the veins are narrow.
+
 ### Still open on this thread
 
 - **The actual fix for the above**: the vein solid does not reach ore sitting

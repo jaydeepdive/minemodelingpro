@@ -118,6 +118,48 @@ sp = V._spine_sheet(mid, hw, fw)
 check("a steep vein whose strike swings is still taken by the spine",
       sp is not None, "the case the spine exists for")
 
+# --------------------------------------- the width the test is allowed to use
+# A thickness measured PERPENDICULAR TO THE SURFACE BEING TESTED is set partly
+# by that surface's own attitude. Lay a flat sheet through steep veins and the
+# thickness it reports is their VERTICAL extent, and three times that then
+# licenses the sheet that produced it. Measured on the real property: five
+# draped surfaces held 377 of 494 contacts at dips of 37.8, 17.3, 8.4, 0.0 and
+# 12.8 degrees, reporting 4.6-8.9 m thick against a 1.0 m median intercept.
+def steep_swarm(n_v=6, sep=18.0, w=1.0, dip=78.0, seed=2):
+    """Steep narrow veins drilled by vertical holes — the Cobalt-camp case."""
+    r = np.random.default_rng(seed)
+    d = np.radians(dip)
+    nrm = np.array([0.0, -np.sin(d), np.cos(d)])
+    a = np.array([1.0, 0, 0]); b = np.cross(nrm, a)
+    mid, hw, fw = [], [], []
+    t = w / np.cos(np.radians(90 - dip))      # a vertical hole reads it longer
+    for k in range(n_v):
+        off = (k - (n_v - 1) / 2) * sep
+        for uu in np.arange(-150, 151, 20):
+            for vv in np.arange(-70, 71, 20):
+                m = a * uu + b * vv + nrm * off + r.normal(0, 0.4, 3)
+                mid.append(m)
+                hw.append(m - np.array([0, 0, t / 2]))
+                fw.append(m + np.array([0, 0, t / 2]))
+    return np.array(mid), np.array(hw), np.array(fw)
+
+
+mid, hw, fw = steep_swarm()
+mw = V.measured_width(hw, fw)
+check("the drilling's own width survives a wrong surface", 0.8 <= mw <= 1.4,
+      f"{mw:.2f} m from 1.0 m veins")
+check("steep narrow veins are NOT flattened into one blanket",
+      V._drape_sheet(mid, hw, fw) is None,
+      "the drape's own inflated thickness used to license it")
+found, _l = V.sheets(mid, hw, fw, 40.0)
+check("and sheets() then finds the veins", len(found) > 3, f"{len(found)} found")
+
+mid, hw, fw = folded(w=5.0)
+mw = V.measured_width(hw, fw)
+check("a genuinely thick bed still measures thick", 4.0 <= mw <= 6.5, f"{mw:.2f} m")
+check("so the folded horizon is still taken whole",
+      V._drape_sheet(mid, hw, fw) is not None)
+
 print(f"\n{len(OK)} passed, {len(BAD)} failed")
 for b in BAD:
     print("  failed:", b)
