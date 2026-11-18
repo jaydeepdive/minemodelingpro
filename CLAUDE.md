@@ -3019,6 +3019,19 @@ median 109 m, and it answers only where a collar sits within 40 m, declining
 for the other 10% rather than guessing. A disclosure that guesses is worse than
 no disclosure.
 
+### Open pit or underground, at the cut-off on screen
+
+"I don't know if it's suitable for underground or open pit mining." The split
+already existed — `mining_method.split`, a geometric depth rule, rendered in
+its own panel — but at its OWN two cut-offs (5 and 12.5 g/t against a 15 g/t
+headline), totalling 8.6 Mt where the headline says 2.9 Mt. Two tonnages on
+one page that never matched, so neither answered the question.
+
+It now also appears in the by-shape panel at whatever cut-off the reader has
+set, using the same `limit_m` the model already decided so the two can never
+disagree. Public Langis at 15 g/t: 1.54 Mt @ 83.5 above 100 m depth, 2.78 Mt
+@ 78.3 below it.
+
 ### Still open on this thread
 
 - **Build time**: 23 minutes on 602 holes. `sheets()` at ~8 s per large

@@ -714,6 +714,10 @@ let terrain=null,TER=null;
    It answers only where drilling actually constrains the surface, and null
    elsewhere, because a tailings disclosure that guesses is worse than none. */
 let COLZ=null;
+/* The depth the model already decided a pit reaches on this deposit. Taken
+   from the split the page computes elsewhere rather than invented here, so
+   the two can never disagree. */
+const PITLIM=(((M.by_metal||{}).method||{}).limit_m);
 (function(){
   if(!HO||!HO.length)return;
   const CELL=40,g={};
@@ -940,7 +944,7 @@ function shapeSplit(cut){
   let nO=0,sO=0,nM=0,sM=0,nX=0,sX=0;
   // and, separately, what sits AT the ground rather than in it
   const B=M.elements[EL].blocks,o=B.origin,[bx,by,bz]=B.size,ijk=BK.ijk;
-  let nS=0,sS=0;
+  let nS=0,sS=0,nP=0,sP=0,nU=0,sU=0;
   for(let i=0;i<BK.n;i++){
     const v=g[i];if(!(v>=cut))continue;
     const k=sh[i];
@@ -951,14 +955,23 @@ function shapeSplit(cut){
       const sz=surfaceZ(o[0]+(ijk[i*3]+0.5)*bx, o[1]+(ijk[i*3+1]+0.5)*by);
       if(sz!==null){
         const d=sz-(o[2]+(ijk[i*3+2]+0.5)*bz);
-        if(d<10){nS++;sS+=v;}}}}
+        if(d<10){nS++;sS+=v;}
+        // open pit or underground, AT THE CUT-OFF ON SCREEN. The deposit is
+        // already split this way elsewhere on the page, but at its own two
+        // cut-offs, so the two tonnages never matched the headline and a
+        // reader could not tell which number answered "pit or underground".
+        if(PITLIM!=null){ if(d<=PITLIM){nP++;sP+=v;} else {nU++;sU+=v;} }}}}
   const all=sO+sM+sX;
   if(!(nO+nM+nX))return null;
   return {ore:{t:nO*tpb,g:nO?sO/nO:0,n:nO},
           mine:{t:(nO+nM)*tpb,g:(nO+nM)?(sO+sM)/(nO+nM):0,n:nO+nM},
           out:{t:nX*tpb,g:nX?sX/nX:0,n:nX,share:all>0?sX/all:0},
           surf:COLZ?{t:nS*tpb,g:nS?sS/nS:0,n:nS,
-                     share:all>0?sS/all:0}:null};}
+                     share:all>0?sS/all:0}:null,
+          pit:(COLZ&&PITLIM!=null&&(nP+nU))?{
+                 limit:PITLIM,
+                 pit:{t:nP*tpb,g:nP?sP/nP:0,n:nP},
+                 ug:{t:nU*tpb,g:nU?sU/nU:0,n:nU}}:null};}
 
 function drawSplit(cut){
   const box=$("shape-split");if(!box)return;
@@ -983,6 +996,13 @@ function drawSplit(cut){
       +`or waste pile rather than rock in place, and this model does not tell `
       +`the two apart. Check it before quoting the total.`
       +`</p>`;}
+  if(r.pit){
+    h+=`<div class="kv"><span>Above ${fmtN(r.pit.limit)} m depth `
+      +`<small style="opacity:.7">open pit</small></span><b>${fmtT(r.pit.pit.t)}${
+      r.pit.pit.g?" @ "+fmtG(r.pit.pit.g,E.unit):""}</b></div>`
+      +`<div class="kv"><span>Below it <small style="opacity:.7">underground`
+      +`</small></span><b>${fmtT(r.pit.ug.t)}${
+      r.pit.ug.g?" @ "+fmtG(r.pit.ug.g,E.unit):""}</b></div>`;}
   if(r.out.n){
     h+=`<div class="kv" style="color:#9a3412"><span>Outside every modelled body</span>`
       +`<b>${fmtT(r.out.t)}${r.out.g?" @ "+fmtG(r.out.g,E.unit):""}</b></div>`
