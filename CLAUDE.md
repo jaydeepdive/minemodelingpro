@@ -2846,13 +2846,42 @@ after: veins 65, vein_hold 10, surface 39, viewer_render 130, zones 15,
 implicit 14, attitude 26, structure 20, targets 22, region_params 6,
 report_attach 8, utm_zone 8.
 
+### Tonnes by shape, and the number that explains the distrust
+
+Each block now carries which solid it falls in — `blocks.shape`, 0 outside
+both, 1 the vein, 2 the mining shape only — so the viewer sums tonnes and grade
+PER SHAPE at whatever cut-off is on screen rather than freezing one headline
+server-side. Dilution is therefore carried at the grade the estimator gave that
+rock, never assumed barren.
+
+It also puts a number on the complaint that started this. On the public Langis
+model at a 15 g/t cut-off:
+
+      In the mineralised body     2.98 Mt @ 80.0 g/t
+      In the mining shape         3.02 Mt @ 79.6 g/t
+      Outside every modelled body 1.81 Mt @ 72.6 g/t   <- 35.3% of the metal
+
+**1,104 blocks above the cut-off sit in rock no modelled shape encloses, and
+they were already inside the headline tonnage.** That is why the picture and
+the figure disagree, and why a reader stops trusting the number: the page was
+reporting a tonnage its own wireframe does not contain, and said nothing. The
+share barely moves with cut-off (35.3% at 15 g/t, 33.9% at 72 g/t), so it is
+not an edge effect of weak blocks — it is ore the body failed to enclose.
+Previously measured: outside blocks above 60 g/t sit a median 8.8 m from a real
+assayed intercept, CLOSER than the inside blocks at 9.8 m, and 0% beyond 30 m.
+
+Stated on the page in those words rather than quietly folded into the headline.
+Disclosure is not the fix.
+
 ### Still open on this thread
 
-- Tonnes and grade reported separately for the mineralised body and the mining
-  shape (the shapes and volumes are there; the block sums are not split yet).
-- The invariant: no above-cut-off block outside the volume the tonnage came
-  from. Last measured at 1,584 blocks / 37.1% of metal outside, of which 1,219
-  were exactly one cell out — the undocumented `body_cells(..., dilate=1)` skin.
+- **The actual fix for the above**: the vein solid does not reach ore sitting
+  9 m from an assayed intercept. First suspect is `out_m = reach * _extrap()`
+  — 0.25 of the reach, about 15 m — capping how far a sheet runs past its
+  outermost contact. Do NOT simply raise it: that knob is recorded as dangerous
+  on its own (Blue Moon at 121x) and is only safe with the body bound.
+- The undocumented `body_cells(..., dilate=1)` one-cell skin: 1,219 of the
+  1,584 outside blocks measured earlier were exactly one cell out.
 - Tailings on surface vs rock below; open-pit vs underground; the default
   zero cut-off headline.
 

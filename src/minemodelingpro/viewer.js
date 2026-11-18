@@ -189,7 +189,11 @@ function buildBlocks(){if(blockMesh){scene.remove(blockMesh);blockMesh.geometry.
   const pos=new Float32Array(n*3);for(let i=0;i<n;i++){const p=V(o[0]+(ijk[i*3]+.5)*bx,o[1]+(ijk[i*3+1]+.5)*by,o[2]+(ijk[i*3+2]+.5)*bz);pos[i*3]=p.x;pos[i*3+1]=p.y;pos[i*3+2]=p.z;}
   // the grid itself is kept, not just the drawn positions: it is what lets a
   // drill interval be asked "is there a block here, and what grade did it get"
-  BK={n,g,pos,ijk,o,size:B.size,zone:B.zone?b64(B.zone,Uint8Array):null,cell:null};
+  BK={n,g,pos,ijk,o,size:B.size,zone:B.zone?b64(B.zone,Uint8Array):null,cell:null,
+      /* which solid each block falls in: 0 outside both, 1 the vein, 2 the
+         mining shape only. Carried per block so the split follows the cut-off
+         slider rather than being frozen into one headline. */
+      shape:B.shape?b64(B.shape,Uint8Array):null,tpb:B.tonnes_per_block||0};
   const geo=new THREE.BoxGeometry(bx*0.97,bz*0.97,by*0.97);
   blockMesh=new THREE.InstancedMesh(geo,new THREE.MeshLambertMaterial({transparent:true,opacity:+$("blk-op").value/100,depthWrite:false}),n);
   blockMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);blockMesh.visible=$("L-blocks").checked;scene.add(blockMesh);applyCut();}
@@ -886,7 +890,49 @@ function setupGT(){const E=M.elements[EL];const cut=$("cut");
 function updCut(){const E=M.elements[EL];if(!E.gt)return;const r=E.gt[+$("cut").value];curCut=r[0];store.set("cut:"+M.slug+":"+EL,+$("cut").value);
   $("cut-v").textContent="≥ "+fmtG(r[0],E.unit);$("g-t").textContent=fmtT(r[1]);$("g-g").textContent=r[1]?fmtG(r[2],E.unit):"–";
   $("g-c").textContent=fmtC(r[3],E.contained_unit);$("g-cu").textContent="Contained "+({oz:"oz",lb:"lb",t:"t"}[E.contained_unit]||"");
-  applyCut();drawChart(r);drawCmp(r);drawBreakdown();reconLater();}
+  applyCut();drawChart(r);drawCmp(r);drawSplit(r[0]);drawBreakdown();reconLater();}
+
+/* Tonnes and grade for each solid at the cut-off on screen, and — the part
+   that matters — how much of the metal sits in NEITHER. A headline tonnage
+   that silently includes rock outside every drawn body is the thing that makes
+   a reader distrust the number, because the picture and the figure disagree
+   and nothing on the page admits it. */
+function shapeSplit(cut){
+  if(!BK||!BK.shape||!BK.tpb)return null;
+  const g=BK.g,sh=BK.shape,tpb=BK.tpb;
+  let nO=0,sO=0,nM=0,sM=0,nX=0,sX=0;
+  for(let i=0;i<BK.n;i++){
+    const v=g[i];if(!(v>=cut))continue;
+    const k=sh[i];
+    if(k===1){nO++;sO+=v;}
+    else if(k===2){nM++;sM+=v;}
+    else{nX++;sX+=v;}}
+  const all=sO+sM+sX;
+  if(!(nO+nM+nX))return null;
+  return {ore:{t:nO*tpb,g:nO?sO/nO:0,n:nO},
+          mine:{t:(nO+nM)*tpb,g:(nO+nM)?(sO+sM)/(nO+nM):0,n:nO+nM},
+          out:{t:nX*tpb,g:nX?sX/nX:0,n:nX,share:all>0?sX/all:0}};}
+
+function drawSplit(cut){
+  const box=$("shape-split");if(!box)return;
+  const r=shapeSplit(cut),E=M.elements[EL];
+  if(!r){box.innerHTML="";box.style.display="none";return;}
+  box.style.display="";
+  const row=(label,t,gr,note)=>`<div class="kv"><span>${label}${note?
+    ` <small style="opacity:.7">${note}</small>`:""}</span><b>${fmtT(t)}${
+    gr?" @ "+fmtG(gr,E.unit):""}</b></div>`;
+  let h=`<div style="font-weight:650;margin:2px 0 4px">AT THIS CUT-OFF, BY SHAPE</div>`
+   +row("In the mineralised body",r.ore.t,r.ore.g)
+   +row("In the mining shape",r.mine.t,r.mine.g,"vein + minimum mining width");
+  if(r.out.n){
+    h+=`<div class="kv" style="color:#9a3412"><span>Outside every modelled body</span>`
+      +`<b>${fmtT(r.out.t)}${r.out.g?" @ "+fmtG(r.out.g,E.unit):""}</b></div>`
+      +`<p class="note" style="margin:4px 0 0">${fmtN(r.out.n)} blocks above this `
+      +`cut-off — <b>${(r.out.share*100).toFixed(1)}% of the metal</b> — sit in `
+      +`rock no modelled shape encloses. They are in the headline tonnage above `
+      +`but not in either solid on screen, which is why the picture and the `
+      +`figure can disagree. Interpolated grade the wireframe did not reach.</p>`;}
+  box.innerHTML=h;}
 
 /* The reconciliation walks every reported interval, so it follows the cut-off
    slider at rest rather than on every tick of it. */
