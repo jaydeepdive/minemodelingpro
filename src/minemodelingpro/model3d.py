@@ -108,7 +108,7 @@ _VIEWER_TMPL = os.path.join(_HERE, "model3d_viewer.html")
 #      isosurfaced, instead of triangulated: it uses the holes that cut nothing
 #      as evidence of where the body is not, and a shape that folds costs no
 #      more than a flat one. Halves the bodies that got no shape at all.
-MODEL_VERSION = 26
+MODEL_VERSION = 27
 # the most domain cells to send to a browser; beyond this the envelope is drawn
 # on a coarser lattice, which is a picture of the same shape
 BODY_MAX_CELLS = 120_000
@@ -1058,9 +1058,17 @@ def _composite_el(per_hole, H, clen, gap_fill=True, margin=None, max_grade=None)
             a, b, gv = float(s[0]), float(s[1]), float(s[2])
             if b <= edges[0] or a >= edges[-1]:
                 continue
+            # NOT `hi`: that is the HOLE INDEX this loop is running under, and
+            # naming the last composite bin `hi` overwrote it — so every hole
+            # that reached the line below carried a BIN NUMBER as its hole id.
+            # `comp_h` is what tells the estimator which samples came from the
+            # same hole, so `max_per_hole` has been limiting by composite bin
+            # rather than by hole, and anything else keyed on `hid` was reading
+            # a number that means nothing. Found when a filter on hole ids
+            # removed the wrong holes and moved a client's tonnage 47%.
             lo = max(0, int(np.searchsorted(edges, a, "right") - 1))
-            hi = min(len(mids), int(np.searchsorted(edges, b, "left")))
-            for j in range(lo, max(lo + 1, hi)):
+            bin_hi = min(len(mids), int(np.searchsorted(edges, b, "left")))
+            for j in range(lo, max(lo + 1, bin_hi)):
                 if j >= len(mids):
                     break
                 ov = min(b, edges[j + 1]) - max(a, edges[j])

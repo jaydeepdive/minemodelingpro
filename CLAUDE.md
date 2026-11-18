@@ -3151,6 +3151,56 @@ and `127.0.0.1` to `trust` in `/etc/postgresql/16/main/pg_hba.conf`, then
 - Tailings on surface vs rock below; open-pit vs underground; the default
   zero cut-off headline.
 
+## A composite did not know which hole it came from (2026-11-18)
+
+The longest-standing bug in this file, found sideways. `_composite_el` runs
+`for hi, ivs in per_hole.items()` — `hi` is the HOLE INDEX — and then, inside
+the segment loop, reuses the same name for the last composite bin a segment
+touches:
+
+      lo = max(0, int(np.searchsorted(edges, a, "right") - 1))
+      hi = min(len(mids), int(np.searchsorted(edges, b, "left")))
+
+`comp_h` is appended AFTER that loop, so **every hole reaching it carried a bin
+number as its hole id**. In the test fixture, hole 0's composites come back
+tagged `32`.
+
+`comp_h` becomes `hid`, and `hid` is what tells the estimator which samples are
+from the same hole. So `max_per_hole` — the declustering that stops one densely
+sampled hole supplying every one of a block's nearest neighbours, "the practical
+form of the declustering the CIM guidelines ask for" in its own docstring — has
+been grouping by composite bin rather than by hole. It has not been declustering
+anything.
+
+**It survived because nothing downstream checks that a hole id is a hole id.** A
+wrong-but-plausible integer estimates perfectly well, just not the way the
+parameters say it does. It surfaced only because a new filter keyed on hole ids
+removed the wrong holes and moved a client's tonnage 47% — a number too large to
+explain away, which is the only reason it got looked at.
+
+Measured on three real projects, committed build against the fix:
+
+      didipio-ogc        128.5 Mt @ 1.10  ->  91.5 Mt @ 1.12
+      beatons-creek-nvo    8.88 Mt @ 1.10 ->   8.99 Mt @ 1.10
+      mt-todd-vgz         56.4 Mt @ 98.2  ->  55.3 Mt @ 101.4
+
+Tonnage down, grade up — the expected signature of declustering that has started
+working: a block whose neighbours were eight samples from one hole now takes four
+from that hole and must find the rest elsewhere or fall out.
+
+**Shipped on the mechanism, and the corpus A/B is NOT yet run.** A hole id that
+is a bin index is indefensible whatever it scores, and `max_per_hole` not working
+means the parameter has been a no-op. But these are large moves and the filed
+statements have not been scored against them — do that before trusting the new
+absolute numbers, on the comparable population per the rule above.
+
+`scripts/test_composite_hole_id.py`, 9 checks, verified to fail 5 of them with
+the bug reintroduced. MODEL_VERSION 27.
+
+**The general lesson:** an integer index that is correct-looking but wrong is
+invisible to every test that only checks outputs are sane. Where a value means
+"which X is this", assert it is a valid X.
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.
