@@ -123,3 +123,26 @@ create table if not exists workers (
   at   timestamptz not null default now(),
   note text
 );
+
+-- ---------------------------------------------------------------- sharing
+-- A private model shown to someone who does not own it.
+--
+-- "Publish" already existed and is a different thing: it makes a model public
+-- to anyone holding the link. A client deliverable needs neither the whole
+-- internet nor a second copy of the data — it needs one named account to be
+-- able to open one project. So access is a row, not a flag, and it is granted
+-- to a user id rather than an email string so that changing an address cannot
+-- silently move access to somebody else.
+--
+-- `can_edit` is false by default on purpose. Read access is the safe grant and
+-- the one that can be widened later without anything breaking; the reverse is
+-- not true.
+create table if not exists project_shares (
+  project_id uuid not null references projects(id) on delete cascade,
+  user_id    uuid not null references users(id) on delete cascade,
+  can_edit   boolean not null default false,
+  created_by uuid references users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  primary key (project_id, user_id)
+);
+create index if not exists project_shares_user on project_shares (user_id);

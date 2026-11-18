@@ -3101,6 +3101,42 @@ carried grade, so it is NOT indexed by hole — filtering it by hole index would
 have misaligned the spacing silently. It is rebuilt from the surviving
 composites instead.
 
+## Sharing a private model with one named account (2026-11-18)
+
+"I need to be able to share a private model with a different user." What
+existed was `publish`, which is a different thing: it hands a model to anyone
+holding the link. A client deliverable needs neither the whole internet nor a
+second copy of the data — it needs ONE named account to open ONE project.
+
+So access is a row, not a flag: `project_shares (project_id, user_id, can_edit)`.
+Granted to a user id rather than an email string, so that changing an address
+cannot silently move access to somebody else. `can_edit` defaults to false
+because read is the grant that can be widened later without anything breaking,
+and the reverse is not true.
+
+All of it funnels through one existing chokepoint, `project_or_404(u, pid)`,
+which now takes `write=` and `owner_only=`. Every route that CHANGES something
+passes `write=True`; publish and delete pass `owner_only=True`, because an edit
+share says "help me with this model", not "you may hand my client's data to the
+internet, or destroy it". A viewer is refused writes with 403 rather than 404 —
+pretending it does not exist would be a lie to someone who can see it in their
+own list.
+
+`get_project` reports `your_role` (owner / editor / viewer) so the page offers
+only what the API will allow, instead of showing buttons that 403.
+
+Dataset reimport and delete stay scoped to the dataset's owner: an editor may
+change settings and rebuild, not destroy the data.
+
+`scripts/test_sharing.py`, 34 checks, against a real Postgres — who can read,
+who can write, who can do neither, that a viewer cannot widen the circle, that
+removing a share removes access, and that a person can always drop their own.
+This is access control; it does not ship on an argument.
+
+To run the studio suites locally: `pg_ctlcluster 16 main start`, set `local`
+and `127.0.0.1` to `trust` in `/etc/postgresql/16/main/pg_hba.conf`, then
+`DATABASE_URL=postgresql://postgres@127.0.0.1:5432/mmptest`.
+
 ### Still open on this thread
 
 - **Build time**: 23 minutes on 602 holes. `sheets()` at ~8 s per large

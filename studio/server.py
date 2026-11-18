@@ -183,10 +183,36 @@ def public_user(u):
             "role": u["role"], "quota_bytes": u["quota_bytes"]}
 
 
-def project_or_404(u, pid):
+def project_or_404(u, pid, write=False, owner_only=False):
+    """The project, if this account may see it — and may change it when asked.
+
+    Three ways in: you own it, you are an admin, or it has been shared with
+    you. A share is read-only unless `can_edit` was granted, so every route
+    that CHANGES something passes `write=True` and a viewer is refused there
+    while still being able to open the model.
+
+    The refusal for a shared project the viewer may read but not write is 403
+    and not 404: pretending it does not exist would be a lie to someone who
+    can plainly see it in their own list.
+    """
     p = store.db().one("select * from projects where id = %s", pid)
-    if not p or (str(p["owner"]) != str(u["id"]) and u["role"] != "admin"):
+    if not p:
         raise HTTPException(404, "no such project")
+    if str(p["owner"]) == str(u["id"]) or u["role"] == "admin":
+        return p
+    if owner_only:
+        # Publishing to the world and deleting are the owner's alone. An edit
+        # share says "help me with this model", not "you may give my client's
+        # data to the internet, or destroy it".
+        raise HTTPException(403, "only the owner of this model can do that")
+    sh = store.db().one(
+        "select can_edit from project_shares where project_id = %s and user_id = %s",
+        pid, u["id"])
+    if not sh:
+        raise HTTPException(404, "no such project")
+    if write and not sh["can_edit"]:
+        raise HTTPException(403, "this model was shared with you for viewing, "
+                                 "so it cannot be changed from here")
     return p
 
 
@@ -562,7 +588,16 @@ def list_users(u=Depends(require_admin)):
 # ------------------------------------------------------------------ projects
 @app.get("/api/projects")
 def list_projects(request: Request, u=Depends(require)):
-    rows = store.db().all("select * from projects where owner = %s order by updated_at desc", u["id"])
+    # owned first, then shared — a model someone sent you belongs in your list,
+    # not behind a link you have to keep
+    rows = store.db().all(
+        "select p.*, (p.owner <> %s) as shared_with_me, "
+        "       (select email from users where id = p.owner) as owner_email "
+        "from projects p "
+        "where p.owner = %s "
+        "   or exists (select 1 from project_shares s "
+        "              where s.project_id = p.id and s.user_id = %s) "
+        "order by p.updated_at desc", u["id"], u["id"], u["id"])
     return {"projects": [jsonable(r) for r in rows]}
 
 
@@ -597,8 +632,21 @@ def get_project(pid: str, request: Request, u=Depends(require)):
     ds = d.all("select * from datasets where project_id = %s order by created_at", pid)
     jobs = d.all("select * from jobs where project_id = %s order by created_at desc limit 12", pid)
     age, _note = d.worker_seen("modeler")
+    # What this account may do here, so the page can offer only that rather
+    # than showing buttons the API will refuse.
+    if str(p["owner"]) == str(u["id"]) or u["role"] == "admin":
+        role = "owner"
+    else:
+        sh = d.one("select can_edit from project_shares "
+                   "where project_id = %s and user_id = %s", pid, u["id"])
+        role = "editor" if (sh and sh["can_edit"]) else "viewer"
+    owner_email = None
+    if role != "owner":
+        _o = d.one("select email from users where id = %s", p["owner"])
+        owner_email = _o["email"] if _o else None
     return {"project": jsonable(p), "datasets": [jsonable(r) for r in ds],
             "jobs": [jsonable(r) for r in jobs],
+            "your_role": role, "owner_email": owner_email,
             # so a page waiting on a job can say whether anything is listening
             "worker": {"seen_s": round(age) if age is not None else None,
                        "timeout_min": float(os.environ.get("MMP_JOB_TIMEOUT_MIN", "20"))}}
@@ -611,7 +659,7 @@ async def patch_project(pid: str, request: Request, u=Depends(require)):
 
 
 def _patch_project(pid, b, u):
-    p = project_or_404(u, pid)
+    p = project_or_404(u, pid, write=True)
     d = store.db()
     sets, args, errors = [], [], []
     if "name" in b and (b["name"] or "").strip():
@@ -682,7 +730,7 @@ def _attachable_or_400(slug):
 
 @app.post("/api/projects/{pid}/build")
 def build(pid: str, request: Request, u=Depends(require)):
-    p = project_or_404(u, pid)
+    p = project_or_404(u, pid, write=True)
     if not p.get("attach_to") and not store.db().one(
             "select id from datasets where project_id = %s and status = 'ready'", pid):
         raise HTTPException(400, "upload and parse some data first")
@@ -697,7 +745,7 @@ async def publish(pid: str, request: Request, u=Depends(require)):
 
 
 def _publish(pid, b, u):
-    p = project_or_404(u, pid)
+    p = project_or_404(u, pid, owner_only=True)
     want = bool(b.get("public", True))
     j = queue("publish", p["owner"], p["id"], payload={"public": want})
     event(u["id"], "project.publish", project=pid, public=want)
@@ -706,11 +754,73 @@ def _publish(pid, b, u):
 
 @app.delete("/api/projects/{pid}")
 def delete_project(pid: str, request: Request, u=Depends(require)):
-    p = project_or_404(u, pid)
+    p = project_or_404(u, pid, owner_only=True)
     j = queue("delete", p["owner"], p["id"])
     store.db().run("update projects set status = 'deleting' where id = %s", pid)
     event(u["id"], "project.delete", project=pid)
     return {"job": jsonable(j)}
+
+
+# -------------------------------------------------------------------- sharing
+# Showing one private model to one named account. Distinct from `publish`,
+# which hands it to anyone with the link — a client deliverable needs neither
+# the whole internet nor a second copy of the data.
+@app.get("/api/projects/{pid}/shares")
+def list_shares(pid: str, request: Request, u=Depends(require)):
+    project_or_404(u, pid)
+    rows = store.db().all(
+        "select s.user_id, s.can_edit, s.created_at, us.email, us.name "
+        "from project_shares s join users us on us.id = s.user_id "
+        "where s.project_id = %s order by s.created_at", pid)
+    return {"shares": [jsonable(r) for r in rows]}
+
+
+@app.post("/api/projects/{pid}/shares")
+async def add_share(pid: str, request: Request, u=Depends(require)):
+    b = await request.json()
+    return await off_loop(_add_share, pid, b, u)
+
+
+def _add_share(pid, b, u):
+    # Only the owner decides who else sees a model. Someone the model was
+    # shared WITH must not be able to widen that circle.
+    p = project_or_404(u, pid, owner_only=True)
+    email = (b.get("email") or "").strip()
+    if not email:
+        raise HTTPException(400, "an email address is needed")
+    d = store.db()
+    who = d.one("select * from users where lower(email) = lower(%s)", email)
+    if not who:
+        # Accounts here are issued, not opened, so there is nothing useful to
+        # do silently: say plainly what has to happen first.
+        raise HTTPException(404, "no account here uses that address — it needs "
+                                 "an invite before a model can be shared with it")
+    if str(who["id"]) == str(p["owner"]):
+        raise HTTPException(400, "that is the owner of this model")
+    can_edit = bool(b.get("can_edit"))
+    d.run("insert into project_shares (project_id, user_id, can_edit, created_by) "
+          "values (%s,%s,%s,%s) on conflict (project_id, user_id) "
+          "do update set can_edit = excluded.can_edit",
+          pid, who["id"], can_edit, u["id"])
+    event(u["id"], "project.share", project=pid, to=str(who["id"]), can_edit=can_edit)
+    return {"share": {"user_id": str(who["id"]), "email": who["email"],
+                      "name": who.get("name"), "can_edit": can_edit}}
+
+
+@app.delete("/api/projects/{pid}/shares/{uid}")
+def remove_share(pid: str, uid: str, request: Request, u=Depends(require)):
+    """Take access away. The owner may remove anyone; a viewer may remove
+    themselves, which is the only thing about a share they control."""
+    p = store.db().one("select * from projects where id = %s", pid)
+    if not p:
+        raise HTTPException(404, "no such project")
+    if str(p["owner"]) != str(u["id"]) and u["role"] != "admin" \
+            and str(uid) != str(u["id"]):
+        raise HTTPException(403, "only the owner of this model can do that")
+    store.db().run("delete from project_shares where project_id = %s and user_id = %s",
+                   pid, uid)
+    event(u["id"], "project.unshare", project=pid, who=str(uid))
+    return {"ok": True}
 
 
 # ------------------------------------------------------------------- uploads
@@ -723,7 +833,7 @@ async def upload(pid: str, request: Request, files: list[UploadFile] = File(...)
     # reading the parts is async I/O and belongs here; the quota lookup and
     # every push to object storage are not, and a 200 MB put on the loop takes
     # the whole site down for the length of the transfer
-    await off_loop(project_or_404, u, pid)
+    await off_loop(project_or_404, u, pid, True)
     F = store.files()
     used = await off_loop(_usage, F, u)
     saved, total = [], 0
@@ -861,7 +971,7 @@ def _preview_source(pid, b, u):
     source's holes JOIN the ones already here, and how many intervals arrive on
     holes with no collar, because those cannot be placed in 3D at all."""
     from minemodelingpro import holeid
-    p = project_or_404(u, pid)
+    p = project_or_404(u, pid, write=True)
     text = (b.get("text") or "")
     if len(text.encode("utf-8")) > MAX_PASTE_BYTES:
         raise HTTPException(413, "that is more text than a paste should carry — upload it as a file")
@@ -918,7 +1028,7 @@ async def add_source(pid: str, request: Request, u=Depends(require)):
 def _add_source(pid, b, u):
     """Keep a pasted source and model with it. It is stored as the text file it
     is, so "Read the files again" re-reads it like any other upload."""
-    p = project_or_404(u, pid)
+    p = project_or_404(u, pid, write=True)
     text = (b.get("text") or "")
     if len(text.encode("utf-8")) > MAX_PASTE_BYTES:
         raise HTTPException(413, "that is more text than a paste should carry — upload it as a file")
