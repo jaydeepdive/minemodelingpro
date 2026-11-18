@@ -1051,6 +1051,7 @@ def _composite_el(per_hole, H, clen, gap_fill=True, margin=None, max_grade=None)
             if pos.any():
                 cent.append(xyz[pos].mean(0))
             continue
+        bin_hi = None                    # see MMP_HOLEID below
         edges = np.arange(len(mids) + 1) * clen + (mids[0] - clen / 2.0)
         acc = np.zeros(len(mids))            # grade x metres in each composite
         cov = np.zeros(len(mids))            # metres of assay in each composite
@@ -1092,7 +1093,11 @@ def _composite_el(per_hole, H, clen, gap_fill=True, margin=None, max_grade=None)
             if near.any():
                 mids, gg = mids[near], gg[near]
         xyz = hole_xyz(h, mids)
-        comp_p.append(xyz); comp_g.append(gg); comp_h.append(np.full(len(mids), hi))
+        # MMP_HOLEID=bin restores the bug this replaced, so the change can be
+        # A/B'd against the filed statements like every other one in this file.
+        _hid = bin_hi if (os.environ.get("MMP_HOLEID") == "bin"
+                          and bin_hi is not None) else hi
+        comp_p.append(xyz); comp_g.append(gg); comp_h.append(np.full(len(mids), _hid))
         pos = gg > 0
         if pos.any():
             cent.append(xyz[pos].mean(0))

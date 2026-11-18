@@ -3188,7 +3188,39 @@ Tonnage down, grade up — the expected signature of declustering that has start
 working: a block whose neighbours were eight samples from one hole now takes four
 from that hole and must find the rest elsewhere or fall out.
 
-**Shipped on the mechanism, and the corpus A/B is NOT yet run.** A hole id that
+### The A/B, now run: correct, and neutral
+
+`MMP_HOLEID=bin` restores the bug so this is A/B-able like everything else here.
+34 projects with a filed statement and >=60 assayed holes, both arms built from
+identical code, scored with `scripts/validate.py`:
+
+| | old (bin id) | new (hole id) |
+|---|---|---|
+| grade-matched median | 0.752 | 0.749 |
+| grade-matched within 1.5x | 10 | 10 |
+| grade-matched within 2x | 11 | 11 |
+| comparable median (n=14) | 0.722 | 0.720 |
+| comparable within 1.5x / 2x | 8 / 8 | 8 / 8 |
+
+**31 of the 34 projects do not move at all** (under 1% of tonnage). Three do:
+
+      avino-asm          131 kt -> 1.03 Mt   (+688%)
+      copperstone-cert   843 kt -> 869 kt    (+3.1%)
+      cape-ray-bex      10.17 Mt -> 10.36 Mt (+1.8%)
+
+Avino is the case the declustering is for — a narrow-vein silver property where
+one densely sampled hole really could supply every neighbour — and it is also
+the only project that moves away from its filing (grade-matched 0.34 -> 0.268).
+
+So: **correct on mechanism, neutral on accuracy, and it binds on almost
+nothing.** The parameter was a no-op and now is not, which matters for anyone
+who sets it deliberately, but no model's number should be re-read because of
+this change. Earlier in the same session I warned a client that this invalidated
+his tonnage; it does not, and the 29% swing I quoted as evidence came from
+comparing against a CI build that predated the day's VEIN changes as well. **An
+A/B against a build from another day measures every change made that day.**
+
+**Shipped on the mechanism; the corpus A/B is above.** A hole id that
 is a bin index is indefensible whatever it scores, and `max_per_hole` not working
 means the parameter has been a no-op. But these are large moves and the filed
 statements have not been scored against them — do that before trusting the new
