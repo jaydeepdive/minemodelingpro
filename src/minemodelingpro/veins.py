@@ -1145,6 +1145,21 @@ def _rejoin(found, mid, hw, fw, min_dip=40.0, slack=1.25, most=REJOIN_MAX):
         # perpendicular-equivalent, so the two numbers mean the same thing
         curved = float(np.percentile(np.abs(w), 90)) * conv
         if curved < flat:
+            # THE SAME BAR THE OTHER TWO FITTERS FACE.
+            #
+            # This is where a merged group is told it is one curved sheet, and
+            # it was asking only "is this better than a plane" — the exact test
+            # that `_spine_sheet` and `_drape_sheet` were both gated out of.
+            # Gating those two and not this one fixed nothing on the property
+            # that prompted it: its five blankets are built HERE, and the
+            # rebuild came back byte-identical. A drape in particular has to be
+            # a height field, and stacked steep veins are not one.
+            if isinstance(un, Draped):
+                wd = measured_width(hw[ix], fw[ix])
+                if not single_valued(P, dip, wd):
+                    return flat, None, nrm
+                if not holds_its_contacts(curved, wd):
+                    return flat, None, nrm
             return curved, un, nrm
         return flat, None, nrm
 

@@ -2937,6 +2937,29 @@ removes blankets without touching surfaces that earned their place.
 swallow, about 8 s per large one. The client's 602-hole project went from
 roughly 4 minutes to 23. That is a real cost and is listed below.
 
+### Gate the fitters, and the blankets come back anyway
+
+Both earlier gates were put on `_spine_sheet` and `_drape_sheet`, and the
+client's model rebuilt **byte-identical** — same 5 draped surfaces, same 377 of
+494 contacts, same dips. The reason is worth keeping, because it is the same
+mistake twice: the blankets are not built by either fitter.
+
+They are built in `_rejoin`'s `resid()` helper, which merges plane-fit
+stretches into one curved sheet and asked only `curved < flat` — "is this
+better than a plane". That is precisely the test both other fitters were gated
+out of, left untouched on the third path. Checking the two places I had been
+looking at and not the one the data went through is how a fix ships, passes its
+suites, and changes nothing.
+
+So `resid()` now faces the same bar when it proposes a DRAPE: the contacts must
+be single-valued in plan and the sheet must hold them. If not, it keeps the
+plane rather than merging.
+
+**The lesson is the diagnostic order.** Both earlier fixes were argued from
+geometry and verified on synthetics; neither was verified against the path the
+client's data actually takes. A print of which fitter produced each vein would
+have found this in a minute.
+
 ### Still open on this thread
 
 - **Build time**: 23 minutes on 602 holes. `sheets()` at ~8 s per large
