@@ -83,7 +83,8 @@ NUMERIC = {"composite_m", "radius_m", "max_gap_m", "spacing_m", "power", "top_cu
            "dip", "dip_direction", "plunge", "true_width_m"}
 INTEGER = {"min_holes", "min_samples", "max_elements", "max_per_hole"}
 BOOLEAN = {"gap_fill", "domain"}
-LISTS = {"block", "elements", "bins", "anisotropy", "domain_units"}
+LISTS = {"block", "elements", "bins", "anisotropy", "domain_units",
+         "surface_holes"}
 STRINGS = {"method", "name", "company", "note", "deposit_style"}
 # the net-smelter-return formula: {"factors": {el: $/t per unit grade}, "units": ...}.
 # Not a number and not a list, so it travels as an object of its own.
@@ -103,7 +104,7 @@ LIMITS = {"dip": (0.0, 90.0), "dip_direction": (0.0, 360.0), "plunge": (0.0, 90.
 # Lists of names rather than numbers. Without this every list but `elements` was
 # coerced to floats, so a logged-geology unit name was silently dropped on its way
 # in and `domain_units` could never take effect.
-NAME_LISTS = {"elements", "domain_units"}
+NAME_LISTS = {"elements", "domain_units", "surface_holes"}
 
 
 def load(path=PATH):

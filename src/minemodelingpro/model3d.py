@@ -1907,6 +1907,31 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                 rec["path"] = min_curve([(0.0, rec["az"], rec["dip"])]
                                         + [s_ for s_ in sv if s_[0] > 0], rec["depth"])
         H.append(rec)
+    # --- holes that tested SURFACE MATERIAL, not rock in place
+    #
+    # A tailings or waste pile sitting on the property is a real thing with a
+    # real grade, and it is not part of an in-situ resource. Blended in, it
+    # quietly moves the tonnage and the grade of a number someone is going to
+    # put in front of a client. Measured on a 602-hole Cobalt-camp property:
+    # 101 holes prefixed LT, every one of them 0.0 to 4.6 m deep against a
+    # 180 m median for the other 501, carrying 10.5% of the metal above
+    # cut-off at 25.2 g/t where the deposit averages 33.
+    #
+    # Which holes those are is a question only the owner of the data can
+    # answer, so it is a project parameter and never a guess: `surface_holes`
+    # is a list of hole-id prefixes or exact ids, matched case-insensitively.
+    # The holes stay on the page as drilling — they were drilled, and hiding
+    # them would be its own lie — but their composites do not reach the
+    # estimator, so the in-situ model is in-situ.
+    _surf_pat = [str(x).strip().upper() for x in (PS.get("surface_holes") or [])
+                 if str(x).strip()]
+    surf_hole = np.zeros(len(H), bool)
+    if _surf_pat:
+        for _i, _h in enumerate(H):
+            _id = str(_h.get("id") or "").upper()
+            if any(_id == q or _id.startswith(q) for q in _surf_pat):
+                surf_hole[_i] = True
+
     # --- recentre the frame on the drilling
     cx = float(np.median([h["x"] for h in H])); cy = float(np.median([h["y"] for h in H]))
     for h in H:
@@ -2000,6 +2025,24 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
         n_assayed_holes = len([c for c in comp_p if len(c)])
         if n_assayed_holes >= 4 and len(cent) >= 3:
             pts = np.concatenate(comp_p); g = np.concatenate(comp_g); hid = np.concatenate(comp_h)
+            if surf_hole.any():
+                _k = ~surf_hole[np.clip(hid, 0, len(surf_hole) - 1)]
+                if _k.sum() >= 8:            # never estimate off nothing
+                    pts, g, hid = pts[_k], g[_k], hid[_k]
+                    # `cent` is appended only for holes that carried grade, so
+                    # it is NOT indexed by hole — rebuilding it from what is
+                    # left is the only filter that cannot silently misalign.
+                    cent = [pts[(hid == _h) & (g > 0)].mean(0)
+                            for _h in np.unique(hid)
+                            if ((hid == _h) & (g > 0)).any()]
+                    _nsurf = int(surf_hole.sum())
+                    if el == els[0]:
+                        integrity.append({
+                            "level": "repaired", "element": el,
+                            "message": (f"{_nsurf} hole"
+                                        f"{'s' if _nsurf != 1 else ''} named as "
+                                        "surface material were excluded from the "
+                                        "in-situ estimate; they are still drawn")})
             tcp = float(PS.get("top_cut_pct") or 99.5)
             top = float(PS.get("top_cut") or (float(np.percentile(g[g > 0], tcp))
                                               if (g > 0).sum() > 20 else float(g.max())))

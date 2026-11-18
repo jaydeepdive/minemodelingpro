@@ -1,1 +1,9 @@
-{"_defaults": {}}
+{
+ "_defaults": {},
+ "langis-brixton-metals": {
+  "_note": "LT-xx holes are 0.0-4.6 m deep against a 180 m median for the LM holes: they test the tailings on surface, not rock in place. Confirmed by the property's owner. They stay on the page as drilling; their composites do not reach the in-situ estimate.",
+  "surface_holes": [
+   "LT"
+  ]
+ }
+}

@@ -3074,6 +3074,33 @@ Now on by default; the store still remembers anyone who turns it off.
 model JSON, and all of them were real — and the single highest-impact fix was
 a default visible in one screenshot.
 
+### Tailings told apart from rock, because the owner said which holes
+
+The owner answered the question nothing in the data could: **the LT-xx holes
+are the tailings on surface**. On the client's property that is 101 holes,
+0.0 to 4.6 m deep, against a 180 m median for the 501 LM holes. The PUBLIC
+Langis model carries the same split — 43 LT holes of its 125.
+
+`surface_holes` is a project parameter: a list of hole-id prefixes or exact
+ids, matched case-insensitively. Holes that match STAY ON THE PAGE as drilling
+— they were drilled, and hiding them would be its own lie — but their
+composites never reach the estimator, so the in-situ model is in-situ. The
+model records what it dropped in `integrity`.
+
+Public Langis at a 15 g/t cut-off: **4.83 Mt @ 77.0 g/t -> 4.52 Mt @ 76.4
+g/t**, 2,948 blocks down to 2,759.
+
+Never guessed. Shallow depth and a shared prefix are a hint, not a finding, and
+a tenth of someone's metal is not something to drop on a hint. The rule only
+fires when a person names the holes.
+
+Two gotchas it cost to find: `surface_holes` had to be added to `NAME_LISTS`
+as well as `LISTS`, or the validator coerces it to floats and silently rejects
+the whole key; and `_composite_el`'s `cent` is appended only for holes that
+carried grade, so it is NOT indexed by hole — filtering it by hole index would
+have misaligned the spacing silently. It is rebuilt from the surviving
+composites instead.
+
 ### Still open on this thread
 
 - **Build time**: 23 minutes on 602 holes. `sheets()` at ~8 s per large
