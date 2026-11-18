@@ -2955,6 +2955,39 @@ So `resid()` now faces the same bar when it proposes a DRAPE: the contacts must
 be single-valued in plan and the sheet must hold them. If not, it keeps the
 plane rather than merging.
 
+### The width estimate was biased the one direction that defeats every test
+
+Gating `_rejoin` moved the client's model by 6 contacts out of 494. The reason
+is the same contamination as before, and this time measured directly on the
+model's own contacts: these tolerances all scale with a width, and the width
+was the MEDIAN wall separation — which in the blanket group runs 1.0 m at the
+10th percentile, 7.5 m at the median, 28 m at the 90th and **94 m** at the
+maximum. A 94 m "wall separation" is a hole drilled down the vein, not across
+it. A width estimate biased UPWARD defeats, by construction, every test whose
+job is to catch a surface being given too much room.
+
+`measured_width` now takes the **lower quartile**. Scored on the client's own
+contacts, as the share of plan cells spreading beyond what the vein's dip and
+thickness allow:
+
+                        median width      lower quartile
+      vein 3  draped        0.21              0.45
+      vein 4  draped        0.20              0.75
+      vein 7  draped        0.09              0.63
+      vein 6  real vein     0.00              0.00
+
+Threshold 0.25. With the median all three blankets passed, which is exactly
+why two correct fixes changed nothing. The public Langis model is unchanged
+again.
+
+### Every vein now records which fitter made it
+
+`vein_info[].by` is `spine`, `drape`, `sheets` or `rejoin`. Three rounds of
+this bug cost a 23-minute rebuild each to discover which code path a body came
+from, and twice the answer was "not the one you just fixed". The model now
+says. Public Langis reads: four from `sheets`, one from `drape` at 2.8 degrees,
+two too small to fit.
+
 **The lesson is the diagnostic order.** Both earlier fixes were argued from
 geometry and verified on synthetics; neither was verified against the path the
 client's data actually takes. A print of which fitter produced each vein would

@@ -2140,6 +2140,11 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                         e["rejoined"] = int(q["rejoined"])
                     if q.get("draped"):
                         e["draped"] = True
+                    # which fitter produced this vein — spine, drape, sheets or
+                    # rejoin. Without it, finding out which code path built a
+                    # body costs a full rebuild.
+                    if q.get("by"):
+                        e["by"] = q["by"]
                     c = centres.get(e["id"])
                     if c is not None:
                         e["centre"] = [round(float(x), 1) for x in c]

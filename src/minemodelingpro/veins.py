@@ -165,7 +165,23 @@ def measured_width(hw, fw):
         return 1.0
     d = np.linalg.norm(fw - hw, axis=1)
     d = d[np.isfinite(d) & (d > 0)]
-    return float(np.median(d)) if len(d) else 1.0
+    if not len(d):
+        return 1.0
+    # The LOWER QUARTILE, not the median, and this is the whole point.
+    #
+    # An intercept length is an upper bound on true width, and a hole that runs
+    # down a vein rather than across it overestimates wildly: in the blanket
+    # group on the client's property the separations run 1.0 m at the 10th
+    # percentile, 7.5 m at the median, 28 m at the 90th and 94 m at the
+    # maximum. A 94 m "width" is a hole following the vein. Taking the median
+    # of that carried the contamination straight into every tolerance that uses
+    # it — and these tolerances exist to catch a surface being given too much
+    # room, so a width estimate biased UPWARD defeats them by construction.
+    # Measured, with the median, the three blankets scored 0.21, 0.20 and 0.09
+    # against a 0.25 threshold and all three passed; with the lower quartile
+    # they score 0.45, 0.75 and 0.63 and all three fail, while the one genuine
+    # steep vein in the same model stays at 0.00.
+    return float(np.percentile(d, 25))
 # Which deposits are modelled as sheets. A plane fitted through a point cloud
 # always finds SOMETHING — on a formless cloud RANSAC carves out slabs that
 # pass every intrinsic test you can cheaply write, because a thin wide slice
@@ -891,10 +907,22 @@ def build(c, rot=None, aniso=None, reach=60.0, step=None, min_thick=0.3,
             # their own surface. The dip picks between the two rather than one
             # of them refusing the group, which is what left a folded horizon
             # fitted to a plane.
+            # WHICH FITTER MADE THIS VEIN, recorded on the vein itself.
+            #
+            # Two fixes for a flat-blanket body were shipped, passed their
+            # suites, and changed the client's model by nothing at all, because
+            # both were gated onto paths that body never took. The third path
+            # was the one building it. There was no way to tell from the model
+            # which fitter produced a surface, so each round of that cost a
+            # 23-minute rebuild to find out. Now it says.
             spine = _spine_sheet(sub, hw_a[grp], fw_a[grp])
+            how = "spine"
             if spine is None and os.environ.get("MMP_VEINDRAPE") != "off":
                 spine = _drape_sheet(sub, hw_a[grp], fw_a[grp])
+                how = "drape"
             if spine is not None:
+                if isinstance(spine[1], dict):
+                    spine[1]["by"] = how
                 plan.append((np.asarray(grp), spine[0], spine[1]))
                 continue
             found, _left = sheets(sub, hw_a[grp], fw_a[grp], reach)
@@ -941,6 +969,10 @@ def build(c, rot=None, aniso=None, reach=60.0, step=None, min_thick=0.3,
                                    "unrolled": bool(un is not None)}
                 if isinstance(meta, dict) and meta.get("rejoined"):
                     got["attitude"]["rejoined"] = int(meta.get("parts") or 2)
+                got["attitude"]["by"] = (
+                    (meta.get("by") if isinstance(meta, dict) else None)
+                    or ("rejoin" if isinstance(meta, dict) and meta.get("rejoined")
+                        else "sheets"))
                 # a folded horizon and a vein followed round a bend are both
                 # "not a plane", and a reader should be able to tell which
                 if isinstance(un, Draped):
