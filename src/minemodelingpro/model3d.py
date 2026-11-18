@@ -2520,10 +2520,10 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                             and np.asarray(dom_surf, bool).any()):
                         ore_src = ore_src[np.asarray(dom_surf, bool)]
 
-                    def _in_solid(src, ik):
+                    def _in_solid(src, ik, dilate=0):
                         if src is None or len(src) < 8:
                             return np.zeros(len(ik), bool)
-                        ck_, sp_, or_ = body_cells(src, lo, bsz, dilate=0)
+                        ck_, sp_, or_ = body_cells(src, lo, bsz, dilate=dilate)
                         if ck_ is None or not len(ck_):
                             return np.zeros(len(ik), bool)
                         key = _cell_keys(ik, or_, sp_)
@@ -2536,9 +2536,31 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
 
                     ik_keep = ijk[keep].astype(np.int64)
                     in_ore = _in_solid(ore_src, ik_keep)
-                    in_mine = (_in_solid(np.concatenate(dom_mine_pts), ik_keep)
-                               if dom_mine_pts else np.zeros(len(ik_keep), bool))
-                    bshape = np.where(in_ore, 1, np.where(in_mine, 2, 0)).astype(np.uint8)
+                    mine_src = (np.concatenate(dom_mine_pts) if dom_mine_pts
+                                else None)
+                    in_mine = (_in_solid(mine_src, ik_keep) if mine_src is not None
+                               else np.zeros(len(ik_keep), bool))
+                    # AGAINST the vein, as distinct from away from it.
+                    #
+                    # Measured on a 602-hole property: of the blocks above
+                    # cut-off that no solid encloses, 65% of the metal sits
+                    # EXACTLY ONE CELL out — on 10 x 10 x 6 m blocks, within
+                    # 10 m of the vein. That is wall rock against the body, and
+                    # it is also what the block model's own bound admits by the
+                    # nearest-composite rule. Reporting it in the same bucket
+                    # as material a hundred metres away made a 22% figure that
+                    # a reader cannot act on: two thirds of it is the boundary
+                    # of the thing they are looking at, and one third is ore
+                    # the body genuinely failed to reach. Those are different
+                    # problems and now read as different numbers.
+                    near = np.zeros(len(ik_keep), bool)
+                    if mine_src is not None:
+                        near = _in_solid(mine_src, ik_keep, dilate=1)
+                    elif len(ore_src):
+                        near = _in_solid(ore_src, ik_keep, dilate=1)
+                    bshape = np.where(
+                        in_ore, 1,
+                        np.where(in_mine, 2, np.where(near, 3, 0))).astype(np.uint8)
             except Exception as _se:
                 print(f"[model3d] block/solid split failed: "
                       f"{type(_se).__name__}: {str(_se)[:90]}", flush=True)
@@ -2552,7 +2574,7 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                                 "ijk": _b64(ijk[keep].astype(np.uint16)), "g": _b64(gr[keep].astype(np.float32)),
                                 "shape": (_b64(bshape) if bshape is not None else None),
                                 "shape_n": ([int((bshape == 0).sum()), int((bshape == 1).sum()),
-                                             int((bshape == 2).sum())]
+                                             int((bshape == 2).sum()), int((bshape == 3).sum())]
                                             if bshape is not None else None),
                                 "n": int(keep.sum()), "n_total": int(len(gr)), "shown_from": round(show, 4),
                                 "tonnes_per_block": round(bt, 1), "density": dens, "params": params}

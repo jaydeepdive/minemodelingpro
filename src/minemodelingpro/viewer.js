@@ -944,12 +944,13 @@ function shapeSplit(cut){
   let nO=0,sO=0,nM=0,sM=0,nX=0,sX=0;
   // and, separately, what sits AT the ground rather than in it
   const B=M.elements[EL].blocks,o=B.origin,[bx,by,bz]=B.size,ijk=BK.ijk;
-  let nS=0,sS=0,nP=0,sP=0,nU=0,sU=0;
+  let nS=0,sS=0,nP=0,sP=0,nU=0,sU=0,nN=0,sN=0;
   for(let i=0;i<BK.n;i++){
     const v=g[i];if(!(v>=cut))continue;
     const k=sh[i];
     if(k===1){nO++;sO+=v;}
     else if(k===2){nM++;sM+=v;}
+    else if(k===3){nN++;sN+=v;}
     else{nX++;sX+=v;}
     if(COLZ){
       const sz=surfaceZ(o[0]+(ijk[i*3]+0.5)*bx, o[1]+(ijk[i*3+1]+0.5)*by);
@@ -961,10 +962,11 @@ function shapeSplit(cut){
         // cut-offs, so the two tonnages never matched the headline and a
         // reader could not tell which number answered "pit or underground".
         if(PITLIM!=null){ if(d<=PITLIM){nP++;sP+=v;} else {nU++;sU+=v;} }}}}
-  const all=sO+sM+sX;
-  if(!(nO+nM+nX))return null;
+  const all=sO+sM+sN+sX;
+  if(!(nO+nM+nN+nX))return null;
   return {ore:{t:nO*tpb,g:nO?sO/nO:0,n:nO},
           mine:{t:(nO+nM)*tpb,g:(nO+nM)?(sO+sM)/(nO+nM):0,n:nO+nM},
+          near:{t:nN*tpb,g:nN?sN/nN:0,n:nN,share:all>0?sN/all:0},
           out:{t:nX*tpb,g:nX?sX/nX:0,n:nX,share:all>0?sX/all:0},
           surf:COLZ?{t:nS*tpb,g:nS?sS/nS:0,n:nS,
                      share:all>0?sS/all:0}:null,
@@ -1003,14 +1005,24 @@ function drawSplit(cut){
       +`<div class="kv"><span>Below it <small style="opacity:.7">underground`
       +`</small></span><b>${fmtT(r.pit.ug.t)}${
       r.pit.ug.g?" @ "+fmtG(r.pit.ug.g,E.unit):""}</b></div>`;}
+  // wall rock against the vein is a different problem from ore the body never
+  // reached, and one number for both is a number nobody can act on
+  if(r.near&&r.near.n){
+    h+=`<div class="kv"><span>Against the vein `
+      +`<small style="opacity:.7">within one block</small></span><b>${fmtT(r.near.t)}${
+      r.near.g?" @ "+fmtG(r.near.g,E.unit):""}</b></div>`
+      +`<p class="note" style="margin:4px 0 0">${fmtN(r.near.n)} blocks touching a `
+      +`modelled shape — <b>${(r.near.share*100).toFixed(1)}% of the metal</b>. `
+      +`Wall rock immediately against the body: real enough, and the first thing `
+      +`a wider mining shape would pick up.</p>`;}
   if(r.out.n){
     h+=`<div class="kv" style="color:#9a3412"><span>Outside every modelled body</span>`
       +`<b>${fmtT(r.out.t)}${r.out.g?" @ "+fmtG(r.out.g,E.unit):""}</b></div>`
       +`<p class="note" style="margin:4px 0 0">${fmtN(r.out.n)} blocks above this `
-      +`cut-off — <b>${(r.out.share*100).toFixed(1)}% of the metal</b> — sit in `
-      +`rock no modelled shape encloses. They are in the headline tonnage above `
-      +`but not in either solid on screen, which is why the picture and the `
-      +`figure can disagree. Interpolated grade the wireframe did not reach.</p>`;}
+      +`cut-off — <b>${(r.out.share*100).toFixed(1)}% of the metal</b> — sit more `
+      +`than one block from any modelled shape. They are in the headline tonnage `
+      +`above but nothing on screen encloses them, which is why the picture and `
+      +`the figure can disagree. This is ore the body genuinely failed to reach.</p>`;}
   box.innerHTML=h;}
 
 /* The reconciliation walks every reported interval, so it follows the cut-off

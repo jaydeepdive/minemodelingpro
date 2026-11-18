@@ -3032,6 +3032,33 @@ set, using the same `limit_m` the model already decided so the two can never
 disagree. Public Langis at 15 g/t: 1.54 Mt @ 83.5 above 100 m depth, 2.78 Mt
 @ 78.3 below it.
 
+### One scary number was two different problems
+
+"22% of the metal outside every modelled body" is a figure nobody can act on,
+because it was two unrelated things added together. Measured on the client's
+property, of the above-cut-off blocks no solid encloses, **65% of the metal
+sits exactly ONE CELL out** — 10 m, on 10 x 10 x 6 m blocks. That is wall rock
+against the vein, and it is also what the block model's own bound admits by
+the nearest-composite rule. The rest is somewhere else entirely.
+
+So `blocks.shape` gained a fourth class: 3 = within one cell of a solid. On
+public Langis at 15 g/t the old 35.3% reads as
+
+      Against the vein (within one block)  1.49 Mt @ 63.4 g/t   25.4%
+      Outside every modelled body          321 kt @ 115 g/t      9.9%
+
+and the second line is the one that matters: **115 g/t against a deposit
+averaging 80**. The genuinely orphaned material is HIGH GRADE, which is
+evidence it is real ore the body failed to enclose rather than weak
+interpolation at the edges — consistent with the earlier measurement that
+outside blocks above 60 g/t sit a median 8.8 m from a real assayed intercept,
+closer than the inside blocks at 9.8 m.
+
+Also worth recording because it refuted a theory mid-investigation: the blocks
+are NOT mostly waste. Solid volume over the volume of the blocks flagged
+inside it is **0.92** — the lattice tracks the body closely, so "the blocks are
+five times the vein width" is not what is happening here.
+
 ### Still open on this thread
 
 - **Build time**: 23 minutes on 602 holes. `sheets()` at ~8 s per large
