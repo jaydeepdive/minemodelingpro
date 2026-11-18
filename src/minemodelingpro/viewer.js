@@ -702,9 +702,46 @@ function applyCut(){if(!BK||!blockMesh)return;const E=M.elements[EL];let j=0;
   if(typeof drawZoneBox==="function")drawZoneBox();}
 
 /* ---- terrain ---- */
-let terrain=null;
+let terrain=null,TER=null;
+/* Ground elevation under a model position, from the COLLARS — not the DEM.
+   "How deep below surface is this block" is a question about the model's own
+   vertical datum, and the DEM is in a different one: measured on a 125-hole
+   model, the public terrain tile disagrees with the reported collar elevations
+   by up to 16.6 m, which put 854 of 3,867 blocks "above ground" and would have
+   had the page cry wolf about a fifth of the deposit. The holes define where
+   the ground is, in the same datum as everything else here.
+
+   It answers only where drilling actually constrains the surface, and null
+   elsewhere, because a tailings disclosure that guesses is worse than none. */
+let COLZ=null;
+(function(){
+  if(!HO||!HO.length)return;
+  const CELL=40,g={};
+  for(const h of HO){
+    if(!isFinite(h.x)||!isFinite(h.y)||!isFinite(h.z))continue;
+    const k=Math.round(h.x/CELL)+","+Math.round(h.y/CELL);
+    (g[k]=g[k]||[]).push(h.z);}
+  const keys=Object.keys(g);
+  if(keys.length<3)return;
+  const m={};
+  for(const k of keys)m[k]=g[k].reduce((a,b)=>a+b,0)/g[k].length;
+  COLZ={cell:CELL,m:m};})();
+
+function surfaceZ(x,y){
+  if(!COLZ)return null;
+  const C=COLZ.cell,i0=Math.round(x/C),j0=Math.round(y/C);
+  // the cell itself, then its neighbours — one ring is 40 m, which is as far
+  // as a collar elevation can reasonably be carried
+  let best=null,bd=1e9;
+  for(let di=-1;di<=1;di++)for(let dj=-1;dj<=1;dj++){
+    const v=COLZ.m[(i0+di)+","+(j0+dj)];
+    if(v===undefined)continue;
+    const d=di*di+dj*dj;
+    if(d<bd){bd=d;best=v;}}
+  return best;}
 (function(){const T=M.terrain;if(!T){$("L-terrain").disabled=true;$("ter-note").textContent="n/a";$("ter-op-row").style.display="none";return;}
-  const z=b64(T.z,Float32Array),nx=T.nx,ny=T.ny;const pos=new Float32Array(nx*ny*3),el=new Float32Array(nx*ny);let lo=1e9,hi=-1e9;
+  const z=b64(T.z,Float32Array),nx=T.nx,ny=T.ny;
+  TER={z:z,nx:nx,ny:ny,x0:T.x0,y0:T.y0,dx:T.dx,dy:T.dy};const pos=new Float32Array(nx*ny*3),el=new Float32Array(nx*ny);let lo=1e9,hi=-1e9;
   for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){const k=j*nx+i,p=V(T.x0+i*T.dx,T.y0+j*T.dy,z[k]);pos[k*3]=p.x;pos[k*3+1]=p.y;pos[k*3+2]=p.z;el[k]=z[k];lo=Math.min(lo,z[k]);hi=Math.max(hi,z[k]);}
   const idx=[];for(let j=0;j<ny-1;j++)for(let i=0;i<nx-1;i++){const a=j*nx+i,b=a+1,c=a+nx,d=c+1;idx.push(a,b,c,b,d,c);}
   const g=new THREE.BufferGeometry();g.setAttribute("position",new THREE.BufferAttribute(pos,3));g.setAttribute("aEl",new THREE.BufferAttribute(el,1));
@@ -901,17 +938,27 @@ function shapeSplit(cut){
   if(!BK||!BK.shape||!BK.tpb)return null;
   const g=BK.g,sh=BK.shape,tpb=BK.tpb;
   let nO=0,sO=0,nM=0,sM=0,nX=0,sX=0;
+  // and, separately, what sits AT the ground rather than in it
+  const B=M.elements[EL].blocks,o=B.origin,[bx,by,bz]=B.size,ijk=BK.ijk;
+  let nS=0,sS=0;
   for(let i=0;i<BK.n;i++){
     const v=g[i];if(!(v>=cut))continue;
     const k=sh[i];
     if(k===1){nO++;sO+=v;}
     else if(k===2){nM++;sM+=v;}
-    else{nX++;sX+=v;}}
+    else{nX++;sX+=v;}
+    if(COLZ){
+      const sz=surfaceZ(o[0]+(ijk[i*3]+0.5)*bx, o[1]+(ijk[i*3+1]+0.5)*by);
+      if(sz!==null){
+        const d=sz-(o[2]+(ijk[i*3+2]+0.5)*bz);
+        if(d<10){nS++;sS+=v;}}}}
   const all=sO+sM+sX;
   if(!(nO+nM+nX))return null;
   return {ore:{t:nO*tpb,g:nO?sO/nO:0,n:nO},
           mine:{t:(nO+nM)*tpb,g:(nO+nM)?(sO+sM)/(nO+nM):0,n:nO+nM},
-          out:{t:nX*tpb,g:nX?sX/nX:0,n:nX,share:all>0?sX/all:0}};}
+          out:{t:nX*tpb,g:nX?sX/nX:0,n:nX,share:all>0?sX/all:0},
+          surf:COLZ?{t:nS*tpb,g:nS?sS/nS:0,n:nS,
+                     share:all>0?sS/all:0}:null};}
 
 function drawSplit(cut){
   const box=$("shape-split");if(!box)return;
@@ -924,6 +971,18 @@ function drawSplit(cut){
   let h=`<div style="font-weight:650;margin:2px 0 4px">AT THIS CUT-OFF, BY SHAPE</div>`
    +row("In the mineralised body",r.ore.t,r.ore.g)
    +row("In the mining shape",r.mine.t,r.mine.g,"vein + minimum mining width");
+  // Material at the ground surface is not necessarily rock in the ground. On a
+  // historic property it can be a tailings pile, and blending one into an
+  // in-situ resource is how a number stops meaning anything.
+  if(r.surf&&r.surf.n){
+    h+=`<div class="kv"><span>Within 10 m of surface</span><b>${fmtT(r.surf.t)}${
+      r.surf.g?" @ "+fmtG(r.surf.g,E.unit):""}</b></div>`
+      +`<p class="note" style="margin:4px 0 0">${fmtN(r.surf.n)} blocks — `
+      +`<b>${(r.surf.share*100).toFixed(1)}% of the metal</b> — sit within 10 m of `
+      +`the ground. On a property with historic workings that can be a tailings `
+      +`or waste pile rather than rock in place, and this model does not tell `
+      +`the two apart. Check it before quoting the total.`
+      +`</p>`;}
   if(r.out.n){
     h+=`<div class="kv" style="color:#9a3412"><span>Outside every modelled body</span>`
       +`<b>${fmtT(r.out.t)}${r.out.g?" @ "+fmtG(r.out.g,E.unit):""}</b></div>`

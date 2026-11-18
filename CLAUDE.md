@@ -2993,6 +2993,32 @@ geometry and verified on synthetics; neither was verified against the path the
 client's data actually takes. A print of which fitter produced each vein would
 have found this in a minute.
 
+### Tailings on surface, and the datum that nearly cried wolf
+
+"We have mixed a tailings pile that sits on surface with what is contained in
+rock below the surface." Measured on the client's property at a 15 g/t
+cut-off: **10.7% of the metal sits within 10 m of the ground** (0.6% above it,
+5.9% in the top 2 m, 4.2% in the next 8), across 246 blocks, on a property
+where 101 of 602 holes are under 20 m deep. That is exactly the shape of a
+historic tailings or waste pile, and the model does not tell it from rock.
+
+It is NOT deleted. Nothing here can prove a shallow intercept is tailings, and
+quietly dropping a tenth of someone's metal on a guess is worse than the
+blending. It is stated: the page now reports tonnes and grade within 10 m of
+surface beside the other shapes, with what it might be and the instruction to
+check before quoting the total.
+
+**The datum trap, worth keeping.** The first version measured depth against the
+DEM, which is the obvious source and the wrong one: on the public Langis model
+the terrain tile disagrees with the reported collar elevations by up to 16.6 m,
+so 854 of 3,867 blocks came out "above ground" — 22% of the deposit — and the
+page would have cried wolf about a fifth of it. Depth is a question in the
+MODEL'S OWN vertical datum, and the holes are what define the ground in that
+datum. Referenced to the collars instead: minimum −7.7 m, 1.5% above ground,
+median 109 m, and it answers only where a collar sits within 40 m, declining
+for the other 10% rather than guessing. A disclosure that guesses is worse than
+no disclosure.
+
 ### Still open on this thread
 
 - **Build time**: 23 minutes on 602 holes. `sheets()` at ~8 s per large
