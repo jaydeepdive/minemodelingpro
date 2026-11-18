@@ -2903,8 +2903,44 @@ The public Langis model is UNCHANGED by this (its intercepts really are 2.1 m
 median, so its allowance is legitimately wider) — the fix bites where the
 drilling says the veins are narrow.
 
+### A drape is a height field. Ask the data if it is one.
+
+`measured_width` was still not enough, and the reason is worth keeping: on the
+client's property the median wall separation in the blanket group is **7.5 m,
+the 90th percentile 28 m and the maximum 94 m**. A 94 m "wall separation" is a
+hole running DOWN a vein, not a width. So the measured width was itself
+contaminated and the allowance stayed wide. Any test keyed on thickness was
+going to be gamed by that data.
+
+The test that is not: a drape maps (x, y) -> z, so it can only ever describe
+data that is single-valued in plan. Stack several steep veins and one plan cell
+holds contacts tens of metres apart vertically, which NO draped surface can
+represent — and the residual will not say so, because it is measured about a
+surface that has already averaged them together.
+
+`single_valued(mid, dip, width)` bins the contacts in plan and asks what share
+of multi-occupancy cells spread further vertically than twice what that vein's
+OWN dip and thickness allow (`t/cos d + b*tan d`, so dip is accounted for, not
+charged). Refuse above 0.25. Measured per vein on the client's model:
+
+      vein 3  draped  17.3 deg  235 contacts   0.38
+      vein 4  draped   8.4 deg   60 contacts   0.50
+      vein 7  draped  12.8 deg   35 contacts   0.40
+      vein 6  a real steep vein, 73.9 deg      0.00
+
+Complete separation, and the test knows nothing about the camp — only whether
+one elevation per plan position can describe the data at all. The public Langis
+model is again UNCHANGED (its single drape really is single-valued), so this
+removes blankets without touching surfaces that earned their place.
+
+**Build cost**: the vein finder now runs on components the drape used to
+swallow, about 8 s per large one. The client's 602-hole project went from
+roughly 4 minutes to 23. That is a real cost and is listed below.
+
 ### Still open on this thread
 
+- **Build time**: 23 minutes on 602 holes. `sheets()` at ~8 s per large
+  component is the bulk of it. Cap or parallelise before it grows again.
 - **The actual fix for the above**: the vein solid does not reach ore sitting
   9 m from an assayed intercept. First suspect is `out_m = reach * _extrap()`
   — 0.25 of the reach, about 15 m — capping how far a sheet runs past its

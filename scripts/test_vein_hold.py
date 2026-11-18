@@ -160,6 +160,31 @@ check("a genuinely thick bed still measures thick", 4.0 <= mw <= 6.5, f"{mw:.2f}
 check("so the folded horizon is still taken whole",
       V._drape_sheet(mid, hw, fw) is not None)
 
+# ------------------------------------------- a drape must be a height field
+# Measured on the real property, per vein, as the share of plan cells holding
+# more than one contact whose vertical spread exceeds twice what that vein's
+# own dip and thickness allow: the three blankets scored 0.38, 0.50 and 0.40;
+# the one genuine steep vein in the same model scored 0.00. Nothing in the
+# test knows anything about the camp — only whether one elevation per plan
+# position can describe the data at all.
+mid, hw, fw = steep_swarm(n_v=7, sep=16.0, dip=76.0, seed=5)
+check("stacked steep veins are not single-valued in plan",
+      not V.single_valued(mid, 17.0, 5.0))
+check("so the drape refuses them even when the residual looks tight",
+      V._drape_sheet(mid, hw, fw) is None)
+
+mid, hw, fw = folded(n=300, w=5.0)
+check("a real folded horizon IS single-valued", V.single_valued(mid, 12.0, 5.0))
+check("and the drape still takes it", V._drape_sheet(mid, hw, fw) is not None)
+
+r = np.random.default_rng(11)
+x = r.uniform(-200, 200, 300); y = r.uniform(-150, 150, 300)
+sheet = np.stack([x, y, x * np.tan(np.radians(35)) + r.normal(0, 0.5, 300)], 1)
+check("one steeply dipping sheet is single-valued at its own dip",
+      V.single_valued(sheet, 35.0, 3.0), "dip must be allowed for, not charged")
+check("too few contacts to judge is not evidence of stacking",
+      V.single_valued(sheet[:6], 10.0, 2.0))
+
 print(f"\n{len(OK)} passed, {len(BAD)} failed")
 for b in BAD:
     print("  failed:", b)

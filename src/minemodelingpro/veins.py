@@ -82,6 +82,59 @@ def holds_its_contacts(resid, width):
     return float(resid) <= max(ACROSS_WIDTHS * float(width or 1.0), HOLD_FLOOR_M)
 
 
+# A drape is a HEIGHT FIELD: one elevation per plan position, by construction.
+# So before believing one, ask the data whether it is single-valued at all.
+# Stack several steep veins and in any one plan cell you get contacts tens of
+# metres apart vertically — and no draped surface can describe that, however
+# tight its residual looks, because the residual is measured about a surface
+# that has already averaged them together.
+#
+# Measured on a 602-hole Cobalt-camp property, per vein, as the share of plan
+# cells holding more than one contact whose vertical spread exceeds twice what
+# that vein's OWN dip and thickness can account for:
+#
+#       vein 3  draped  17.3 deg  235 contacts   0.38
+#       vein 4  draped   8.4 deg   60 contacts   0.50
+#       vein 7  draped  12.8 deg   35 contacts   0.40
+#       vein 6  a real steep vein, 73.9 deg      0.00
+#
+# The blankets and the vein separate completely, and nothing in the test knows
+# anything about the camp — only whether the data is a function of position.
+MULTIVALUED_SHARE = 0.25
+MULTIVALUED_MIN_CELLS = 5
+
+
+def single_valued(mid, dip, width, bin_m=None):
+    """Can one elevation per plan position describe these contacts?
+
+    `dip` and `width` set what spread a cell is ALLOWED: a surface of thickness
+    t dipping d, read across a cell b wide, spans t/cos(d) + b*tan(d). Twice
+    that is the benchmark, so a vein that swells or a cell straddling a step is
+    not evidence against the surface; stacked veins are.
+    """
+    mid = np.asarray(mid, float)
+    if len(mid) < 2 * MULTIVALUED_MIN_CELLS:
+        return True                       # too little to judge; let it through
+    w = max(float(width or 1.0), 0.5)
+    b = float(bin_m or min(max(2.0 * w, 10.0), 30.0))
+    d = np.radians(float(dip or 0.0))
+    allow = 2.0 * (w / max(np.cos(d), 0.2) + b * np.tan(d))
+    key = np.round(mid[:, :2] / b).astype(np.int64)
+    order = np.lexsort((key[:, 1], key[:, 0]))
+    k, z = key[order], mid[order, 2]
+    cuts = np.flatnonzero(np.any(np.diff(k, axis=0) != 0, axis=1)) + 1
+    over = tot = 0
+    for grp in np.split(np.arange(len(z)), cuts):
+        if len(grp) < 2:
+            continue
+        tot += 1
+        if float(z[grp].max() - z[grp].min()) > allow:
+            over += 1
+    if tot < MULTIVALUED_MIN_CELLS:
+        return True
+    return (over / tot) <= MULTIVALUED_SHARE
+
+
 def measured_width(hw, fw):
     """How wide the DRILLING says the vein is, independent of any fitted surface.
 
@@ -1209,6 +1262,8 @@ def _drape_sheet(mid, hw, fw, swing=0.5, max_dip=45.0, min_pts=12, better=0.6):
         return None                       # the drape is no real improvement
     if not holds_its_contacts(folded, measured_width(hw, fw)):
         return None                       # better than a plane, still not a sheet
+    if not single_valued(mid, dip, width):
+        return None                       # stacked veins, not one folded sheet
     R = plane_frame(nrm)
     meta = {"ix": np.arange(len(mid)), "normal": nrm, "dip": dip,
             "dip_dir": ddir, "unroll": dr, "draped": True,
