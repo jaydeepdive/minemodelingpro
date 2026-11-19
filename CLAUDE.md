@@ -3359,6 +3359,137 @@ So this change makes the window short, not absent. Batching deploys was the
 other free option and Jordan ruled it out for a good reason — he needs each
 change deployed to assess it, which is the whole point of shipping.
 
+## A bonanza assay is a measurement; a sample number is not (2026-11-19)
+
+Jordan, reading his own drill logs beside the model: "i just found a MAJOR problem
+of assay data in our system not matching whats in the logs ... 89125 ppm was
+translated to just 89.1 g/t which is entirely wrong."
+
+Confirmed against his live data, and the model was the one that was wrong:
+
+      stored at import, correct    172.10-172.75   89,125 g/t Ag
+                                   172.75-173.25   54,652 g/t Ag
+      model and viewer showed      172.1-172.8        89.1 g/t
+                                   172.8-173.3        54.7 g/t
+
+The value is real. 1 ppm is 1 g/t exactly, his column is `ag_ppm`, and the
+laboratory's own `ag_ana` column escalates `ME-MS61` -> `Ag-OG62` -> `Ag-GRA21`
+-> **`Ag-CON01`** (ALS concentrate-grade silver) on precisely the two rows in
+question. 89,125 g/t is 8.9% silver, which is ordinary bonanza native silver for
+the Cobalt camp, where Langis sits. MMP was destroying the three highest-grade
+silver samples in the deposit and reporting "3 converted".
+
+**The cause was one table read as the wrong kind of limit.** `MAX_PLAUSIBLE` is
+documented as what a whole COLUMN, or a deposit's average, plausibly reaches —
+"the point is to catch a factor of a thousand, not to second-guess a bonanza
+sample", in its own words. `fix_values` then used it as a PER-SAMPLE ceiling:
+every row above it was assumed to be a unit mistake and divided by a candidate
+factor until it fit. For a precious metal the only candidate is ÷1,000 ("parts
+per billion read as grams per tonne"), and 89,125/1,000 = 89.125 passes, so it
+was accepted silently. Au sat at 1,500 g/t (0.15%) and was doing the same thing
+to bonanza gold corpus-wide.
+
+### The ÷1,000 explanation was never supported by the data
+
+Measured before changing anything: across 2,163 reports with intervals, **every
+one of the 536 flagged precious rows claims `g/t`**, in columns whose ordinary
+population is also `g/t` with medians of 0.5 to 43 g/t. There is no
+ppb-mixed-into-g-t column in the corpus to justify the conversion. A laboratory
+does not switch units for one sample in a batch; an export DOES put a certificate
+or sample number in the grade column.
+
+      Eagle Rock      Pt   1030301, 1030302, 1030303, 1030304   consecutive
+      Ferguson Lake   Pd   740627, 740512, 739961, 739531       descending by hole
+      Rock And Roll   Au   2009 x 9                             a year
+      Glencore Bucke  Ag   5,013,070  ->  the old rule published 5,013 g/t
+
+So the row-level repair was turning identifiers into the best assays on the
+property, which is worse than dropping them: a dropped sample is visible in the
+flags and an invented one is not.
+
+### What shipped
+
+- **`impossible(el)`** is the per-sample ceiling, and it is set where the rock
+  stops rather than where deposits usually stop. An assay averages half a metre
+  or more of ROCK; native silver and visible gold occur as masses a centimetre
+  across, so a sample can be a few per cent metal and occasionally more, but it
+  cannot be mostly metal. Half of pure (500,000 g/t) is the line. For a per-cent
+  column the two questions already had the same answer — 100% IS the rock — so
+  **nothing about the per-cent columns changes**, and Murray Brook's measured
+  ppm-row conversion is untouched.
+- **A precious-metal row is kept, or dropped and named — never rescaled.**
+- **`_numbering()`** catches the identifiers no ceiling can, because Gold Springs'
+  68 integers between 41,436 and 41,678 sit squarely inside the range where
+  Brucejack's real 41,582 g/t gold lives. Magnitude cannot separate those; the
+  SHAPE of the group can. A numbering is five or more exact integers packed within
+  a few parts in a hundred of each other and at least 100x above the surrounding
+  rock. A real bonanza tail is continuous and spreads over orders of magnitude —
+  Langis runs 190, 880, 3,270, 8,050, 54,652, 89,125 — and is refused.
+- **The flag names the samples**: hole, depth, value. "3 converted" told a
+  geologist that something had happened to his best assays and nothing about
+  which ones, so he could not go and read the certificate. That is how this
+  survived — the repair was reported honestly, in a form nobody could act on.
+
+      Ag: 2 sample(s) assay above what a deposit of this metal usually reaches
+      (30000); left exactly as measured, worth checking against the certificate
+      — LM-26-377 at 172.1m 89,125; LM-26-377 at 172.75m 54,652
+
+- `MAX_PLAUSIBLE` keeps its real jobs untouched: the column/median test, the
+  back-calculated remainder cap in `model3d._segments`, and `grade_ceiling_ok` on
+  a filed statement's AVERAGE grade. Raising it globally would have made that
+  last check toothless — which is why the physical ceiling is its own function.
+- `check_model`'s maximum test now answers to `impossible()` too: a maximum is
+  one sample, so judging it against a deposit average flagged Langis as
+  "not possible".
+
+### Measured on the 13 affected gallery projects, same projects each arm
+
+`MMP_ASSAY=old` restores the previous rule.
+
+| project | el | max old | max new | contained old | contained new | ratio |
+|---|---|---|---|---|---|---|
+| jojay-wgf | Au | 159.7 | 33.8 | 384,674 | 80,277 | **0.209x** |
+| huajoto-alt | Au | 474.0 | 2,456.0 | 1,088,179 | 1,196,087 | 1.099x |
+| los-ricos-north-ggd | Au | 1,214.3 | 1,693.0 | 839,605 | 842,762 | 1.004x |
+| los-ricos-south-ggd | Ag | 15,621.2 | 36,319.0 | 34,918,592 | 34,919,214 | 1.000x |
+| the other 9 | | unchanged | | | | 1.000x |
+
+**Tonnage is unchanged on 12 of 13, and that is the important reassurance.**
+Restoring a bonanza sample barely moves a model because the top-cut already caps
+composites at the 99.5th percentile — which is the standard treatment for an
+extreme grade, and the right one. Los Ricos South's silver maximum goes from
+15,621 to 36,319 g/t with its contained metal identical to four figures. What
+moves materially is where garbage was being manufactured into ore: Jojay's
+reported grade was inflated nearly five times by 42 sample numbers divided by a
+thousand.
+
+Also restored: **Castle, 40,944 to 70,380 g/t Ag** — the same Cobalt camp as
+Langis, losing its bonanza silver the same way.
+
+### Still ambiguous, and reported rather than guessed
+
+292 samples across ~40 projects remain above `MAX_PLAUSIBLE` and below half of
+pure. Most read as real bonanza (La Mina 1,800-3,000 g/t Au, Panuco 1,935-4,804,
+Los Ricos South 31,747-36,319 g/t Ag). Two do not resolve from here: **Fremont**
+(97 values, 3,430-44,574 g/t in a deposit with a 1.37 g/t median) and **Pitt**
+(57 values, 1,546-12,170 against a 3.7 g/t median) are both distributionally
+consistent with ppb contamination, and both claim `g/t` in every row. They are
+kept, named in the flags, and bounded by the top-cut. Resolving them needs the
+laboratory's method or unit column, which a PDF table parse does not carry — and
+which a client upload DOES, as Langis proved.
+
+`scripts/test_assay_ceiling.py` is 49 checks: LM-26-377's exact values survive,
+Brucejack's 41,582 g/t survives beside a numbering's own range, Eagle Rock's
+consecutive integers are refused, Murray Brook's per-cent conversion still fires,
+and a ppb COLUMN is still repaired as a column.
+
+**Two traps worth keeping.** `projects.assemble()` returns data `fix_values` has
+already rewritten, so measuring the damage there can only ever report zero — the
+raw committed report JSONs are the only honest instrument. And a fixture of
+nothing but bonanza has a median of 8,050 g/t, trips the column-level median test
+and gets divided by a thousand for a completely different and correct reason:
+**build the fixture like the data, or it tests the wrong branch.** MODEL_VERSION 28.
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.

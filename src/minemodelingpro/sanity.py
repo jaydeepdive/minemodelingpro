@@ -17,6 +17,8 @@ below the median of the data it caps is not a cap, it is a mistake. What cannot 
 repaired with confidence is flagged rather than quietly published, because a model
 that is wrong and says so is worth more than one that is wrong and does not.
 """
+import os
+
 import numpy as np
 
 # The most a whole column of assays can plausibly reach, in MMP's standard units
@@ -46,6 +48,76 @@ _FACTORS_GPT = ((1_000.0, "parts per billion read as grams per tonne"),)
 _FACTORS_PCT = ((10_000.0, "parts per million read as per cent"),
                 (1e7, "parts per billion read as per cent"))
 
+# A ceiling whose job is to say "this cannot be a grade at all" has to be set
+# where the rock actually stops, and for a precious metal reported in g/t that is
+# pure metal: 1,000,000 g/t. The tables above are NOT that — they are what a whole
+# column, or a deposit's average, plausibly reaches, which is the right test for a
+# unit mistake and the wrong one for a single sample. Read as a per-sample limit
+# they destroyed real data: Langis assays native silver at 89,125 g/t in
+# LM-26-377, with the laboratory escalating its own method to Ag-CON01
+# (concentrate grade) to measure it — 8.9% silver, which is ordinary bonanza for
+# the Cobalt camp — and a 30,000 g/t ceiling divided it by a thousand and
+# published 89.1 g/t. For a per-cent column the two questions already have the
+# same answer, because 100% IS the rock, so nothing about those columns changes.
+PURE_GPT = 1_000_000.0
+# And an assay is an average over an interval of ROCK, half a metre or more of it.
+# Native silver and visible gold occur as masses a centimetre or two across, so a
+# sample can be a few per cent metal and occasionally more; it cannot be mostly
+# metal, because then the interval is not rock. Half of pure is the line, and it is
+# the loosest line that still refuses what the corpus actually contains — 869,390
+# g/t of silver (87%) and 740,627 g/t of palladium, both of which are export
+# artefacts rather than assays.
+SAMPLE_FRACTION = 0.5
+
+
+def impossible(el):
+    """The grade above which a sample cannot be this element at all, in MMP's unit.
+
+    Half of pure metal for the precious metals; for everything else the per-cent
+    ceiling above, which is already a statement about rock rather than about
+    deposits (72% iron is magnetite, and nothing is more than 100% of itself)."""
+    base = str(el or "").replace("Eq", "")
+    if base in PRECIOUS:
+        return PURE_GPT * SAMPLE_FRACTION
+    return MAX_PLAUSIBLE.get(base, 100.0)
+
+
+# A numbering is detected by the SHAPE of the group, not by how big its values are.
+NUMBERING_MIN = 5          # enough of them to be a sequence rather than a coincidence
+NUMBERING_SPREAD = 1.05    # packed into a few parts in a hundred
+NUMBERING_LIFT = 100.0     # and detached from the rock around them
+
+
+def _numbering(vals, median):
+    """Whether a column's high tail is a numbering rather than a population of grades.
+
+    An export that puts a sample or certificate number in the grade column leaves a
+    signature nothing geological produces: dozens of values packed into a span of a
+    few parts in a thousand, orders of magnitude above the rock around them. Jojay's
+    gold arrives as 159643, 159645, 159646, 159647, 159648, 159650 … — 42 values
+    inside a span of 54, in a deposit whose median assay is 3 g/t. Gold Springs' is
+    68 values between 41,436 and 41,678: a span of 242 sitting squarely inside the
+    range where Brucejack's real 41,582 g/t gold lives, so no ceiling can separate
+    those two and only the shape of the group can.
+
+    A real bonanza tail is continuous and spreads over orders of magnitude — Langis
+    runs 190, 880, 3,270, 8,050, 54,652, 89,125 — and this refuses to call that a
+    numbering. Every group it accepts on the corpus is an identifier column; every
+    bonanza population it is shown is refused."""
+    v = sorted(float(x) for x in vals if x is not None)
+    if len(v) < NUMBERING_MIN or v[0] <= 0:
+        return False
+    # a measurement carries decimals; a serial number does not
+    if not all(float(x).is_integer() for x in v):
+        return False
+    # spread over a real range means it behaves like a population of grades
+    if v[-1] / v[0] > NUMBERING_SPREAD:
+        return False
+    # and it has to be detached from the rock around it, or it is just high grade
+    if median and v[0] / float(median) < NUMBERING_LIFT:
+        return False
+    return True
+
 
 def _candidates(el):
     base = str(el or "").replace("Eq", "")
@@ -57,7 +129,103 @@ def _limits(el):
     return (MAX_PLAUSIBLE.get(base, 100.0), MAX_MEDIAN.get(base))
 
 
-def fix_values(el, values):
+def _row_candidates(el):
+    """What a repair may try on ONE row of an otherwise sound column.
+
+    For a per-cent column a stray parts-per-million row is a real and documented
+    event — Murray Brook's zinc is a correct per-cent column with a handful of ppm
+    rows mixed into it — so the conversion is well founded and is kept.
+
+    For a g/t column it is not. A laboratory does not change units for one sample
+    in a batch, while an export DOES put a certificate or sample number in the
+    grade column: Eagle Rock's platinum arrives as 1030301, 1030302, 1030303,
+    1030304 — four consecutive integers. Dividing those by a thousand turns an
+    identifier into 1,030 g/t of platinum, and Glencore Bucke's 5,013,070 into
+    5,013 g/t of silver. That is worse than dropping them, because a dropped
+    sample is visible in the flags and an invented one is not. So a precious-metal
+    sample is kept, or dropped and named — never quietly rescaled."""
+    base = str(el or "").replace("Eq", "")
+    return () if base in PRECIOUS else _FACTORS_PCT
+
+
+def _g(x):
+    """A grade a reader can check against a certificate."""
+    if x is None:
+        return "dropped"
+    x = float(x)
+    return format(x, ",.0f") if abs(x) >= 1000 else format(x, "g")
+
+
+def _sample_note(marks, limit=4):
+    """Name the samples a repair touched: which hole, which depth, what changed.
+
+    "3 converted" tells a geologist that something happened to his best assays and
+    nothing about which ones, so he cannot go and read the certificate. That is how
+    this fault survived: the repair was reported, honestly, in a form nobody could
+    act on. The biggest values are named first, because those are the ones a reader
+    came looking for."""
+    if not marks:
+        return ""
+    ms = sorted(marks, key=lambda m: -(m[2] or 0))
+    bits = []
+    for hole, frm, before, after, kind in ms[:limit]:
+        where = ""
+        if hole:
+            where = str(hole)
+            if frm is not None:
+                try:
+                    where += " at %gm" % float(frm)
+                except (TypeError, ValueError):
+                    pass
+            where += " "
+        if kind == "dropped":
+            bits.append("%s%s dropped" % (where, _g(before)))
+        elif kind == "converted":
+            bits.append("%s%s read as %s" % (where, _g(before), _g(after)))
+        else:
+            bits.append("%s%s" % (where, _g(before)))
+    more = len(ms) - len(bits)
+    return " — " + "; ".join(bits) + (" and %d more" % more if more > 0 else "")
+
+
+def _locate_rows(xs):
+    """`(hole, from)` per row, for the row-shaped caller."""
+    def at(i):
+        x = xs[i]
+        return (x.get("hole"), x.get("from"))
+    return at
+
+
+def _locate_table(table, el):
+    """`(hole, from)` per row of this element, for the column-shaped caller.
+
+    Resolved BEFORE any grade is written or any row deleted, because `keep()`
+    renumbers the table underneath us."""
+    w = table.index().get(el)
+
+    def at(i):
+        if w is None or i >= len(w):
+            return (None, None)
+        r = table.row(w[i])
+        return (r["hole"], r["from"])
+    return at
+
+
+def _named(marks, locate):
+    """Turn `(index, before, after, kind)` into `(hole, from, before, after, kind)`."""
+    out = []
+    for i, before, after, kind in marks:
+        hole, frm = (None, None)
+        if locate is not None:
+            try:
+                hole, frm = locate(i)
+            except Exception:
+                hole, frm = (None, None)
+        out.append((hole, frm, before, after, kind))
+    return out
+
+
+def fix_values(el, values, locate=None):
     """Repair a column of grades, row by row where that is what is wrong.
 
     A whole column in the wrong unit and a column with four bad rows in it look
@@ -68,46 +236,88 @@ def fix_values(el, values):
     repair is called for — the unit is only wrong for the whole column if the
     typical value is impossible, not merely the extreme one.
 
-    Returns ``(values, note, dropped)`` with values corrected in place."""
+    A SINGLE row is a different question again, and the one this got wrong. The
+    ceiling that decides a whole column is "what a deposit of this metal reaches";
+    the ceiling that throws away one sample has to be "what the rock can be", which
+    is `impossible()` — pure metal. Between the two sits the best assay on the
+    property, and it is reported rather than touched, because whether 89,125 g/t of
+    silver is bonanza or a typing error is a question for the certificate and the
+    geologist reading it, not for this module.
+
+    Returns ``(values, note, dropped, marks)`` with values corrected in place;
+    `marks` is ``(index, before, after, kind)`` per sample this looked at, where
+    kind is "converted", "dropped" or "kept". `locate(i)` -> ``(hole, from)`` lets
+    the note name the samples it touched; without it they are named by value
+    alone, which is still enough to find them in a certificate."""
     v = [None if x is None else float(x) for x in values]
     pos = np.asarray([x for x in v if x is not None and np.isfinite(x) and x > 0], float)
     if not len(pos):
-        return v, None, 0
+        return v, None, 0, []
     hard, soft = _limits(el)
+    # MMP_ASSAY=old restores the rule this replaced — a per-sample ceiling of
+    # 1,500 g/t gold and 30,000 g/t silver, with anything above it divided by a
+    # thousand — so the two can still be measured against each other.
+    legacy = os.environ.get("MMP_ASSAY", "").lower() in ("old", "ceiling")
+    imp = hard if legacy else impossible(el)
     med = float(np.median(pos))
     if soft is not None and med > soft:
         f, why = unit_fix(el, pos)        # the whole column is in the wrong unit
         if f is None:
-            return v, why, len(pos)
+            return v, why, len(pos), []
         if f != 1.0:
-            return [None if x is None else x / f for x in v], why, 0
-        return v, None, 0
-    if float(pos.max()) <= hard:
-        return v, None, 0
-    # the column is fine; some rows in it are not
+            return [None if x is None else x / f for x in v], why, 0, []
+        return v, None, 0, []
+    if float(pos.max()) <= imp:
+        # Nothing here is impossible for the unit. It is either the best rock on
+        # the property or a column of numbers that is not grades at all, and the
+        # shape of the group is what tells those apart.
+        over = [(i, x) for i, x in enumerate(v)
+                if x is not None and np.isfinite(x) and x > hard]
+        if not over:
+            return v, None, 0, []
+        if _numbering([x for _, x in over], med):
+            marks = [(i, x, None, "dropped") for i, x in over]
+            for i, _x in over:
+                v[i] = None
+            note = (f"{el}: {len(over)} value(s) in the grade column are a "
+                    f"numbering, not assays — packed within a few parts in a "
+                    f"hundred of each other and far above the surrounding rock, "
+                    f"which is what a sample or certificate number looks like; "
+                    f"dropped" + _sample_note(_named(marks, locate)))
+            return v, note, len(over), marks
+        kept = [(i, x, x, "kept") for i, x in over]
+        note = (f"{el}: {len(kept)} sample(s) assay above what a deposit of this "
+                f"metal usually reaches ({hard:g}); left exactly as measured, "
+                f"worth checking against the certificate"
+                + _sample_note(_named(kept, locate)))
+        return v, note, 0, kept
+    # the column is fine; some rows in it cannot be a grade of this element at all
     good = pos[pos <= hard]
     ref = float(np.median(good)) if len(good) else med
     bad = fixed = dropped = 0
+    marks = []
     for i, x in enumerate(v):
-        if x is None or not np.isfinite(x) or x <= hard:
+        if x is None or not np.isfinite(x) or x <= imp:
             continue
         bad += 1
         best = None
-        for f, _name in _candidates(el):
+        for f, _name in (_candidates(el) if legacy else _row_candidates(el)):
             y = x / f
             if 0 < y <= hard and (ref <= 0 or y >= ref / 1000.0):
                 if best is None or abs(np.log((y + 1e-9) / (ref + 1e-9))) < best[0]:
                     best = (abs(np.log((y + 1e-9) / (ref + 1e-9))), y)
         if best is not None:
-            v[i] = best[1]; fixed += 1
+            marks.append((i, x, best[1], "converted")); v[i] = best[1]; fixed += 1
         else:
-            v[i] = None; dropped += 1
+            marks.append((i, x, None, "dropped")); v[i] = None; dropped += 1
     if not bad:
-        return v, None, 0
-    note = (f"{el}: {bad} of {len(pos)} sample(s) were impossible for the unit "
-            f"(above {hard:g})" + (f"; {fixed} converted" if fixed else "")
-            + (f"; {dropped} dropped" if dropped else ""))
-    return v, note, dropped
+        return v, None, 0, []
+    note = (f"{el}: {bad} of {len(pos)} sample(s) cannot be a grade of this element "
+            f"at all (above {imp:,.0f})"
+            + (f"; {fixed} converted" if fixed else "")
+            + (f"; {dropped} dropped" if dropped else "")
+            + _sample_note(_named(marks, locate)))
+    return v, note, dropped, marks
 
 
 def unit_fix(el, values):
@@ -143,13 +353,15 @@ def fix_intervals(by_el, verbose=False):
     flags, dropped = [], []
     for el in list(by_el):
         xs = by_el[el]
-        new, why, gone = fix_values(el, [x.get("grade") for x in xs])
+        new, why, gone, marks = fix_values(el, [x.get("grade") for x in xs],
+                                           locate=_locate_rows(xs))
         if gone and gone >= len(xs):
             dropped.append(el)
             flags.append({"level": "dropped", "element": el, "message": why})
             by_el.pop(el, None)
             continue
         if why:
+            level = "check" if all(m[3] == "kept" for m in marks) and marks else "repaired"
             keep = []
             for x, g in zip(xs, new):
                 if g is None:
@@ -157,7 +369,7 @@ def fix_intervals(by_el, verbose=False):
                 x["grade"] = g
                 keep.append(x)
             by_el[el] = keep
-            flags.append({"level": "repaired", "element": el, "message": why})
+            flags.append({"level": level, "element": el, "message": why})
             if verbose:
                 print(f"  [sanity] {why}", flush=True)
     return flags, dropped
@@ -243,16 +455,19 @@ def fix_table(table, verbose=False):
     for el in list(table.elements()):
         g = table.grades(el)
         vals = [None if v != v else float(v) for v in g]
-        new, why, gone = fix_values(el, vals)
+        # the locator is built now, because set_grades/keep renumber the table
+        new, why, gone, marks = fix_values(el, vals,
+                                           locate=_locate_table(table, el))
         if gone and gone >= len(vals):
             dropped.append(el)
             flags.append({"level": "dropped", "element": el, "message": why})
             table.drop_element(el)
             continue
         if why:
+            level = "check" if marks and all(m[3] == "kept" for m in marks) else "repaired"
             table.set_grades(el, new)
             table.keep(el, [v is not None for v in new])
-            flags.append({"level": "repaired", "element": el, "message": why})
+            flags.append({"level": level, "element": el, "message": why})
             if verbose:
                 print(f"  [sanity] {why}", flush=True)
     return flags, dropped
@@ -287,7 +502,10 @@ def check_model(model):
         st = E.get("stats") or {}
         hard, soft = _limits(el)
         unit = E.get("unit")
-        if st.get("max") and float(st["max"]) > hard:
+        # the maximum is ONE sample, so it answers to what rock can be, not to
+        # what a deposit averages — the distinction that cost Langis its three
+        # best silver assays
+        if st.get("max") and float(st["max"]) > impossible(el):
             out.append({"level": "bad", "element": el,
                         "message": f"{el} reaches {st['max']:,} {unit}, which is not possible"})
         if soft and st.get("p50") and float(st["p50"]) > soft:

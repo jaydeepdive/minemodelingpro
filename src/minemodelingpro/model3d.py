@@ -108,7 +108,7 @@ _VIEWER_TMPL = os.path.join(_HERE, "model3d_viewer.html")
 #      isosurfaced, instead of triangulated: it uses the holes that cut nothing
 #      as evidence of where the body is not, and a shape that folds costs no
 #      more than a flat one. Halves the bodies that got no shape at all.
-MODEL_VERSION = 27
+MODEL_VERSION = 28
 # the most domain cells to send to a browser; beyond this the envelope is drawn
 # on a coarser lattice, which is a picture of the same shape
 BODY_MAX_CELLS = 120_000
