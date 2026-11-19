@@ -816,8 +816,10 @@ async function paintShares() {
       ? rows.map(x => `<div class="row" style="justify-content:space-between;gap:10px;
            align-items:center;padding:6px 0;border-top:1px solid var(--line)">
           <div><b>${esc(x.email)}</b>${x.name ? ` <span class="note">${esc(x.name)}</span>` : ""}
-            <div class="note">${x.can_edit ? "can change settings and rebuild" : "can view"}</div></div>
-          <button class="btn ghost" data-drop="${esc(x.user_id)}">Remove</button></div>`).join("")
+            ${x.pending ? `<span class="chip info">invited</span>` : ""}
+            <div class="note">${x.can_edit ? "can change settings and rebuild" : "can view"}${
+              x.pending ? " — waiting for them to accept their invite" : ""}</div></div>
+          <button class="btn ghost" data-drop="${esc(x.pending ? x.email : x.user_id)}">Remove</button></div>`).join("")
       : `<p class="muted small">Not shared with anyone.</p>`;
     $$("#sharelist [data-drop]").forEach(b => b.onclick = async () => {
       if (!confirm("Remove this person's access to the model?")) return;
@@ -830,10 +832,13 @@ async function paintShares() {
 $("#shareform").onsubmit = async e => {
   e.preventDefault(); banner("");
   try {
-    await api(`/projects/${id}/shares`, { method: "POST",
+    const res = await api(`/projects/${id}/shares`, { method: "POST",
       body: { email: $("#shareemail").value.trim(), can_edit: $("#sharedit").checked } });
     $("#shareemail").value = ""; $("#sharedit").checked = false;
-    banner("Shared. It will appear in their project list.", "ok");
+    // sharing with an address that has no account no longer fails: it waits
+    banner((res.share && res.share.pending)
+      ? "They have no account here yet — the model is waiting for them and appears the moment they sign in."
+      : "Shared. It will appear in their project list.", "ok");
     paintShares();
   } catch (err) { banner(err.message || String(err)); }
 };

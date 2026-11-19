@@ -25,6 +25,14 @@
           <input type="email" name="email" required placeholder="them@company.com" autocomplete="off"></div>
         <div><button class="btn" type="submit">Create account</button></div>
       </div>
+      <div id="givewrap" style="display:none;margin-top:12px">
+        <label>Give them a model <span class="note">— waiting for them when they sign in</span></label>
+        <div id="givelist" style="max-height:132px;overflow:auto;border:1px solid var(--line);
+             border-radius:8px;padding:8px 10px;margin-top:4px"></div>
+        <label class="row" style="gap:6px;align-items:center;margin:8px 0 0">
+          <input type="checkbox" name="can_edit"> they can change settings and rebuild
+        </label>
+      </div>
       <details style="margin-top:12px">
         <summary class="note" style="cursor:pointer">More options</summary>
         <div class="row" style="margin-top:10px">
@@ -46,7 +54,7 @@
 </div>
 <footer class="site"><b>MineModelingPro Studio</b> — client data is private to the account that uploaded it.</footer>
 <script type="module">
-import { chrome, requireUser, $, esc, fmt, banner, listInvites, createInvite, listUsers } from "./app.js";
+import { chrome, requireUser, $, esc, fmt, banner, listInvites, createInvite, listUsers, api } from "./app.js";
 await chrome("admin");
 const user = await requireUser(); if (!user) throw new Error("redirecting");
 if (user.role !== "admin") { document.querySelector(".wrap").innerHTML = "<h1>Accounts</h1><p class='lead'>This page is for administrators.</p>"; throw new Error("not admin"); }
@@ -55,6 +63,21 @@ const link = (code, email) => location.origin
   + location.pathname.replace(/admin\.html$/, "index.html")
   + "?invite=" + encodeURIComponent(code)
   + (email ? "&email=" + encodeURIComponent(email) : "");
+
+// Models this account can give away — the ones it owns. A model shared WITH
+// you is not yours to pass on.
+async function paintGive() {
+  let mine = [];
+  try { mine = (await api("/projects")).projects || []; } catch (e) { mine = []; }
+  mine = mine.filter(p => !p.shared_with_me);
+  const w = $("#givewrap");
+  if (!mine.length) { w.style.display = "none"; return; }
+  w.style.display = "";
+  $("#givelist").innerHTML = mine.map(p => `<label class="row"
+      style="gap:8px;align-items:center;margin:0 0 6px"><input type="checkbox"
+      name="projects" value="${esc(p.id)}"> ${esc(p.name)}${
+      p.company ? ` <span class="note">${esc(p.company)}</span>` : ""}</label>`).join("");
+}
 
 async function paint() {
   const [inv, us] = await Promise.all([listInvites(), listUsers()]);
@@ -69,27 +92,34 @@ async function paint() {
       <td>${esc((u.last_seen || "").slice(0, 10))}</td></tr>`).join("")}</tbody></table>`;
 }
 await paint();
+await paintGive();
 
 $("#inviteform").onsubmit = async e => {
   e.preventDefault(); banner("");
   const f = new FormData(e.target);
   try {
     const email = (f.get("email") || "").trim();
-    const i = await createInvite({ email, days: Number(f.get("days") || 365),
-                                   role: f.get("role") || "client", note: f.get("note") });
+    const projects = f.getAll("projects");
+    const r = await createInvite({ email, days: Number(f.get("days") || 365),
+                                   role: f.get("role") || "client", note: f.get("note"),
+                                   projects, can_edit: !!f.get("can_edit") });
+    const i = r.invite || r;
     const url = link(i.code, i.email || email);
+    const got = r.shared || [];
     // One thing to copy, and it is the thing that works. A bare code meant
     // finding the sign-in page, switching it to sign-up, and typing the code
     // in by hand — three chances to get it wrong before anyone has an account.
     $("#newinvite").innerHTML = `<div class="ok">
-        <b>Account ready for ${esc(email)}.</b> Send them this link — they set their own password:
+        <b>Account ready for ${esc(email)}.</b>${got.length
+          ? ` They will see <b>${got.map(g => esc(g.name)).join("</b>, <b>")}</b> the moment they sign in.`
+          : ""} Send them this link — they set their own password:
         <div class="row" style="margin-top:8px;gap:8px;align-items:center">
           <input id="invlink" readonly value="${esc(url)}"
                  style="flex:1 1 320px;font-family:ui-monospace,monospace;font-size:12px">
           <button class="btn" type="button" id="copylink">Copy</button>
         </div>
-        <p class="note" style="margin:8px 0 0">The link works once and only for that address.
-          You can share a model with them once they have signed in.</p>
+        <p class="note" style="margin:8px 0 0">The link works once and only for that address.${
+          got.length ? "" : " You can also share a model with them from the project page."}</p>
       </div>`;
     $("#copylink").onclick = async () => {
       const el = $("#invlink");
@@ -100,6 +130,7 @@ $("#inviteform").onsubmit = async e => {
     };
     e.target.reset();
     await paint();
+    await paintGive();
   } catch (err) { banner(err.message || String(err)); }
 };
 </script>

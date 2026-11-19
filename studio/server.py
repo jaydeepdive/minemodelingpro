@@ -488,6 +488,15 @@ def _signup(b, host):
     u = d.one("insert into users (email, pw, name, role) values (%s,%s,%s,%s) returning *",
               email, hash_pw(pw), (b.get("name") or "").strip() or None, inv["role"])
     d.run("update invites set used_by = %s, used_at = now() where code = %s", u["id"], code)
+    # Models shared with this ADDRESS before it had an account become shares
+    # with the account itself. Until this moment a pending row granted nothing,
+    # because every access check matches on user_id and it had none.
+    claimed = d.all(
+        "update project_shares set user_id = %s, email = null "
+        "where user_id is null and lower(email) = %s returning project_id",
+        u["id"], email)
+    if claimed:
+        event(u["id"], "shares.claimed", n=len(claimed))
     event(u["id"], "signup", email=email)
     r = JSONResponse({"user": public_user(u)})
     set_session(r, u)
@@ -566,6 +575,13 @@ async def make_invite(request: Request, u=Depends(require_admin)):
 
 
 def _make_invite(b, u):
+    """Issue an invite, and optionally the models it should land on.
+
+    `projects` is the point: inviting someone and then giving them a model was
+    two trips with a sign-up in between, so the person who was invited opened an
+    empty account and had to be told to wait. The shares are held against the
+    address and claimed at sign-up, so they are simply there.
+    """
     code = secrets.token_urlsafe(9)
     # A year, not a month. These go to clients who may not get to it for weeks,
     # and an expired invite is a support conversation for no benefit — the code
@@ -577,8 +593,24 @@ def _make_invite(b, u):
         code, (b.get("email") or "").strip().lower() or None,
         "admin" if b.get("role") == "admin" else "client",
         (b.get("note") or "").strip() or None, u["id"], str(days))
-    event(u["id"], "invite", code=code, email=row["email"])
-    return {"invite": jsonable(row)}
+    # the models they should see the moment they sign in
+    want = [str(x) for x in (b.get("projects") or []) if str(x).strip()]
+    shared, refused = [], []
+    if want:
+        if not row["email"]:
+            raise HTTPException(400, "an email address is needed to share a model "
+                                     "with this invite")
+        d = store.db()
+        for pid in want:
+            pr = d.one("select id, owner, name from projects where id = %s", pid)
+            # only models this account may actually give away
+            if not pr or (str(pr["owner"]) != str(u["id"]) and u["role"] != "admin"):
+                refused.append(pid)
+                continue
+            share_pending(d, pr["id"], row["email"], bool(b.get("can_edit")), u["id"])
+            shared.append({"id": str(pr["id"]), "name": pr["name"]})
+    event(u["id"], "invite", code=code, email=row["email"], shared=len(shared))
+    return {"invite": jsonable(row), "shared": shared, "refused": refused}
 
 
 @app.get("/api/users")
@@ -764,6 +796,17 @@ def delete_project(pid: str, request: Request, u=Depends(require)):
     return {"job": jsonable(j)}
 
 
+def share_pending(d, pid, email, can_edit, by):
+    """Hold a share against an ADDRESS until it becomes an account."""
+    d.run("insert into project_shares (project_id, email, can_edit, created_by) "
+          "values (%s,%s,%s,%s) "
+          "on conflict (project_id, lower(email)) where user_id is null "
+          "do update set can_edit = excluded.can_edit",
+          pid, email.strip().lower(), bool(can_edit), by)
+    event(by, "project.share_pending", project=str(pid), to=email.strip().lower(),
+          can_edit=bool(can_edit))
+
+
 # -------------------------------------------------------------------- sharing
 # Showing one private model to one named account. Distinct from `publish`,
 # which hands it to anyone with the link — a client deliverable needs neither
@@ -772,8 +815,10 @@ def delete_project(pid: str, request: Request, u=Depends(require)):
 def list_shares(pid: str, request: Request, u=Depends(require)):
     project_or_404(u, pid)
     rows = store.db().all(
-        "select s.user_id, s.can_edit, s.created_at, us.email, us.name "
-        "from project_shares s join users us on us.id = s.user_id "
+        "select s.user_id, s.can_edit, s.created_at, "
+        "       coalesce(us.email, s.email) as email, us.name, "
+        "       (s.user_id is null) as pending "
+        "from project_shares s left join users us on us.id = s.user_id "
         "where s.project_id = %s order by s.created_at", pid)
     return {"shares": [jsonable(r) for r in rows]}
 
@@ -792,22 +837,26 @@ def _add_share(pid, b, u):
     if not email:
         raise HTTPException(400, "an email address is needed")
     d = store.db()
+    can_edit = bool(b.get("can_edit"))
     who = d.one("select * from users where lower(email) = lower(%s)", email)
     if not who:
-        # Accounts here are issued, not opened, so there is nothing useful to
-        # do silently: say plainly what has to happen first.
-        raise HTTPException(404, "no account here uses that address — it needs "
-                                 "an invite before a model can be shared with it")
+        # No account yet. The share waits for the address rather than being
+        # refused, so inviting someone and giving them a model is one action
+        # instead of two trips with a wait in between. It grants nothing until
+        # that address signs up.
+        share_pending(d, pid, email, can_edit, u["id"])
+        return {"share": {"user_id": None, "email": email.lower(),
+                          "name": None, "can_edit": can_edit, "pending": True}}
     if str(who["id"]) == str(p["owner"]):
         raise HTTPException(400, "that is the owner of this model")
-    can_edit = bool(b.get("can_edit"))
     d.run("insert into project_shares (project_id, user_id, can_edit, created_by) "
-          "values (%s,%s,%s,%s) on conflict (project_id, user_id) "
+          "values (%s,%s,%s,%s) "
+          "on conflict (project_id, user_id) where user_id is not null "
           "do update set can_edit = excluded.can_edit",
           pid, who["id"], can_edit, u["id"])
     event(u["id"], "project.share", project=pid, to=str(who["id"]), can_edit=can_edit)
     return {"share": {"user_id": str(who["id"]), "email": who["email"],
-                      "name": who.get("name"), "can_edit": can_edit}}
+                      "name": who.get("name"), "can_edit": can_edit, "pending": False}}
 
 
 @app.delete("/api/projects/{pid}/shares/{uid}")
@@ -820,8 +869,14 @@ def remove_share(pid: str, uid: str, request: Request, u=Depends(require)):
     if str(p["owner"]) != str(u["id"]) and u["role"] != "admin" \
             and str(uid) != str(u["id"]):
         raise HTTPException(403, "only the owner of this model can do that")
-    store.db().run("delete from project_shares where project_id = %s and user_id = %s",
-                   pid, uid)
+    # A share waiting on an address has no user id to name it by, so the
+    # address itself is the handle. Anything that is not a uuid is one.
+    if re.match(r"^[0-9a-f]{8}-[0-9a-f]{4}-", str(uid), re.I):
+        store.db().run("delete from project_shares "
+                       "where project_id = %s and user_id = %s", pid, uid)
+    else:
+        store.db().run("delete from project_shares where project_id = %s "
+                       "and user_id is null and lower(email) = lower(%s)", pid, uid)
     event(u["id"], "project.unshare", project=pid, who=str(uid))
     return {"ok": True}
 

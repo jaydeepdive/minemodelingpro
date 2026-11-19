@@ -146,3 +146,30 @@ create table if not exists project_shares (
   primary key (project_id, user_id)
 );
 create index if not exists project_shares_user on project_shares (user_id);
+
+-- A share that exists before the account does.
+--
+-- Inviting someone and then giving them a model was two trips: the share
+-- attaches to a user id, and there is no user until they accept. So a share may
+-- now name an EMAIL instead, and `auth/signup` claims it the moment that
+-- address becomes an account.
+--
+-- The safety property is structural rather than careful: every access check
+-- matches on `user_id`, and a pending row has none. So a pending share grants
+-- nothing at all until it is claimed — it cannot leak a model to an address
+-- that never signs up, and it cannot be made to by any later edit to the
+-- checking code.
+alter table project_shares add column if not exists email text;
+-- the primary key goes FIRST: Postgres refuses to drop NOT NULL on a column
+-- while it is still part of one, and the error names neither the cause nor the
+-- order ("column user_id is in a primary key")
+alter table project_shares drop constraint if exists project_shares_pkey;
+alter table project_shares alter column user_id drop not null;
+-- it becomes two partial uniques instead: one share per account per project,
+-- one pending share per address
+create unique index if not exists project_shares_one_per_user
+  on project_shares (project_id, user_id) where user_id is not null;
+create unique index if not exists project_shares_one_per_email
+  on project_shares (project_id, lower(email)) where user_id is null;
+create index if not exists project_shares_email on project_shares (lower(email))
+  where user_id is null;

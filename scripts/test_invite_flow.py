@@ -82,11 +82,23 @@ with sync_playwright() as pw_:
           p.inner_text("#inviteform button[type=submit]").strip() == "Create account",
           p.inner_text("#inviteform button[type=submit]"))
 
+    # a model of the admin's own, to hand over with the invite
+    proj = d.one("insert into projects (owner, slug, name, status) "
+                 "values ((select id from users where lower(email)=lower(%s)),%s,%s,'ready') "
+                 "returning *", email, "inv-" + uuid.uuid4().hex[:6], "Handover Test")
+    p.reload(wait_until="networkidle"); p.wait_for_timeout(900)
+    check("the model picker appears once you own one", p.is_visible("#givewrap"))
+    check("and lists that model",
+          "Handover Test" in p.inner_text("#givelist"), p.inner_text("#givelist")[:120])
+
     p.fill("[name=email]", client_email)
+    p.check("#givelist input[type=checkbox]")
     p.click("#inviteform button[type=submit]")
     p.wait_for_selector("#invlink", timeout=8000)
     url = p.input_value("#invlink")
     check("a ready-to-send link is produced", "/app/index.html?invite=" in url, url)
+    check("the confirmation names the model they will get",
+          "Handover Test" in p.inner_text("#newinvite"), p.inner_text("#newinvite")[:200])
     check("the link carries their address", "email=" in url, url)
     check("and a Copy button is offered", p.is_visible("#copylink"))
     check("the form clears for the next one", p.input_value("[name=email]") == "",
@@ -107,6 +119,21 @@ with sync_playwright() as pw_:
     p2.click("#submit"); p2.wait_for_timeout(2500)
     row = d.one("select id, email, role from users where lower(email) = lower(%s)", client_email)
     check("the account exists after one password", bool(row), row)
+    # the whole point: the model is already there on first sign-in
+    seen = p2.evaluate("""async () => {
+        const r = await fetch('/api/projects', {credentials:'same-origin'});
+        const j = await r.json();
+        return (j.projects || []).map(x => x.name);
+    }""")
+    check("the model is waiting for them the moment they sign in",
+          "Handover Test" in seen, seen)
+    check("and it is marked as shared with them, not theirs",
+          p2.evaluate("""async () => {
+            const r = await fetch('/api/projects', {credentials:'same-origin'});
+            const j = await r.json();
+            const p = (j.projects || []).find(x => x.name === 'Handover Test');
+            return !!(p && p.shared_with_me);
+          }"""))
     check("and it is a client, not an admin", bool(row) and row["role"] == "client",
           row and row["role"])
     check("no page errors anywhere", not errs and not e2, (errs + e2)[:2])

@@ -79,9 +79,14 @@ check("and neither can the person it is about to be shared with",
 # ----------------------------------------------------------------- read share
 r = owner.post(P + "/shares", json={"email": m_email})
 check("the owner can share it", r.status_code == 200, r.text)
-check("sharing to an address with no account says so",
-      owner.post(P + "/shares", json={"email": "nobody-" + uuid.uuid4().hex[:6]
-                                      + "@example.com"}).status_code == 404)
+# An address with no account used to be refused outright. It now WAITS — see
+# the pending-share section below for why that is safe.
+_nobody = "nobody-" + uuid.uuid4().hex[:6] + "@example.com"
+_r = owner.post(P + "/shares", json={"email": _nobody})
+check("sharing to an address with no account is held, not refused",
+      _r.status_code == 200 and (_r.json().get("share") or {}).get("pending") is True,
+      _r.text[:160])
+owner.delete(P + f"/shares/{_nobody}")          # tidy up for the count below
 check("and sharing it to its own owner is refused",
       owner.post(P + "/shares", json={"email": o_email}).status_code == 400)
 
@@ -126,7 +131,8 @@ check("an editor still cannot share it onward",
 
 # --------------------------------------------------------------- taking it back
 check("the owner sees who it is shared with",
-      [x["email"] for x in owner.get(P + "/shares").json()["shares"]] == [m_email])
+      [x["email"] for x in owner.get(P + "/shares").json()["shares"]] == [m_email],
+      owner.get(P + "/shares").json()["shares"])
 check("a stranger cannot even list the shares",
       other.get(P + "/shares").status_code == 404)
 check("the owner can take access away",
@@ -146,6 +152,86 @@ check("and that worked", mate.get(P).status_code == 404)
 owner.post(P + "/shares", json={"email": m_email})
 check("but may not remove someone else",
       other.delete(P + f"/shares/{mid}").status_code == 403)
+
+# ------------------------------------------- a share that predates the account
+# Inviting someone and then giving them a model was two trips, because a share
+# attaches to a user id and there is no user until they accept. A share may now
+# name an ADDRESS instead. The property that makes that safe is structural: every
+# access check matches on user_id, and a pending row has none, so it grants
+# nothing at all until the address becomes an account.
+pend_email = "later-" + uuid.uuid4().hex[:8] + "@example.com"
+r = owner.post(P + "/shares", json={"email": pend_email})
+check("sharing with an address that has no account is accepted", r.status_code == 200, r.text)
+check("and is reported as pending", (r.json().get("share") or {}).get("pending") is True,
+      r.json())
+check("the owner can see it waiting",
+      any(x["email"] == pend_email and x["pending"] for x in
+          owner.get(P + "/shares").json()["shares"]),
+      owner.get(P + "/shares").json()["shares"])
+
+# nothing is granted by a row with no account behind it
+rows = d.all("select user_id, email from project_shares where project_id = %s "
+             "and lower(email) = %s", pid, pend_email)
+check("the pending row carries no user id", rows and rows[0]["user_id"] is None, rows)
+
+later, lid, _le = account()          # a DIFFERENT account, same project
+check("a stranger still cannot read it while a share waits for someone else",
+      later.get(P).status_code == 404)
+
+# now that address signs up, through the invite flow
+inv = d.one("insert into invites (code, email, role, created_by) "
+            "values (%s,%s,'client',%s) returning *",
+            "c-" + uuid.uuid4().hex[:10], pend_email, oid)
+newc = TestClient(S.app)
+r = newc.post("/api/auth/signup", json={"email": pend_email, "password": "a-good-password-1",
+                                        "invite": inv["code"]})
+check("the invited address can sign up", r.status_code < 400, r.text[:200])
+check("and the model is THERE when they first sign in",
+      newc.get(P).status_code == 200)
+check("it is in their project list straight away",
+      any(str(x.get("id")) == pid for x in newc.get("/api/projects").json()["projects"]))
+check("as a viewer, not an editor", newc.get(P).json().get("your_role") == "viewer")
+check("the claimed row now names the account",
+      (lambda rr: rr and rr[0]["user_id"] is not None and rr[0]["email"] is None)(
+          d.all("select user_id, email from project_shares where project_id = %s "
+                "and user_id = (select id from users where lower(email) = %s)",
+                pid, pend_email)),
+      "not claimed")
+check("and it is no longer listed as pending",
+      not any(x["email"] == pend_email and x["pending"]
+              for x in owner.get(P + "/shares").json()["shares"]))
+
+# a pending share can be taken back before it is ever claimed
+gone_email = "gone-" + uuid.uuid4().hex[:8] + "@example.com"
+owner.post(P + "/shares", json={"email": gone_email})
+check("a waiting share can be removed by the address",
+      owner.delete(P + f"/shares/{gone_email}").status_code == 200)
+check("and it is gone", not any(x["email"] == gone_email
+                                for x in owner.get(P + "/shares").json()["shares"]))
+
+# an invite can carry the models it should land on
+giv_email = "giv-" + uuid.uuid4().hex[:8] + "@example.com"
+r = owner.post("/api/invites", json={"email": giv_email, "projects": [pid]})
+if r.status_code == 403:
+    check("inviting with a model attached (admin only here)", True, "owner is not admin")
+else:
+    check("an invite can carry a model", r.status_code == 200, r.text[:200])
+    check("and says which", [g["id"] for g in (r.json().get("shared") or [])] == [pid],
+          r.json().get("shared"))
+
+# and a model the inviter does not own cannot be given away
+other_proj = d.one("insert into projects (owner, slug, name, status) "
+                   "values (%s,%s,%s,'ready') returning *",
+                   xid, "notmine-" + uuid.uuid4().hex[:6], "Not mine")
+r = owner.post("/api/invites", json={"email": "x-" + uuid.uuid4().hex[:6] + "@example.com",
+                                     "projects": [str(other_proj["id"])]})
+if r.status_code == 200:
+    check("a model you do not own is refused, not quietly shared",
+          [str(other_proj["id"])] == (r.json().get("refused") or []),
+          r.json())
+    check("and no share row was written for it",
+          not d.all("select 1 from project_shares where project_id = %s",
+                    other_proj["id"]))
 
 print(f"\n{len(PASS)} passed, {len(FAIL)} failed")
 for f in FAIL:

@@ -3269,6 +3269,48 @@ context opens that link and finds the code and the email already filled, sets
 one password, and the account exists as a client. 13 checks, including that
 exactly one field is visible and that no page throws.
 
+### Invite and share in one action (2026-11-18)
+
+"i need to be able to share a model as soon as i invite so that they can log in
+and instantly see it."
+
+The obstacle was real: a share attaches to a **user id** and there is no user
+until the invite is accepted. So it was invite -> wait -> share, and the person
+opened an empty account and had to be told to come back.
+
+A share may now name an **email** instead. `project_shares.user_id` becomes
+nullable with an `email` column beside it, and `auth/signup` claims every
+pending row for that address at the moment it becomes an account.
+
+**The safety property is structural, not careful.** Every access check matches
+on `user_id`, and a pending row has none — so it grants nothing at all until it
+is claimed. It cannot leak a model to an address that never signs up, and no
+later edit to the checking code can make it, because there is no user id there
+to match. That is why this is safe to hold indefinitely.
+
+The invite carries the models: `POST /api/invites` takes `projects` and
+`can_edit`, refuses any project the caller does not own (returning them in
+`refused` rather than quietly skipping), and the Accounts page grows a
+"Give them a model" picker listing only models that account owns — a model
+shared WITH you is not yours to pass on. Sharing from the project page with an
+unknown address no longer 404s either; it waits, and says so.
+
+Two gotchas, both found by running the schema against a real Postgres:
+
+- **Drop the primary key BEFORE dropping NOT NULL.** Postgres refuses with
+  "column user_id is in a primary key", which names neither the cause nor the
+  order. The key becomes two partial uniques: one share per account per project
+  (`where user_id is not null`), one pending share per address
+  (`where user_id is null`), and `on conflict ... where ...` infers them.
+- **Two existing tests encoded the old contract** — that an unknown address is
+  refused — and failed. They were asserting the behaviour the request was to
+  change, so they were rewritten rather than worked around.
+
+`test_sharing.py` is 48 checks and `test_invite_flow.py` 18, the latter driving
+it in a browser as both people: the admin ticks a model while inviting, and the
+invited account finds it in their project list on first sign-in, marked as
+shared rather than owned.
+
 **The thing worth remembering:** the capability was already built and the page
 was hiding it behind the form that predated it. Before adding anything to fix a
 workflow complaint, check whether the short path is already there and merely

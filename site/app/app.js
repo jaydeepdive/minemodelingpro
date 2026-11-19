@@ -153,7 +153,8 @@ export async function defaults({ region, commodity, attach_to } = {}) {
 
 /* ------------------------------------------------------------------ admin */
 export async function listInvites() { return (await api("/invites")).invites || []; }
-export async function createInvite(body) { return (await api("/invites", { method: "POST", body })).invite; }
+// returns the whole body: the invite, plus which models were attached to it
+export async function createInvite(body) { return api("/invites", { method: "POST", body }); }
 export async function listUsers() { return (await api("/users")).users || []; }
 
 /* --------------------------------------------------------------- parameters
