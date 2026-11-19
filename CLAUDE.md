@@ -3316,6 +3316,49 @@ was hiding it behind the form that predated it. Before adding anything to fix a
 workflow complaint, check whether the short path is already there and merely
 unreachable.
 
+## The probe interval was the rest of the 503 (2026-11-19)
+
+Jordan, on seeing 503 again after being told it was fixed: "you told me i
+wouldnt see this error again what the fuck." Fair, and the account is: the
+event-loop 504s were genuinely fixed (loop lag reads 0.1-0.5 ms), but the
+DEPLOYMENT window was only shortened, I then deployed five times in one working
+day, and the shortening addressed the smaller of its two terms.
+
+`initial_delay_seconds` is the floor before the FIRST probe. `period_seconds`
+is the gap before the second one, and it was **20**. So the real window is 3 s,
+or 23 s, or 43 s, in twenty-second steps, depending on whether the container is
+accepting connections at the instant of the first probe. Measured on the
+2026-11-19 deployment: 504 for at least 32 s — the second probe, not the first.
+
+The app imports in **0.58 s** and serves degraded without a database, so it does
+not need a leisurely probe; it needs a prompt one. Now `period_seconds: 2` with
+`failure_threshold: 10` — the same ~20 s of grace for a genuinely slow start,
+but a ready container is noticed within about two seconds.
+
+**And the reconcile step had to grow with it, or the fix was a comment.** That
+step synced exactly one field, `initial_delay_seconds`. Changing the period in
+`.do/app.yaml` alone would have changed nothing on the live spec — the trap this
+file already documents, sprung again by the very step written to prevent it. It
+now copies the whole `health_check` block (and still nothing else, because
+applying the file wholesale would resize the modeler and change the bill).
+`scripts/test_do_deploy.py` is 28 checks, including that the period travels,
+that `http_path` is not clobbered by the number parser, and that the committed
+`app.yaml` actually asks for a prompt probe.
+
+### What this does NOT fix
+
+**One instance means every deployment is an outage.** The web service runs on
+`apps-s-1vcpu-1gb-fixed`, and fixed sizes **cannot run a second instance at
+all** — so rolling deploys are not a setting, they need a different size. The
+honest options, with prices read off DigitalOcean's own page:
+
+      now      apps-s-1vcpu-1gb-fixed   $10/mo   1 instance, every deploy is an outage
+      zero     apps-s-1vcpu-1gb x2      $24/mo   rolling; the window disappears
+
+So this change makes the window short, not absent. Batching deploys was the
+other free option and Jordan ruled it out for a good reason — he needs each
+change deployed to assess it, which is the whole point of shipping.
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.

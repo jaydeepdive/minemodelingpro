@@ -174,7 +174,7 @@ if AD is not None:
 # already matches, and never take a deployment down with it.
 print("\n== the health-check reconcile")
 
-_rec = _steps["Keep the health-check delay in step with .do/app.yaml"]
+_rec = _steps["Keep the health check in step with .do/app.yaml"]
 check("it cannot block a deployment", _rec.get("continue-on-error") is True,
       _rec.get("continue-on-error"))
 
@@ -185,19 +185,27 @@ _py = _py[:_py.rindex("EOF")]
 _py = textwrap.dedent(_py)
 
 
-def reconcile(live_delay, file_delay, spec_extra=None):
+def reconcile(live_delay=None, file_delay=None, spec_extra=None,
+              live_hc=None, file_hc=None):
     """Run the step's own python against a stand-in API; return (output, PUT body)."""
     import tempfile
     d = tempfile.mkdtemp()
     os.makedirs(os.path.join(d, ".do"), exist_ok=True)
-    if file_delay is not None:
+    fhc = dict(file_hc) if file_hc is not None else (
+        {"initial_delay_seconds": file_delay} if file_delay is not None else None)
+    if fhc is not None:
         with open(os.path.join(d, ".do", "app.yaml"), "w") as f:
             f.write("services:\n  - name: web\n    health_check:\n"
-                    "      initial_delay_seconds: %d\n" % file_delay)
+                    "      http_path: /api/health\n")
+            for k, v in fhc.items():
+                f.write("      %s: %d\n" % (k, v))
+            # a field after the block must not be swallowed by the parser
+            f.write("    routes:\n      - path: /\n")
     spec = {"name": "minemodelingpro",
             "services": [{"name": "web", "instance_size_slug": "apps-s-1vcpu-1gb-fixed",
-                          "health_check": ({"initial_delay_seconds": live_delay}
-                                           if live_delay is not None else {})},
+                          "health_check": (dict(live_hc) if live_hc is not None
+                                           else ({"initial_delay_seconds": live_delay}
+                                                 if live_delay is not None else {}))},
                          {"name": "modeler", "instance_size_slug": "apps-s-1vcpu-1gb"}]}
     if spec_extra:
         spec.update(spec_extra)
@@ -247,6 +255,51 @@ check("a value that already matches writes nothing", sent is None, out.strip()[:
 
 out, sent = reconcile(live_delay=15, file_delay=None)
 check("no app.yaml writes nothing", sent is None, out.strip()[:80])
+
+# THE PERIOD IS THE REST OF THE OUTAGE, so it has to travel too. Syncing only
+# the start delay left a 20 s gap before the second probe, and the file said
+# 3 s while the site was answering 504 for 32.
+out, sent = reconcile(live_hc={"initial_delay_seconds": 3, "period_seconds": 20,
+                               "failure_threshold": 5},
+                      file_hc={"initial_delay_seconds": 3, "period_seconds": 2,
+                               "failure_threshold": 10})
+check("the probe interval is reconciled too, not just the start delay",
+      sent is not None, out.strip()[:120])
+if sent:
+    hc = [x for x in sent["spec"]["services"] if x["name"] == "web"][0]["health_check"]
+    check("period_seconds is written back", hc.get("period_seconds") == 2, hc)
+    check("failure_threshold is written back", hc.get("failure_threshold") == 10, hc)
+    check("and the start delay it already had is left alone",
+          hc.get("initial_delay_seconds") == 3, hc)
+    check("http_path is not clobbered by the number parser",
+          "http_path" not in hc or hc["http_path"] == "/api/health", hc)
+
+out, sent = reconcile(live_hc={"initial_delay_seconds": 3, "period_seconds": 2,
+                               "failure_threshold": 10},
+                      file_hc={"initial_delay_seconds": 3, "period_seconds": 2,
+                               "failure_threshold": 10})
+check("a health check that already matches writes nothing", sent is None,
+      out.strip()[:100])
+
+# the file's own numbers must actually reach the live spec — the trap this
+# whole step exists for is a fix that lives only in a reference copy
+import re as _re
+_real = {}
+_in = False
+for _line in open(".do/app.yaml"):
+    if _re.match(r"\s*health_check:\s*$", _line):
+        _in = True; continue
+    if _in:
+        _m = _re.match(r"\s+(\w+):\s*(\d+)\s*$", _line)
+        if _m:
+            _real[_m.group(1)] = int(_m.group(2))
+        elif _line.strip() and not _line.lstrip().startswith("#") \
+                and not _line.startswith("      "):
+            break
+check("the committed app.yaml probes promptly, not every 20 s",
+      _real.get("period_seconds", 99) <= 5, _real)
+check("and still allows a slow start",
+      _real.get("period_seconds", 0) * _real.get("failure_threshold", 0) >= 15, _real)
 
 print("\n%d passed, %d failed" % (len(PASS), len(FAIL)))
 sys.exit(1 if FAIL else 0)

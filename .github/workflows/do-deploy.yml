@@ -60,12 +60,18 @@ jobs:
       # one runs 1 GB). So this does NOT apply the file: applying it wholesale
       # would silently resize components and change the bill.
       #
-      # It reconciles ONE field, the web service's health-check start delay,
-      # because that field is the length of every deployment's outage and there
-      # is no other way to reach it from here. Reads the LIVE spec, changes that
-      # one number if it differs from the file, and puts it back. Idempotent: it
-      # acts once and then never again. Never blocks a deployment.
-      - name: Keep the health-check delay in step with .do/app.yaml
+      # It reconciles the web service's HEALTH CHECK and nothing else, because
+      # those fields are the length of every deployment's outage and there is no
+      # other way to reach them from here. Reads the LIVE spec, changes them if
+      # they differ from the file, puts it back. Idempotent: it acts once and
+      # then never again. Never blocks a deployment.
+      #
+      # It was one field (initial_delay_seconds) and that was not enough: the
+      # floor is only the first probe, and period_seconds is the gap before the
+      # second one. Tuning the floor while leaving a 20 s period left the real
+      # window untouched, and the file said 3 s while the site was down for 32.
+      # Anything in health_check that this does not copy is a comment.
+      - name: Keep the health check in step with .do/app.yaml
         continue-on-error: true
         env:
           TOKEN: ${{ secrets.DO_DEPLOY_TOKEN }}
@@ -75,17 +81,30 @@ jobs:
           python3 - <<'EOF'
           import json, os, re, urllib.request
 
-          want = None
+          FIELDS = ("initial_delay_seconds", "period_seconds",
+                    "failure_threshold", "success_threshold", "timeout_seconds")
+          want = {}
           try:
+              inblock = False
               for line in open(".do/app.yaml"):
-                  m = re.match(r"\s*initial_delay_seconds:\s*(\d+)", line)
-                  if m:
-                      want = int(m.group(1))
-                      break
+                  if re.match(r"\s*health_check:\s*$", line):
+                      inblock = True
+                      continue
+                  if inblock:
+                      m = re.match(r"\s+(\w+):\s*(\S+)", line)
+                      if not m:                     # dedented out of the block
+                          if line.strip() and not line.lstrip().startswith("#"):
+                              inblock = False
+                          continue
+                      k, v = m.group(1), m.group(2)
+                      if k in FIELDS and v.isdigit():
+                          want[k] = int(v)
+                      elif k not in FIELDS and k != "http_path":
+                          inblock = False
           except OSError as e:
               print("cannot read .do/app.yaml (%s) — nothing to do" % e); raise SystemExit
-          if want is None:
-              print("no initial_delay_seconds in .do/app.yaml — nothing to do"); raise SystemExit
+          if not want:
+              print("no health-check numbers in .do/app.yaml — nothing to do"); raise SystemExit
           api = "https://api.digitalocean.com/v2/apps/" + os.environ["APP_ID"]
           hdr = {"Authorization": "Bearer " + os.environ["TOKEN"],
                  "Content-Type": "application/json"}
@@ -96,15 +115,17 @@ jobs:
           if not web:
               print("no web service in the live spec"); raise SystemExit
           hc = web[0].setdefault("health_check", {})
-          have = hc.get("initial_delay_seconds")
-          if have == want:
-              print("live health check already starts at %ss" % want); raise SystemExit
-          hc["initial_delay_seconds"] = want
+          diff = {k: v for k, v in want.items() if hc.get(k) != v}
+          if not diff:
+              print("live health check already matches .do/app.yaml: %s"
+                    % {k: hc.get(k) for k in want}); raise SystemExit
+          before = {k: hc.get(k) for k in diff}
+          hc.update(diff)
           req = urllib.request.Request(api, method="PUT", headers=hdr,
                                        data=json.dumps({"spec": spec}).encode())
           urllib.request.urlopen(req, timeout=60).read()
-          print("health-check start delay %s -> %ss (every deployment's outage "
-                "is at least this long)" % (have, want))
+          print("health check %s -> %s (this is the length of every "
+                "deployment's outage)" % (before, diff))
           EOF
 
       - name: Trigger a deployment
