@@ -72,6 +72,9 @@ $("#toggle").onclick = e => {
     ? "Studio is for invited clients. Your drill data and models stay private to your account."
     : "Enter the invite code you were sent and choose a password.";
   if (mode === "signup" && q.get("invite")) $("[name=invite]").value = q.get("invite");
+  // the invite link carries the address it was issued to, so the only thing
+  // left to do is choose a password
+  if (mode === "signup" && q.get("email")) $("[name=email]").value = q.get("email");
   banner("");
 };
 if (q.get("invite")) $("#toggle").click();

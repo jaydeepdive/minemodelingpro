@@ -567,7 +567,10 @@ async def make_invite(request: Request, u=Depends(require_admin)):
 
 def _make_invite(b, u):
     code = secrets.token_urlsafe(9)
-    days = float(b.get("days") or 30)
+    # A year, not a month. These go to clients who may not get to it for weeks,
+    # and an expired invite is a support conversation for no benefit — the code
+    # is single-use and locked to one address, which is what actually bounds it.
+    days = float(b.get("days") or 365)
     row = store.db().one(
         "insert into invites (code, email, role, note, created_by, expires_at) "
         "values (%s,%s,%s,%s,%s, now() + (%s || ' days')::interval) returning *",

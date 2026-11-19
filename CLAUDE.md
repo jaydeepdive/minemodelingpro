@@ -3233,6 +3233,47 @@ the bug reintroduced. MODEL_VERSION 27.
 invisible to every test that only checks outputs are sane. Where a value means
 "which X is this", assert it is a valid X.
 
+## Adding someone was four fields and a code (2026-11-18)
+
+Jordan, looking at the Accounts page: "this is messy. i just want to make a new
+account for someone. why is it complicated."
+
+It asked for four things — email (labelled **optional**, which is the one thing
+it actually wants), validity in days, role, and a note — and then handed back a
+bare invite CODE under a heading saying to send it to the client. The client
+then had to find the sign-in page, notice the "I have an invite code" toggle,
+switch it to sign-up, and type the code in by hand. Three chances to get it
+wrong before anyone had an account.
+
+**The link that skips all of that already existed on the page.** `index.html`
+has taken `?invite=CODE` since it was written — it flips to sign-up and fills
+the code in. `admin.html` even built that URL. It just printed it as plain text
+under the four fields, below a sentence telling you to send a code.
+
+So this was presentation, not plumbing:
+
+- one visible field, **email**, now required — it locks the invite to that
+  address, which is what bounds a single-use code on an invite-only platform,
+  and it is what lets the link carry the address too;
+- days / role / note moved into `<details>`, still there, defaulted;
+- the button says **Create account**, because that is what the person is doing;
+- the result is one read-only input with a **Copy** button, and the link now
+  carries `&email=` so the client only chooses a password;
+- invites default to **365 days**, not 30. These go to clients who may not get
+  to it for weeks, and an expired invite is a support conversation for nothing:
+  the code is single-use and address-locked, which is the real bound.
+
+`scripts/test_invite_flow.py` drives it end to end as BOTH people against a
+real Postgres — admin signs in, adds an address, gets a link; a clean browser
+context opens that link and finds the code and the email already filled, sets
+one password, and the account exists as a client. 13 checks, including that
+exactly one field is visible and that no page throws.
+
+**The thing worth remembering:** the capability was already built and the page
+was hiding it behind the form that predated it. Before adding anything to fix a
+workflow complaint, check whether the short path is already there and merely
+unreachable.
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.

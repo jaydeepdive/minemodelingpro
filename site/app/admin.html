@@ -14,19 +14,26 @@
 <div class="topbar" id="topbar"></div>
 <div class="wrap">
   <h1>Accounts</h1><div class="rule"></div>
-  <p class="lead">MineModelingPro Studio is invite-only. Issue a code, send it to the client, and they set their own password.</p>
+  <p class="lead">Add someone by email and send them the link. They choose their own password; nothing else is needed.</p>
   <div id="msg"></div>
 
   <div class="card" style="margin-top:16px">
-    <h3>Invite a client</h3>
+    <h3>Add someone</h3>
     <form id="inviteform" style="margin-top:10px">
-      <div class="row">
-        <div><label>Their email (optional)</label><input type="email" name="email" placeholder="locks the code to this address"></div>
-        <div><label>Valid for (days)</label><input type="number" name="days" value="30" step="1" min="1"></div>
-        <div><label>Role</label><select name="role"><option value="client">Client</option><option value="admin">Administrator</option></select></div>
+      <div class="row" style="align-items:flex-end;gap:10px">
+        <div style="flex:1 1 320px"><label>Their email</label>
+          <input type="email" name="email" required placeholder="them@company.com" autocomplete="off"></div>
+        <div><button class="btn" type="submit">Create account</button></div>
       </div>
-      <div style="margin-top:10px"><label>Note (optional)</label><input type="text" name="note" placeholder="e.g. Perron data review"></div>
-      <div class="row" style="margin-top:14px"><button class="btn" type="submit">Create invite</button></div>
+      <details style="margin-top:12px">
+        <summary class="note" style="cursor:pointer">More options</summary>
+        <div class="row" style="margin-top:10px">
+          <div><label>Valid for (days)</label><input type="number" name="days" value="365" step="1" min="1"></div>
+          <div><label>Role</label><select name="role"><option value="client">Client</option><option value="admin">Administrator</option></select></div>
+          <div style="flex:1 1 220px"><label>Note (only you see this)</label>
+            <input type="text" name="note" placeholder="e.g. Perron data review"></div>
+        </div>
+      </details>
     </form>
     <div id="newinvite" style="margin-top:12px"></div>
   </div>
@@ -44,7 +51,10 @@ await chrome("admin");
 const user = await requireUser(); if (!user) throw new Error("redirecting");
 if (user.role !== "admin") { document.querySelector(".wrap").innerHTML = "<h1>Accounts</h1><p class='lead'>This page is for administrators.</p>"; throw new Error("not admin"); }
 
-const link = code => location.origin + location.pathname.replace(/admin\.html$/, "index.html") + "?invite=" + encodeURIComponent(code);
+const link = (code, email) => location.origin
+  + location.pathname.replace(/admin\.html$/, "index.html")
+  + "?invite=" + encodeURIComponent(code)
+  + (email ? "&email=" + encodeURIComponent(email) : "");
 
 async function paint() {
   const [inv, us] = await Promise.all([listInvites(), listUsers()]);
@@ -64,10 +74,31 @@ $("#inviteform").onsubmit = async e => {
   e.preventDefault(); banner("");
   const f = new FormData(e.target);
   try {
-    const i = await createInvite({ email: f.get("email"), days: Number(f.get("days") || 30),
-                                   role: f.get("role"), note: f.get("note") });
-    $("#newinvite").innerHTML = `<div class="ok">Invite created. Send them this link:<br>
-      <code>${esc(link(i.code))}</code></div>`;
+    const email = (f.get("email") || "").trim();
+    const i = await createInvite({ email, days: Number(f.get("days") || 365),
+                                   role: f.get("role") || "client", note: f.get("note") });
+    const url = link(i.code, i.email || email);
+    // One thing to copy, and it is the thing that works. A bare code meant
+    // finding the sign-in page, switching it to sign-up, and typing the code
+    // in by hand — three chances to get it wrong before anyone has an account.
+    $("#newinvite").innerHTML = `<div class="ok">
+        <b>Account ready for ${esc(email)}.</b> Send them this link — they set their own password:
+        <div class="row" style="margin-top:8px;gap:8px;align-items:center">
+          <input id="invlink" readonly value="${esc(url)}"
+                 style="flex:1 1 320px;font-family:ui-monospace,monospace;font-size:12px">
+          <button class="btn" type="button" id="copylink">Copy</button>
+        </div>
+        <p class="note" style="margin:8px 0 0">The link works once and only for that address.
+          You can share a model with them once they have signed in.</p>
+      </div>`;
+    $("#copylink").onclick = async () => {
+      const el = $("#invlink");
+      try { await navigator.clipboard.writeText(el.value); }
+      catch (e) { el.select(); document.execCommand("copy"); }
+      $("#copylink").textContent = "Copied";
+      setTimeout(() => { $("#copylink").textContent = "Copy"; }, 1600);
+    };
+    e.target.reset();
     await paint();
   } catch (err) { banner(err.message || String(err)); }
 };
