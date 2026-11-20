@@ -1408,5 +1408,35 @@
   "size_kb": 22495,
   "collected": "2026-11-17T22:21:41Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_FPYP-2026-11-17-technical-report-ni-43-101-english-23cf.pdf"
+ },
+ {
+  "file": "ceo_CTM-2026-11-19-technical-report-ni-43-101-english-6239.pdf",
+  "filing_ref": "CTM-2026-11-19-technical-report-ni-43-101-english-6239.pdf",
+  "company": "CTM",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-11-19",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/CTM-2026-11-19-technical-report-ni-43-101-english-6239.pdf",
+  "source": "ceo.ca",
+  "size_kb": 12567,
+  "collected": "2026-11-20T03:12:47Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_CTM-2026-11-19-technical-report-ni-43-101-english-6239.pdf"
+ },
+ {
+  "file": "ceo_NICU-2026-11-19-technical-report-ni-43-101-english-6252.pdf",
+  "filing_ref": "NICU-2026-11-19-technical-report-ni-43-101-english-6252.pdf",
+  "company": "NICU",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-11-19",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/NICU-2026-11-19-technical-report-ni-43-101-english-6252.pdf",
+  "source": "ceo.ca",
+  "size_kb": 33028,
+  "collected": "2026-11-20T03:12:57Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_NICU-2026-11-19-technical-report-ni-43-101-english-6252.pdf"
  }
 ]
