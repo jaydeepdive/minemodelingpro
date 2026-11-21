@@ -78,4 +78,6 @@ def describe(limit, style):
             f"rest as underground, with the underground cut-off set "
             f"{UG_CUTOFF_MULTIPLE:g}x higher because underground tonnes cost more to "
             f"mine. The depth is what a pit plausibly reaches on a "
-            f"{style or 'deposit of this kind'} — a geometric split, not a pit shell.")
+            f"{style or 'deposit of this kind'} — a geometric split by depth. The "
+            f"pit shell under \u201cif it were mined\u201d is the excavation itself, "
+            f"at a wall angle, and is the one to read for strip ratio.")

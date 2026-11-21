@@ -193,7 +193,15 @@ function buildBlocks(){if(blockMesh){scene.remove(blockMesh);blockMesh.geometry.
       /* which solid each block falls in: 0 outside both, 1 the vein, 2 the
          mining shape only. Carried per block so the split follows the cut-off
          slider rather than being frozen into one headline. */
-      shape:B.shape?b64(B.shape,Uint8Array):null,tpb:B.tonnes_per_block||0};
+      shape:B.shape?b64(B.shape,Uint8Array):null,
+      /* what would be MINED: which stope a block falls in (0 = none), and
+         whether it sits inside the pit shell. Both computed at the reporting
+         cut-off at build time, because a stope is a connected volume and a pit
+         is a slope-constrained excavation — neither is a per-block threshold
+         the viewer could recompute honestly as the slider moves. */
+      stope:B.stope?b64(B.stope,Uint8Array):null,
+      pit:B.pit?b64(B.pit,Uint8Array):null,
+      tpb:B.tonnes_per_block||0};
   const geo=new THREE.BoxGeometry(bx*0.97,bz*0.97,by*0.97);
   blockMesh=new THREE.InstancedMesh(geo,new THREE.MeshLambertMaterial({transparent:true,opacity:+$("blk-op").value/100,depthWrite:false}),n);
   blockMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);blockMesh.visible=$("L-blocks").checked;scene.add(blockMesh);applyCut();}
@@ -939,15 +947,17 @@ function updCut(){const E=M.elements[EL];if(!E.gt)return;const r=E.gt[+$("cut").
    a reader distrust the number, because the picture and the figure disagree
    and nothing on the page admits it. */
 function shapeSplit(cut){
-  if(!BK||!BK.shape||!BK.tpb)return null;
-  const g=BK.g,sh=BK.shape,tpb=BK.tpb;
-  let nO=0,sO=0,nM=0,sM=0,nX=0,sX=0;
+  if(!BK||!BK.tpb||!(BK.shape||BK.stope||BK.pit))return null;
+  const g=BK.g,sh=BK.shape,tpb=BK.tpb,stp=BK.stope,pbk=BK.pit;
+  let nO=0,sO=0,nM=0,sM=0,nX=0,sX=0,nST=0,sST=0,nPT=0,sPT=0;
   // and, separately, what sits AT the ground rather than in it
   const B=M.elements[EL].blocks,o=B.origin,[bx,by,bz]=B.size,ijk=BK.ijk;
   let nS=0,sS=0,nP=0,sP=0,nU=0,sU=0,nN=0,sN=0;
   for(let i=0;i<BK.n;i++){
     const v=g[i];if(!(v>=cut))continue;
-    const k=sh[i];
+    if(stp&&stp[i]>0){nST++;sST+=v;}
+    if(pbk&&pbk[i]){nPT++;sPT+=v;}
+    const k=sh?sh[i]:0;
     if(k===1){nO++;sO+=v;}
     else if(k===2){nM++;sM+=v;}
     else if(k===3){nN++;sN+=v;}
@@ -963,8 +973,11 @@ function shapeSplit(cut){
         // reader could not tell which number answered "pit or underground".
         if(PITLIM!=null){ if(d<=PITLIM){nP++;sP+=v;} else {nU++;sU+=v;} }}}}
   const all=sO+sM+sN+sX;
-  if(!(nO+nM+nN+nX))return null;
-  return {ore:{t:nO*tpb,g:nO?sO/nO:0,n:nO},
+  if(!(nO+nM+nN+nX)&&!nST&&!nPT)return null;
+  return {stope:nST?{t:nST*tpb,g:sST/nST,n:nST}:null,
+          pitblk:nPT?{t:nPT*tpb,g:sPT/nPT,n:nPT}:null,
+          hasShape:!!sh,
+          ore:{t:nO*tpb,g:nO?sO/nO:0,n:nO},
           mine:{t:(nO+nM)*tpb,g:(nO+nM)?(sO+sM)/(nO+nM):0,n:nO+nM},
           near:{t:nN*tpb,g:nN?sN/nN:0,n:nN,share:all>0?sN/all:0},
           out:{t:nX*tpb,g:nX?sX/nX:0,n:nX,share:all>0?sX/all:0},
@@ -983,9 +996,34 @@ function drawSplit(cut){
   const row=(label,t,gr,note)=>`<div class="kv"><span>${label}${note?
     ` <small style="opacity:.7">${note}</small>`:""}</span><b>${fmtT(t)}${
     gr?" @ "+fmtG(gr,E.unit):""}</b></div>`;
-  let h=`<div style="font-weight:650;margin:2px 0 4px">AT THIS CUT-OFF, BY SHAPE</div>`
-   +row("In the mineralised body",r.ore.t,r.ore.g)
-   +row("In the mining shape",r.mine.t,r.mine.g,"vein + minimum mining width");
+  let h=`<div style="font-weight:650;margin:2px 0 4px">AT THIS CUT-OFF, BY SHAPE</div>`;
+  if(r.hasShape){
+    h+=row("In the mineralised body",r.ore.t,r.ore.g)
+      +row("In the mining shape",r.mine.t,r.mine.g,"vein + minimum mining width");}
+  /* WHAT WOULD BE MINED. A resource is rock above a cut-off; a mine is a set of
+     shapes a machine can physically take. Both of these are conservative
+     readings and neither is a mine design, which the note says in as many
+     words — a strip ratio that looks like an engineering study and is not one
+     is worse than no strip ratio. */
+  const MG=(M.elements[EL]||{}).mining;
+  if(r.stope||r.pitblk){
+    h+=`<div style="font-weight:650;margin:8px 0 4px">IF IT WERE MINED</div>`;
+    if(r.stope){
+      const nst=MG&&MG.n_stopes,dil=MG&&MG.dilution;
+      h+=row("In a mineable stope",r.stope.t,r.stope.g,
+             (nst?nst+(nst===1?" body":" bodies"):"")+
+             (dil?" · "+(dil*100).toFixed(1)+"% dilution":""));}
+    if(r.pitblk){
+      const P=MG&&MG.pit;
+      h+=row("Inside a pit shell",r.pitblk.t,r.pitblk.g,
+             P?P.slope_deg+"° walls · strip "+(P.strip_ratio!=null?P.strip_ratio+":1":"–"):"");}
+    h+=`<p class="note" style="margin:4px 0 0">`+
+       (MG&&MG.cutoff!=null?`Both are cut at ${esc(fmtG(MG.cutoff,MG.cutoff_unit||E.unit))}, `
+        +`not at the slider. `:"")+
+       `A stope here is a contiguous volume big enough to mine, carrying the `+
+       `waste trapped inside it; the pit is the smallest excavation at that wall `+
+       `angle that contains the ore. Neither is a mine design — no mining method, `+
+       `level spacing, pillar, access, cost or recovery has been chosen.</p>`;}
   // Material at the ground surface is not necessarily rock in the ground. On a
   // historic property it can be a tailings pile, and blending one into an
   // in-situ resource is how a number stops meaning anything.
@@ -1151,11 +1189,35 @@ function drawBreakdown(){
       `<button class="mini${val?" on":""}" data-basis="value">cut on value (${esc(B.value.currency||"$")}/t)</button>`+
       `<button class="mini${val?"":" on"}" data-basis="grade">cut on ${esc(B.basis)} grade</button></div>`:"");
   // the tiers, and the published statement when it is cut the same way
-  const K=V.classes;
-  const tiers=K?`<table class="bd" style="margin-top:6px"><tbody>`+
-    Object.keys(K).map(k=>`<tr><td style="cursor:default">${esc(k)}</td><td class="n" style="cursor:default">${fmtT(K[k][i])}</td></tr>`).join("")+
-    `</tbody></table><p class="note">MMP's own confidence tiers — how many holes and samples reached each block —
-      not CIM categories assigned by a qualified person.</p>`:"";
+  /* Confidence by drill density. The tiers used to be three names and three
+     tonnages, which tells a reader a classification exists without telling him
+     what it means or whether the well-drilled rock is the good rock. The rule
+     behind each tier is a distance and a hole count, both already measured, so
+     they are simply stated — together with the grade in that tier and how the
+     tier reads against CIM, which is a reading and never an assignment. */
+  const K=V.classes,KG=V.classes_grade||(M.by_metal||{}).classes_grade||{},
+        TR=V.tier_rules||(M.by_metal||{}).tier_rules||[],
+        bu=(M.by_metal||{}).basis_unit||"g/t",
+        SPM=V.spacing_m||(M.by_metal||{}).spacing_m||null,
+        CAV=V.cim_caveat||(M.by_metal||{}).cim_caveat||
+            "MMP's own confidence tiers, not CIM categories assigned by a qualified person.";
+  const ruleOf=n=>TR.find(r=>r&&r["class"]===n)||null;
+  const tiers=K?`<div class="bdhead" style="margin-top:8px">Confidence by drill density`+
+    (SPM?` · drill spacing ${fmtN(SPM,0)} m`:"")+`</div>`+
+    `<table class="bd" style="margin-top:4px"><tbody>`+
+    Object.keys(K).map(k=>{const r=ruleOf(k),g=(KG[k]||[])[i],t=K[k][i];
+      const rule=(r&&r.within_m!=null)
+        ?`within ${fmtN(r.within_m,0)} m of drilling, ${r.min_holes} hole`+
+         (r.min_holes===1?"":"s")+(r.cim?" · "+r.cim:"")
+        :(r&&r.cim?r.cim:"");
+      return `<tr title="${esc((r&&r.why)||"")}">`+
+        `<td style="cursor:default">${esc(k)}`+
+        (rule?`<div class="note" style="margin:1px 0 0;font-size:11px">${esc(rule)}</div>`:"")+
+        `</td>`+
+        `<td class="n" style="cursor:default;vertical-align:top">${t?fmtT(t):"–"}</td>`+
+        `<td class="n" style="cursor:default;vertical-align:top">${g==null?"–":fmtG(g,bu)}</td>`+
+        `</tr>`;}).join("")+
+    `</tbody></table><p class="note">${esc(CAV)}</p>`:"";
   const p=pubAtCut();
   let cmp="";
   if(p&&p.cutoff!=null){

@@ -3490,6 +3490,118 @@ nothing but bonanza has a median of 8,050 g/t, trips the column-level median tes
 and gets divided by a thousand for a completely different and correct reason:
 **build the fixture like the data, or it tests the wrong branch.** MODEL_VERSION 28.
 
+## The cap was eating the orebody, silently (2026-11-21)
+
+Jordan, after the assay fix restored his 89,125 g/t silver: "why did the update
+to the grade not alter the contained ounces. those results CLEARLY signify that
+an ultra high grade vein exists."
+
+Both halves right. Three samples out of 144,817 cannot move a 2.70 Moz headline —
+but the real reason is that **the estimator never sees that number**. `g =
+np.minimum(g, top)` caps every composite at the 99.5th percentile before a single
+block is estimated. Restoring the assay fixed what the LOGS report; it could not
+reach the model.
+
+**What the cap removes, measured on built models:**
+
+      huajoto-alt          vein        keeps  62.8%   (6 composites of 1,048 carry 37%)
+      los-ricos-north      vein        keeps  80.6%
+      glencore-bucke       vein        keeps  93.6%   (Cobalt camp)
+      doc-hans             vein        keeps  94.7%
+      los-ricos-south      vein        keeps  94.9%
+      la-mina              porphyry    keeps  98.6%
+      adelita              skarn       keeps  98.8%
+      fremont              orogenic    keeps  99.7%
+
+Capping costs a porphyry nothing and a narrow vein system up to 37% of its metal,
+and that is structural rather than a coincidence: in a bonanza vein the high grade
+IS the deposit, so the tool that protects a disseminated estimate from outliers is
+the tool that deletes a Cobalt-camp orebody. **Nothing said so.** The project page
+reported the cap's VALUE in a parameter table and never what it cost.
+
+- **The cap now reports its own cost** — composites held down and the share of
+  assayed metal removed — as a `check` flag whenever it exceeds 2%.
+- **`outlier_restrict_m`** is the alternative to flattening the peak: a composite
+  above the cap informs a block at its FULL measured grade within that distance
+  and at the cap beyond it, so the bonanza enriches its own vein instead of being
+  smeared across the property or thrown away. Measured in the same space the
+  search uses, so a shoot carries along its structure, not across it.
+
+### Measured, and NOT made the default
+
+26 comparable projects, same projects each arm:
+
+| arm | median | med abs log err | within 1.5x | 2x | >10x |
+|---|---|---|---|---|---|
+| hard cap | 0.937 | 0.410 | 13 | 16 | 1 |
+| restrict 15 m | 0.952 | 0.410 | 13 | 16 | 1 |
+| restrict 30 m | 0.952 | 0.410 | 13 | 16 | 1 |
+
+Only 9 of 26 move at all; closer on 6, further on 3. That is not evidence. **Hard
+capping is standard practice and defensible, so it stays the default** — what was
+indefensible was that nothing told a reader a third of the metal had gone, and
+that is what got fixed. On Huajoto the option is worth +9.3% contained at 15 m and
++36.3% at 30 m, with **tonnage identical in all three arms**: it is a grade
+treatment, not a geometry change.
+
+## The tiers now say what they mean (2026-11-21)
+
+The three confidence tiers were three names and three tonnages, which tells a
+reader a classification exists and nothing about what it is or whether the
+well-drilled rock is the good rock. The rule behind each tier was already measured
+— a distance and a hole count — so it is simply stated, beside the grade in that
+tier and the project's own drill spacing:
+
+      Confidence by drill density · drill spacing 324 m
+      well drilled        within 25 m of drilling, 3 holes · indicated in character
+      moderately drilled  within 46 m of drilling, 2 holes · inferred to indicated
+      thinly drilled      within 70 m of drilling, 1 hole  · inferred at best
+
+`CIM_READING` maps each tier to the category it most resembles and `CIM_CAVEAT`
+says, every time, that a CIM category is assigned by a qualified person on
+continuity, QA/QC, density and metallurgy — not on drill spacing, the only input
+MMP measures — so none of it is a mineral resource and none may be reported as
+one. The reading is offered for context and must never become an assignment.
+
+It also makes an existing answer legible: Huajoto puts every block in "thinly
+drilled" because its drill spacing is 324 m and the top tier needs a block within
+25 m of three holes. That was always true and never explicable from the page.
+
+## What would actually be mined (2026-11-21)
+
+`src/minemodelingpro/mining.py`, 19 checks in `scripts/test_mining.py`. Until now
+the page answered "what would be mined" with the resource and a depth threshold —
+"above 80 m is open pit" — which is not a pit and says nothing about whether the
+rock below sits in pieces big enough to mine.
+
+- **`stopes()`** — contiguous volumes above a mining cut-off, 26-connected, kept
+  only if they reach `MIN_STOPE_M3` (750 m³) and span `MIN_STOPE_SPAN_M` in their
+  two longest directions, so a single string of blocks down one hole is not a
+  stope. **Waste trapped inside a stope is mined with it** (`binary_fill_holes`)
+  and reported as dilution, because that is the whole point and the thing an
+  optimiser would quietly remove.
+- **`pit_shell()`** — the smallest pit at a given wall angle containing the ore
+  above a cut-off, as a max-plus (grey) dilation of ore depth by a cone. **The pit
+  is wider than the deposit**, so it is computed on a padded grid: truncating the
+  cone at the orebody's own edge reports a fraction of the rock that has to move
+  and a strip ratio near zero on every deposit. Waste is computed geometrically
+  from the excavation, not from blocks, for the same reason.
+
+Both are deliberately conservative READINGS and the page says so in as many words:
+no mining method, level spacing, pillar, access, cost or recovery has been chosen,
+and the pit is a geometric lower bound on the excavation, not an optimised shell.
+A Lerchs-Grossmann pit needs prices, costs and recoveries MMP does not have, and a
+number that looks like an engineering study and is not one is worse than none.
+
+On Huajoto: 17 stopes, 6.22 Mt at 5.86 g/t with 0.4% dilution; pit 266 m deep,
+strip ratio **29.67:1** — which is the honest signal that this vein is not an
+open-pit deposit.
+
+*The test that earned its keep:* the excavated volume of a 50 m pit at 45 degrees
+is checked against the closed form for a cone, pi r^2 h / 3, to within 15%. The
+first implementation passed every behavioural test and failed that one, because it
+computed the shell only where blocks existed. MODEL_VERSION 29.
+
 ## Reasonable backlog / ideas
 
 - Downhole surveys: supported end to end (drill_tables reads survey tables — hole/depth/azimuth/dip, plausibility-filtered; model3d desurveys by minimum curvature; the viewer draws curved paths). As of 2026-09-19 none of the 201 archived reports publish real survey tables, so holes are straight on collar az/dip until a report or feed supplies them.

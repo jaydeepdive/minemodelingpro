@@ -108,7 +108,7 @@ _VIEWER_TMPL = os.path.join(_HERE, "model3d_viewer.html")
 #      isosurfaced, instead of triangulated: it uses the holes that cut nothing
 #      as evidence of where the body is not, and a shape that folds costs no
 #      more than a flat one. Halves the bodies that got no shape at all.
-MODEL_VERSION = 28
+MODEL_VERSION = 29
 # the most domain cells to send to a browser; beyond this the envelope is drawn
 # on a coarser lattice, which is a picture of the same shape
 BODY_MAX_CELLS = 120_000
@@ -636,6 +636,36 @@ def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None,
     power = float(o.get("power") if o.get("power") is not None else 2.0)
     method = o.get("method") or "idw"
     max_per_hole = int(o.get("max_per_hole") or 4)
+    # OUTLIER RESTRICTION.
+    #
+    # A composite above the cap informs a nearby block at its full measured grade
+    # and a distant one at the cap. That is the standard treatment for a bonanza
+    # sample and it is the one this deposit type needs: hard capping answers "do
+    # not let one sample run away with the model" by deleting the metal, which on
+    # a narrow vein system removes up to 37% of it and flattens the high-grade
+    # core the drilling actually found.
+    #
+    # The distance is measured in the SAME space the search uses — the deposit's
+    # own frame when there is anisotropy — exactly like `radius_m`. That is the
+    # geologically right answer as well as the consistent one: a bonanza shoot
+    # runs along its structure, not across it.
+    g_full = o.get("grades_uncapped")
+    cap_at = o.get("top_cut")
+    restrict_m = float(o.get("outlier_restrict_m") or 0.0)
+    _hot = None
+    if g_full is not None and cap_at and restrict_m > 0:
+        g_full = np.asarray(g_full, float)
+        if len(g_full) == len(g) and (g_full > float(cap_at)).any():
+            _hot = g_full > float(cap_at)
+
+    def _restricted(gg, iis_, dd_):
+        """This block's sample grades, with any outlier held to the cap once it is
+        further away than the restriction allows."""
+        gv = gg[iis_]
+        if _hot is None:
+            return gv
+        return np.where(_hot[iis_] & (dd_ <= restrict_m), g_full[iis_], gv)
+
     passes = _passes(radius, max_gap, min_holes, min_samples, o.get("passes"))
     # the deposit's own frame: searching a vein in world axes bridges between veins
     rot, aniso = (None, None)
@@ -903,14 +933,15 @@ def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None,
             dd, ii, fine, cls = dd[keep], ii[keep], fine[keep], cls[keep]
         nearm = np.isfinite(dd)
         iis = np.where(nearm, ii, 0)
+        gv = _restricted(g, iis, dd)
         if method == "nn":
-            est = g[iis[:, 0]]
+            est = gv[:, 0]
         elif method == "mean":
             w = nearm.astype(float)
-            est = (w * g[iis]).sum(1) / w.sum(1)
+            est = (w * gv).sum(1) / w.sum(1)
         else:
             w = np.where(nearm, 1.0 / np.maximum(dd, 0.5) ** power, 0.0)
-            est = (w * g[iis]).sum(1) / w.sum(1)
+            est = (w * gv).sum(1) / w.sum(1)
         ijk_out.append(fine.astype(np.int32)); g_out.append(est.astype(np.float32))
         c_out.append(cls)
     if ijk_out:
@@ -923,6 +954,8 @@ def estimate_blocks(pts, g, hid, block, spacing, max_cells=6_000_000, opts=None,
               "spacing_m": round(spacing, 1), "power": power, "min_holes": min_holes,
               "min_samples": min_samples, "method": method, "coarsened": coarsened,
               "max_per_hole": max_per_hole,
+              "outlier_restrict_m": (round(restrict_m, 1) if _hot is not None else None),
+              "outliers_restricted": (int(_hot.sum()) if _hot is not None else 0),
               "domain_radius_m": round(dr, 1) if dom is not None else None,
               "domain_reach_m": round(d_reach, 1) if dom is not None else None,
               "anisotropy": [round(float(x), 2) for x in aniso] if aniso is not None else None,
@@ -1145,6 +1178,70 @@ def _snap(v):
 
 
 MAX_BY_METAL = 24
+
+
+# How MMP's drill-density tiers read against the CIM definitions. This is a
+# READING, offered for context, and the distinction is not a formality: a CIM
+# category is assigned by a qualified person weighing geological and grade
+# continuity, sampling quality, QA/QC, density and metallurgy. Drill density is
+# one input to that judgement and the only one MMP measures. So a tier may be
+# compared to a category and must never be reported as one.
+CIM_READING = {
+    "well drilled":       ("indicated in character",
+                           "several holes see each block and the nearest is close"),
+    "moderately drilled": ("inferred to indicated in character",
+                           "fewer holes see the block, or the nearest is further off"),
+    "thinly drilled":     ("inferred at best",
+                           "one hole carried most of a search out to reach it"),
+}
+CIM_CAVEAT = ("MMP's own drill-density tiers, read against the CIM definitions for "
+              "context. A CIM category is assigned by a qualified person on "
+              "continuity, QA/QC, density and metallurgy — not on drill spacing "
+              "alone — so none of this is a mineral resource and none of it may be "
+              "reported as one.")
+
+
+def tier_rules(passes, spacing):
+    """What each confidence tier actually required, in metres and holes.
+
+    The tiers were being shown as three names and three tonnages, which tells a
+    reader there is a classification and not what it means. The rule behind each
+    one is already measured — a distance and a hole count — so it can simply be
+    said."""
+    out = []
+    for i, p in enumerate(passes or []):
+        name = p.get("class") if isinstance(p, dict) else CLASSES[min(i, 2)]
+        gap = (p.get("max_gap_m") if isinstance(p, dict) else None)
+        mh = (p.get("min_holes") if isinstance(p, dict) else None)
+        ms = (p.get("min_samples") if isinstance(p, dict) else None)
+        cim, why = CIM_READING.get(name, ("", ""))
+        out.append({"class": name, "within_m": gap, "min_holes": mh,
+                    "min_samples": ms, "cim": cim, "why": why,
+                    "spacing_ratio": (round(gap / spacing, 2)
+                                      if gap and spacing else None)})
+    return out
+
+
+def _class_grades(cls_sorted, vals_sorted, ks):
+    """The average grade inside each confidence tier at each cut-off.
+
+    Tonnes alone cannot answer the question a reader actually has, which is
+    whether the well-drilled rock is the good rock."""
+    if cls_sorted is None or vals_sorted is None or not len(cls_sorted):
+        return None
+    out = {}
+    v = np.asarray(vals_sorted, float)
+    v = np.where(np.isfinite(v), v, 0.0)
+    for pi, name in enumerate(CLASSES, 1):
+        m = (cls_sorted == pi)
+        cc = np.cumsum(m.astype(np.int64))
+        cs = np.cumsum(np.where(m, v, 0.0))
+        row = []
+        for k in ks:
+            n = int(cc[k - 1]) if k > 0 else 0
+            row.append(round(float(cs[k - 1]) / n, 4) if n else None)
+        out[name] = row
+    return out
 
 
 def _class_split(cls_sorted, ks, bt):
@@ -1375,7 +1472,15 @@ def _by_metal(primary, grids, by_el, units, key2i, H, PS, margin=None, style=Non
            "density": gp.get("dens"), "tonnes_per_block": round(bt, 1),
            "order": order_out, "metals": metals,
            "classes": _class_split(gp["cls"][order] if gp.get("cls") is not None
-                                   and len(gp["cls"]) == len(gr) else None, ks, bt)}
+                                   and len(gp["cls"]) == len(gr) else None, ks, bt),
+           "classes_grade": _class_grades(gp["cls"][order] if gp.get("cls") is not None
+                                          and len(gp["cls"]) == len(gr) else None,
+                                          gr[order], ks),
+           "tier_rules": tier_rules((gp.get("opts") or {}).get("passes")
+                                    or (gp.get("passes")),
+                                    (gp.get("opts") or {}).get("spacing_m")),
+           "spacing_m": (gp.get("opts") or {}).get("spacing_m"),
+           "cim_caveat": CIM_CAVEAT}
     val = _by_value(grids, by_metal_grades, order_out, units, bt, PS,
                     cls=gp.get("cls") if gp.get("cls") is not None
                     and len(gp["cls"]) == len(gr) else None, verbose=verbose)
@@ -2062,10 +2167,46 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
             top, _capwhy = SANITY.top_cut_floor(g[g > 0], top)
             if _capwhy:
                 integrity.append({"level": "repaired", "element": el, "message": _capwhy})
+            # WHAT THE CAP TAKES AWAY, said out loud.
+            #
+            # Capping every composite at the 99.5th percentile is standard and
+            # protects a disseminated estimate from a handful of outliers. On a
+            # bonanza vein it does something else entirely, because there the high
+            # grade IS the deposit: measured on built models, capping costs a
+            # porphyry 1.4% of its metal and Huajoto's narrow vein system 37.2% —
+            # six composites out of 1,048. Nothing said so. A reader looking at a
+            # 2.70 Moz headline beside an 89,125 g/t assay could not tell that the
+            # estimator never saw that number.
+            g_raw = g
             g = np.minimum(g, top)
+            _m_raw = float(g_raw[g_raw > 0].sum())
+            _m_cap = float(g[g > 0].sum())
+            cap_n = int((g_raw > top).sum())
+            cap_loss = (1.0 - _m_cap / _m_raw) if _m_raw > 0 else 0.0
+            if cap_n and cap_loss >= 0.02:
+                integrity.append({
+                    "level": "check", "element": el,
+                    "message": (f"{el}: the grade cap at {top:,.1f} {unit} holds "
+                                f"{cap_n} composite(s) down and removes "
+                                f"{100 * cap_loss:.1f}% of the {el} the assays "
+                                f"report. On a bonanza vein that is the orebody, "
+                                f"not an outlier — set 'top_cut', or set "
+                                f"'outlier_restrict_m' to keep the high grade "
+                                f"close to where it was measured")})
             spacing = float(PS.get("spacing_m") or _spacing(cent))
             eopts = dict(PS)
             eopts.setdefault("anisotropy", sdef.get("anisotropy"))
+            # OUTLIER RESTRICTION, the alternative to flattening the peak.
+            #
+            # A hard cap answers "this sample must not run away with the deposit"
+            # by deleting the metal. Restriction answers the same question by
+            # limiting how FAR the metal travels: within `outlier_restrict_m` a
+            # high-grade composite informs the estimate at its full measured
+            # value, and beyond it at the cap. The bonanza enriches its own vein
+            # instead of being smeared across the property or thrown away.
+            eopts["grades_uncapped"] = g_raw
+            eopts["top_cut"] = top
+            eopts["outlier_restrict_m"] = float(PS.get("outlier_restrict_m") or 0.0)
             # a stated structural trend, if the project carries one
             eopts["trend"] = {k: PS.get(k) for k in ("dip", "dip_direction", "plunge")} \
                 if PS.get("dip") is not None and PS.get("dip_direction") is not None else None
@@ -2495,8 +2636,17 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                 params["domain"] = dom_info
             grids[el] = {"lo": lo, "bsz": bsz, "ijk": ijk, "gr": gr, "clen": clen,
                          "opts": {k: v for k, v in params.items() if k != "passes"},
+                         # the passes travel beside opts rather than inside it:
+                         # `opts` is echoed onto the page as the parameter table
+                         # and a list of dicts does not belong there, but the
+                         # tier rules are read from exactly these numbers
+                         "passes": params.get("passes"),
                          "bins": list(bins), "cls": bcls}
             params["top_cut"] = round(top, 3)
+            params["top_cut_n"] = cap_n
+            params["top_cut_removed_pct"] = round(100 * cap_loss, 2)
+            params["outlier_restrict_m"] = (round(float(eopts["outlier_restrict_m"]), 1)
+                                            or None)
             params["composite_m"] = clen
             params["block_source"] = (base_src.get("block") if PORIGIN.get("block") == "auto"
                                       else "project settings" if PS.get("block")
@@ -2634,6 +2784,65 @@ def build_project(ds, max_elements=3, verbose=False, settings=None):
                                             if bshape is not None else None),
                                 "n": int(keep.sum()), "n_total": int(len(gr)), "shown_from": round(show, 4),
                                 "tonnes_per_block": round(bt, 1), "density": dens, "params": params}
+            # ---- WHAT WOULD BE MINED, as opposed to what is in the ground.
+            #
+            # A resource is rock above a cut-off; a mine is a set of shapes a
+            # machine can physically extract. Until now the page answered the
+            # second question with the first one and a depth threshold — "above
+            # 80 m is open pit" — which is not a pit and says nothing about
+            # whether the rock below sits in pieces big enough to mine.
+            #
+            # Computed for the PRIMARY metal only, at the reporting cut-off, and
+            # both answers are deliberately conservative readings rather than
+            # designs (see minemodelingpro.mining).
+            if el == els[0]:
+                try:
+                    from minemodelingpro import mining as MINE
+                    mcut = PS.get("mining_cutoff")
+                    if mcut is None:
+                        mcut = el_out.get("default_cutoff")
+                    if mcut is None:
+                        mcut = float(bins[1]) if len(bins) > 1 else float(bins[0])
+                    mcut = float(mcut)
+                    slab, sstats = MINE.stopes(ijk, gr, bsz, mcut)
+                    mining_out = {"cutoff": round(mcut, 4),
+                                  "cutoff_unit": unit,
+                                  "min_stope_m3": MINE.MIN_STOPE_M3,
+                                  "stopes": sstats[:200],
+                                  "n_stopes": len(sstats)}
+                    if sstats:
+                        _sb = sum(x["blocks"] for x in sstats)
+                        _so = sum(x["ore_blocks"] for x in sstats)
+                        mining_out["tonnes"] = round(_sb * bt)
+                        mining_out["ore_tonnes"] = round(_so * bt)
+                        mining_out["dilution"] = (round(1.0 - _so / _sb, 4)
+                                                  if _sb else 0.0)
+                        _gm = gr[(slab > 0)]
+                        _gm = _gm[np.isfinite(_gm)]
+                        mining_out["grade"] = (round(float(_gm.mean()), 4)
+                                               if _gm.size else None)
+                    gz = MINE.ground_from_collars(H, lo, bsz,
+                                                  (ijk[:, 0].max() + 1,
+                                                   ijk[:, 1].max() + 1))
+                    pin, pstats = MINE.pit_shell(
+                        ijk, gr, bsz, lo, mcut, gz,
+                        slope_deg=float(PS.get("pit_slope_deg")
+                                        or MINE.PIT_SLOPE_DEG))
+                    if pstats:
+                        pstats["tonnes"] = round(int(pin.sum()) * bt)
+                        mining_out["pit"] = pstats
+                    el_out["blocks"]["stope"] = (_b64(np.minimum(slab[keep], 255)
+                                                      .astype(np.uint8))
+                                                 if slab is not None and
+                                                 len(slab) == len(gr) else None)
+                    el_out["blocks"]["pit"] = (_b64(pin[keep].astype(np.uint8))
+                                               if pin is not None and
+                                               len(pin) == len(gr) else None)
+                    el_out["mining"] = mining_out
+                except Exception as _me:
+                    if verbose:
+                        print("  [mining] skipped: %s: %s"
+                              % (type(_me).__name__, str(_me)[:120]), flush=True)
             # ---- the body the model imagined, carried to the viewer
             # The wireframe decided which blocks exist and was then thrown away,
             # so a gap in the block model was unreadable: nobody could tell a
