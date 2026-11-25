@@ -1453,5 +1453,20 @@
   "size_kb": 16257,
   "collected": "2026-11-24T17:41:35Z",
   "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_MGM-2026-11-24-amended-restated-technical-report-ni-43-101-english-cbc2.pdf"
+ },
+ {
+  "file": "ceo_PPM-2026-11-24-technical-report-ni-43-101-english-ce6f.pdf",
+  "filing_ref": "PPM-2026-11-24-technical-report-ni-43-101-english-ce6f.pdf",
+  "company": "PPM",
+  "project": null,
+  "jurisdiction": null,
+  "commodity": null,
+  "submitted": "2026-11-24",
+  "doctype": "Technical report (NI 43-101)",
+  "sedar_url": "https://ceo.ca/content/sedar/PPM-2026-11-24-technical-report-ni-43-101-english-ce6f.pdf",
+  "source": "ceo.ca",
+  "size_kb": 4352,
+  "collected": "2026-11-25T02:26:02Z",
+  "archive_url": "https://github.com/jaydeepdive/minemodelingpro/releases/download/report-archive/ceo_PPM-2026-11-24-technical-report-ni-43-101-english-ce6f.pdf"
  }
 ]
