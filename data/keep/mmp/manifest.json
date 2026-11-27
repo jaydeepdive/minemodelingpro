@@ -1,5 +1,5 @@
 {
-  "generated": "2026-11-26T16:50:20Z",
+  "generated": "2026-11-27T16:34:00Z",
   "max_bytes": 94371840,
   "tables": {
     "collars": [
@@ -152,12 +152,6 @@
         "source": "ni43101:9e298d88a63fdce2",
         "rows": 616,
         "bytes": 35006
-      },
-      {
-        "file": "mmp/collars/ni43101__a2e880dbedadeb9f.parquet",
-        "source": "ni43101:a2e880dbedadeb9f",
-        "rows": 108,
-        "bytes": 15877
       },
       {
         "file": "mmp/collars/ni43101__a9084a09533adc1a.parquet",
@@ -1120,12 +1114,6 @@
         "bytes": 10119
       },
       {
-        "file": "mmp/deposit_model/ni43101__a2e880dbedadeb9f.parquet",
-        "source": "ni43101:a2e880dbedadeb9f",
-        "rows": 17,
-        "bytes": 10473
-      },
-      {
         "file": "mmp/deposit_model/ni43101__b6f0a862566c7c39.parquet",
         "source": "ni43101:b6f0a862566c7c39",
         "rows": 6,
@@ -1474,12 +1462,6 @@
         "source": "ni43101:a1c3803fa080bcf5",
         "rows": 1,
         "bytes": 15773
-      },
-      {
-        "file": "mmp/model_method/ni43101__a2e880dbedadeb9f.parquet",
-        "source": "ni43101:a2e880dbedadeb9f",
-        "rows": 1,
-        "bytes": 16413
       },
       {
         "file": "mmp/model_method/ni43101__a4314e07a363cafb.parquet",
@@ -2108,12 +2090,6 @@
         "bytes": 15817
       },
       {
-        "file": "mmp/metallurgy/ni43101__a2e880dbedadeb9f.parquet",
-        "source": "ni43101:a2e880dbedadeb9f",
-        "rows": 1,
-        "bytes": 15481
-      },
-      {
         "file": "mmp/metallurgy/ni43101__a4314e07a363cafb.parquet",
         "source": "ni43101:a4314e07a363cafb",
         "rows": 1,
@@ -2632,12 +2608,6 @@
         "bytes": 18848
       },
       {
-        "file": "mmp/economics/ni43101__a2e880dbedadeb9f.parquet",
-        "source": "ni43101:a2e880dbedadeb9f",
-        "rows": 1,
-        "bytes": 21905
-      },
-      {
         "file": "mmp/economics/ni43101__a4314e07a363cafb.parquet",
         "source": "ni43101:a4314e07a363cafb",
         "rows": 1,
@@ -2832,14 +2802,14 @@
     ]
   },
   "totals": {
-    "collars": 814935,
+    "collars": 814827,
     "survey": 0,
     "assays": 14218499,
     "lithology": 759663,
-    "deposit_model": 2643,
-    "model_method": 105,
-    "metallurgy": 102,
-    "economics": 65
+    "deposit_model": 2626,
+    "model_method": 104,
+    "metallurgy": 101,
+    "economics": 64
   },
-  "shard_count": 469
+  "shard_count": 464
 }
